@@ -12,6 +12,8 @@ const multer = require('multer');
 const { createCanvas, Image } = require('canvas');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
+const { processVideo, probeVideo } = require('./videoProcessor.cjs');
 
 // 加载 polyfill（必须在引入 keying.js 之前）
 require('./src/lib/canvas-polyfill.js');
@@ -22,10 +24,22 @@ let applyKeying, composeToCanvas, autoCropKeyed;
 const app = express();
 const PORT = 3001;
 
-// multer 配置：内存存储，限制 50MB
+// multer 配置：内存存储（图片），限制 500MB 以支持视频
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }
+  limits: { fileSize: 500 * 1024 * 1024 }
+});
+
+// 视频用磁盘存储（大文件不适合内存）
+const tmpDir = path.join(os.tmpdir(), 'greenscreen-studio');
+if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+
+const videoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, tmpDir),
+    filename: (req, file, cb) => cb(null, `upload_${Date.now()}_${file.originalname}`),
+  }),
+  limits: { fileSize: 500 * 1024 * 1024 }
 });
 
 // 静态文件（生产环境服务 dist）
@@ -131,6 +145,140 @@ app.post('/api/export', upload.single('image'), async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+// ===== 视频接口 =====
+
+// 视频任务状态存储（内存，进程级）
+const videoJobs = new Map();
+
+/**
+ * POST /api/video/upload
+ * 上传视频文件，返回 jobId + 视频信息（尺寸、fps、时长、是否有音轨）
+ */
+app.post('/api/video/upload', videoUpload.single('video'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: '未提供视频文件' });
+
+    const info = await probeVideo(req.file.path);
+    const jobId = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    videoJobs.set(jobId, {
+      status: 'uploaded',
+      inputPath: req.file.path,
+      info,
+      createdAt: Date.now(),
+    });
+
+    console.log(`  📹 视频上传: ${jobId} | ${info.width}×${info.height} @ ${info.fps}fps, ${info.duration.toFixed(1)}s`);
+
+    res.json({
+      jobId,
+      width: info.width,
+      height: info.height,
+      fps: info.fps,
+      duration: info.duration,
+      hasAudio: info.hasAudio,
+      frameCount: info.frameCount,
+    });
+  } catch (err) {
+    console.error('视频上传失败:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/video/process
+ * 开始处理视频。body: { jobId, params, format }
+ *   params: { keying, layout, mode }
+ *   format: 'webm' | 'mov' | 'mp4'
+ * 返回 { taskId } 用于轮询进度
+ */
+app.post('/api/video/process', express.json({ limit: '10mb' }), (req, res) => {
+  const { jobId, params, format } = req.body;
+  const job = videoJobs.get(jobId);
+  if (!job) return res.status(404).json({ error: 'job not found' });
+
+  const taskId = `task_${Date.now()}`;
+  const ext = format || (params.mode === 'transparent' ? 'webm' : 'mp4');
+  const outputPath = path.join(tmpDir, `output_${taskId}.${ext}`).replace(/\\/g, '/');
+
+  job.taskId = taskId;
+  job.status = 'processing';
+  job.progress = { current: 0, total: job.info.frameCount || 0, percent: 0 };
+  job.outputPath = outputPath;
+  job.outputFormat = ext;
+  job.error = null;
+
+  // 异步处理（不阻塞响应）
+  processVideo(job.inputPath, outputPath, params, (current, total) => {
+    const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+    job.progress = { current, total, percent };
+  })
+    .then(result => {
+      job.status = 'done';
+      job.result = result;
+      console.log(`  ✅ 视频处理完成: ${jobId} | ${result.frameCount} frames`);
+    })
+    .catch(err => {
+      job.status = 'error';
+      job.error = err.message;
+      console.error(`  ❌ 视频处理失败: ${jobId}`, err.message);
+    });
+
+  res.json({ taskId, jobId });
+});
+
+/**
+ * GET /api/video/progress/:taskId
+ * 轮询处理进度
+ */
+app.get('/api/video/progress/:taskId', (req, res) => {
+  // 通过 taskId 找 job
+  let job = null;
+  for (const [_, j] of videoJobs) {
+    if (j.taskId === req.params.taskId) { job = j; break; }
+  }
+  if (!job) return res.status(404).json({ error: 'task not found' });
+
+  res.json({
+    status: job.status,
+    progress: job.progress,
+    error: job.error,
+    result: job.result,
+  });
+});
+
+/**
+ * GET /api/video/download/:jobId
+ * 下载处理完成的视频
+ */
+app.get('/api/video/download/:jobId', (req, res) => {
+  const job = videoJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'job not found' });
+  if (job.status !== 'done') return res.status(400).json({ error: `job status: ${job.status}` });
+  if (!fs.existsSync(job.outputPath)) return res.status(404).json({ error: 'output file not found' });
+
+  const filename = `export_${job.outputFormat}_${Date.now()}.${job.outputFormat}`;
+  res.setHeader('Content-Type', getVideoMime(job.outputFormat));
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  const stream = fs.createReadStream(job.outputPath);
+  stream.pipe(res);
+  stream.on('close', () => {
+    // 下载完后清理（延迟，避免文件被删太快）
+    setTimeout(() => {
+      try {
+        fs.unlinkSync(job.outputPath);
+        fs.unlinkSync(job.inputPath);
+        videoJobs.delete(req.params.jobId);
+      } catch (e) {}
+    }, 5000);
+  });
+});
+
+function getVideoMime(ext) {
+  const map = { webm: 'video/webm', mov: 'video/quicktime', mp4: 'video/mp4' };
+  return map[ext] || 'application/octet-stream';
+}
 
 // 健康检查
 app.get('/api/health', (req, res) => {

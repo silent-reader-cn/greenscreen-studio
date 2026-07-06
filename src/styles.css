@@ -424,6 +424,230 @@ body {
   background: #666;
 }
 
+/* ===== 模式切换器 ===== */
+.mode-switcher {
+  display: flex;
+  gap: 0;
+  margin-right: auto;
+}
+
+.mode-btn {
+  padding: 12px 20px;
+  background: none;
+  border: none;
+  font-size: 13px;
+  color: #888;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.mode-btn.active {
+  color: #1a1a1a;
+  border-bottom-color: #1a1a1a;
+  font-weight: 600;
+}
+
+/* ===== 视频面板 ===== */
+.video-panel .video-drop-area {
+  border: 2px dashed #c8c8c0;
+  border-radius: 6px;
+  padding: 20px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+
+.video-panel .video-drop-area:hover {
+  border-color: #999;
+  background: #f5f5f0;
+}
+
+.video-panel .video-drop-area p {
+  font-size: 13px;
+  color: #555;
+}
+
+.video-panel .uploading-text {
+  color: #3366aa;
+  font-weight: 500;
+}
+
+.video-info-display {
+  width: 100%;
+}
+
+.video-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-meta {
+  font-size: 11px;
+  color: #888;
+}
+
+.video-options {
+  margin-top: 12px;
+}
+
+.opt-group {
+  margin-bottom: 12px;
+}
+
+.opt-label {
+  font-size: 11px;
+  color: #888;
+  margin-bottom: 4px;
+}
+
+.opt-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.opt-btn {
+  flex: 1;
+  padding: 6px 8px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.opt-btn.active {
+  background: #1a1a1a;
+  color: #fff;
+  border-color: #1a1a1a;
+}
+
+.opt-btn:hover:not(.active) {
+  border-color: #999;
+}
+
+/* 进度条 */
+.progress-section {
+  margin-top: 12px;
+}
+
+.progress-bar-container {
+  width: 100%;
+  height: 8px;
+  background: #e0e0d8;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: #3366aa;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.progress-text {
+  font-size: 11px;
+  color: #666;
+  text-align: center;
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 消息提示 */
+.error-msg {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #fee;
+  border: 1px solid #fcc;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #c33;
+}
+
+.success-msg {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #efe;
+  border: 1px solid #cfc;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #363;
+}
+
+/* 视频操作按钮 */
+.video-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.btn-video-process,
+.btn-video-download {
+  flex: 1;
+  padding: 8px;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.btn-video-process {
+  background: #3366aa;
+  color: #fff;
+}
+
+.btn-video-download {
+  background: #363;
+  color: #fff;
+}
+
+.btn-video-process:hover:not(:disabled),
+.btn-video-download:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.btn-video-process:disabled,
+.btn-video-download:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-video-reset {
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+}
+
+.btn-video-reset:hover:not(:disabled) {
+  background: #f5f5f0;
+}
+
+/* 视频预览提示 */
+.video-preview-hint {
+  text-align: center;
+  color: #aaa;
+}
+
 /* ===== 滚动条 ===== */
 .sidebar::-webkit-scrollbar,
 .canvas-wrapper::-webkit-scrollbar {

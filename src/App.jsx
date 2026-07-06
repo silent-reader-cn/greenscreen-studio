@@ -4,6 +4,7 @@ import UploadZone from './components/UploadZone.jsx'
 import KeyingPanel from './components/KeyingPanel.jsx'
 import LayoutPanel from './components/LayoutPanel.jsx'
 import PreviewCanvas from './components/PreviewCanvas.jsx'
+import VideoPanel from './components/VideoPanel.jsx'
 
 // ===== 默认参数 =====
 const DEFAULT_KEYING = {
@@ -57,6 +58,7 @@ export default function App() {
   const [layoutParams, setLayoutParams] = useState(initial.layout)
 
   const [exporting, setExporting] = useState(false)
+  const [mediaMode, setMediaMode] = useState('image')  // 'image' | 'video'
 
   // ===== 参数变化时持久化 =====
   useEffect(() => {
@@ -162,30 +164,60 @@ export default function App() {
 
       <main className="main">
         <aside className="sidebar">
-          <UploadZone onFileLoad={handleFileLoad} imageSize={imageSize} />
+          {mediaMode === 'image' ? (
+            <UploadZone onFileLoad={handleFileLoad} imageSize={imageSize} />
+          ) : (
+            <VideoPanel
+              keyingParams={keyingParams}
+              layoutParams={layoutParams}
+            />
+          )}
           <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
           <LayoutPanel params={layoutParams} onChange={setLayoutParams} imageSize={imageSize} />
         </aside>
 
         <section className="preview-area">
           <div className="tab-bar">
-            <button
-              className={`tab ${tab === 'keying' ? 'active' : ''}`}
-              onClick={() => setTab('keying')}
-            >抠像预览</button>
-            <button
-              className={`tab ${tab === 'composite' ? 'active' : ''}`}
-              onClick={() => setTab('composite')}
-            >合成预览</button>
-          </div>
-          <div className="canvas-wrapper">
-            {imageData ? (
-              <canvas ref={previewRef} className="preview-canvas" />
-            ) : (
-              <PreviewCanvas />
+            <div className="mode-switcher">
+              <button
+                className={`mode-btn ${mediaMode === 'image' ? 'active' : ''}`}
+                onClick={() => setMediaMode('image')}
+              >🖼️ 图片</button>
+              <button
+                className={`mode-btn ${mediaMode === 'video' ? 'active' : ''}`}
+                onClick={() => setMediaMode('video')}
+              >🎬 视频</button>
+            </div>
+            {mediaMode === 'image' && (
+              <>
+                <button
+                  className={`tab ${tab === 'keying' ? 'active' : ''}`}
+                  onClick={() => setTab('keying')}
+                >抠像预览</button>
+                <button
+                  className={`tab ${tab === 'composite' ? 'active' : ''}`}
+                  onClick={() => setTab('composite')}
+                >合成预览</button>
+              </>
             )}
           </div>
-          {imageData && (
+          <div className="canvas-wrapper">
+            {mediaMode === 'image' ? (
+              imageData ? (
+                <canvas ref={previewRef} className="preview-canvas" />
+              ) : (
+                <PreviewCanvas />
+              )
+            ) : (
+              <div className="video-preview-hint">
+                <div className="placeholder-icon">🎬</div>
+                <p>视频抠像参数与图片共用</p>
+                <p className="hint">调整左侧参数后，上传视频并开始处理</p>
+                <p className="hint">处理完成后在此预览效果</p>
+              </div>
+            )}
+          </div>
+          {mediaMode === 'image' && imageData && (
             <div className="export-bar">
               <button
                 className="btn-export"
