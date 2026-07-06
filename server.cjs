@@ -1,0 +1,154 @@
+/**
+ * 绿幕素材标准化工具 — Express 后端
+ *
+ * 功能：
+ *   POST /api/export  接收原图+参数，返回处理后的 PNG
+ *
+ * 技术栈：Express + node-canvas + multer(文件上传)
+ */
+
+const express = require('express');
+const multer = require('multer');
+const { createCanvas, Image } = require('canvas');
+const path = require('path');
+const fs = require('fs');
+
+// 加载 polyfill（必须在引入 keying.js 之前）
+require('./src/lib/canvas-polyfill.js');
+
+// keying.js 是 ES module，需要动态 import
+let applyKeying, composeToCanvas, autoCropKeyed;
+
+const app = express();
+const PORT = 3001;
+
+// multer 配置：内存存储，限制 50MB
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 }
+});
+
+// 静态文件（生产环境服务 dist）
+app.use(express.json({ limit: '50mb' }));
+
+// CORS（开发环境 vite 在 5174）
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+
+/**
+ * POST /api/export
+ * multipart/form-data:
+ *   image: 原图文件
+ *   params: JSON 字符串，包含 keying + layout 参数
+ *
+ * 返回：PNG 图片（直接以 image/png 返回）
+ */
+app.post('/api/export', upload.single('image'), async (req, res) => {
+  try {
+    if (!applyKeying) {
+      const mod = await import('./src/lib/keying.js');
+      applyKeying = mod.applyKeying;
+      composeToCanvas = mod.composeToCanvas;
+      autoCropKeyed = mod.autoCropKeyed;
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: '未提供图片文件' });
+    }
+
+    const params = JSON.parse(req.body.params);
+
+    // 1. 加载原图
+    const img = new Image();
+    img.src = req.file.buffer;
+
+    // 2. 在 canvas 上绘制原图，获取 ImageData
+    const srcCanvas = createCanvas(img.width, img.height);
+    const srcCtx = srcCanvas.getContext('2d');
+    srcCtx.drawImage(img, 0, 0);
+    const srcImageData = srcCtx.getImageData(0, 0, img.width, img.height);
+
+    // 3. 抠像
+    let keyedData = applyKeying(srcImageData, params.keying);
+
+    // 3.5 自动裁剪（如果开启，默认开）
+    if (params.layout.autoCrop !== false) {
+      keyedData = autoCropKeyed(keyedData);
+    }
+
+    // 4. 创建目标画布
+    const { canvasWidth, canvasHeight } = params.layout;
+    const outCanvas = createCanvas(canvasWidth, canvasHeight);
+    const outCtx = outCanvas.getContext('2d');
+
+    // 5. 合成（抠像人物 → 绿幕画布）
+    const tempCanvas = createCanvas(100, 100); // 临时画布（composeToCanvas 会 resize）
+    const result = composeToCanvas(outCtx, keyedData, params.layout, tempCanvas);
+
+    // 6. 根据 mode 决定输出
+    const mode = params.mode || 'greenscreen'; // 'greenscreen' | 'transparent'
+
+    let outputBuffer;
+    if (mode === 'transparent') {
+      // 透明模式：只输出抠像后的人物（等比缩放到 personWidth×personHeight，居中于画布）
+      const transCanvas = createCanvas(canvasWidth, canvasHeight);
+      const transCtx = transCanvas.getContext('2d');
+      // 临时画布放抠像结果
+      tempCanvas.width = keyedData.width;
+      tempCanvas.height = keyedData.height;
+      const tempCtx2 = tempCanvas.getContext('2d');
+      const transImgData = tempCtx2.createImageData(keyedData.width, keyedData.height);
+      transImgData.data.set(keyedData.data);
+      tempCtx2.putImageData(transImgData, 0, 0);
+      // 等比缩放 + 居中
+      const scaleX = params.layout.personWidth / keyedData.width;
+      const scaleY = params.layout.personHeight / keyedData.height;
+      const scale = Math.min(scaleX, scaleY);
+      const sw = Math.round(keyedData.width * scale);
+      const sh = Math.round(keyedData.height * scale);
+      const ox = Math.round((canvasWidth - sw) / 2);
+      const oy = Math.round((canvasHeight - sh) / 2);
+      transCtx.drawImage(tempCanvas, ox, oy, sw, sh);
+      outputBuffer = transCanvas.toBuffer('image/png');
+    } else {
+      // 绿幕合成模式
+      outputBuffer = outCanvas.toBuffer('image/png');
+    }
+
+    // 7. 返回
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Disposition', `attachment; filename="export_${Date.now()}.png"`);
+    res.send(outputBuffer);
+
+    console.log(`✓ 导出成功: ${canvasWidth}×${canvasHeight} ${mode} | 缩放: ${result.scaledW}×${result.scaledH}`);
+  } catch (err) {
+    console.error('导出失败:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 健康检查
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
+// 生产环境服务前端静态文件
+const distPath = path.join(__dirname, 'dist');
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+  app.get('*', (req, res) => {
+    if (!req.path.startsWith('/api')) {
+      res.sendFile(path.join(distPath, 'index.html'));
+    }
+  });
+}
+
+app.listen(PORT, () => {
+  console.log(`\n  🟢 绿幕工具后端已启动: http://localhost:${PORT}`);
+  console.log(`  📁 项目路径: ${__dirname}\n`);
+});
