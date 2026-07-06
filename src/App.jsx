@@ -5,6 +5,7 @@ import KeyingPanel from './components/KeyingPanel.jsx'
 import LayoutPanel from './components/LayoutPanel.jsx'
 import PreviewCanvas from './components/PreviewCanvas.jsx'
 import VideoPanel from './components/VideoPanel.jsx'
+import VideoPreview from './components/VideoPreview.jsx'
 
 // ===== 默认参数 =====
 const DEFAULT_KEYING = {
@@ -59,6 +60,31 @@ export default function App() {
 
   const [exporting, setExporting] = useState(false)
   const [mediaMode, setMediaMode] = useState('image')  // 'image' | 'video'
+
+  // 视频预览状态
+  const [videoFile, setVideoFile] = useState(null)
+  const [videoInfo, setVideoInfo] = useState(null)
+  const [resultJobId, setResultJobId] = useState(null)  // 处理完成后用于播放
+
+  // 切换模式时清空视频状态
+  const switchMode = (mode) => {
+    setMediaMode(mode)
+    if (mode === 'image') {
+      setVideoFile(null)
+      setVideoInfo(null)
+      setResultJobId(null)
+    }
+  }
+
+  const handleVideoUpload = useCallback((file, info) => {
+    setVideoFile(file)
+    setVideoInfo(info)
+    setResultJobId(null)
+  }, [])
+
+  const handleVideoDone = useCallback((jobId) => {
+    setResultJobId(jobId)
+  }, [])
 
   // ===== 参数变化时持久化 =====
   useEffect(() => {
@@ -170,6 +196,8 @@ export default function App() {
             <VideoPanel
               keyingParams={keyingParams}
               layoutParams={layoutParams}
+              onVideoUpload={handleVideoUpload}
+              onVideoDone={handleVideoDone}
             />
           )}
           <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
@@ -181,11 +209,11 @@ export default function App() {
             <div className="mode-switcher">
               <button
                 className={`mode-btn ${mediaMode === 'image' ? 'active' : ''}`}
-                onClick={() => setMediaMode('image')}
+                onClick={() => switchMode('image')}
               >🖼️ 图片</button>
               <button
                 className={`mode-btn ${mediaMode === 'video' ? 'active' : ''}`}
-                onClick={() => setMediaMode('video')}
+                onClick={() => switchMode('video')}
               >🎬 视频</button>
             </div>
             {mediaMode === 'image' && (
@@ -209,12 +237,13 @@ export default function App() {
                 <PreviewCanvas />
               )
             ) : (
-              <div className="video-preview-hint">
-                <div className="placeholder-icon">🎬</div>
-                <p>视频抠像参数与图片共用</p>
-                <p className="hint">调整左侧参数后，上传视频并开始处理</p>
-                <p className="hint">处理完成后在此预览效果</p>
-              </div>
+              <VideoPreview
+                videoFile={videoFile}
+                videoInfo={videoInfo}
+                keyingParams={keyingParams}
+                layoutParams={layoutParams}
+                resultJobId={resultJobId}
+              />
             )}
           </div>
           {mediaMode === 'image' && imageData && (

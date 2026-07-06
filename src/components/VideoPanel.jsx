@@ -6,7 +6,7 @@ const FMT_OPTIONS = [
   { value: 'mp4', label: 'MP4 (绿幕合成, H.264)', transparent: false },
 ]
 
-export default function VideoPanel({ keyingParams, layoutParams, onVideoStatus }) {
+export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, onVideoDone }) {
   const [mode, setMode] = useState('transparent')      // 'transparent' | 'greenscreen'
   const [format, setFormat] = useState('webm')
   const [videoInfo, setVideoInfo] = useState(null)       // {jobId, width, height, fps, duration, hasAudio}
@@ -29,11 +29,6 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoStatus }
     if (mode === 'transparent' && format === 'mp4') setFormat('webm')
     if (mode === 'greenscreen' && (format === 'webm' || format === 'mov')) setFormat('mp4')
   }, [mode])
-
-  // 通知父组件状态
-  useEffect(() => {
-    onVideoStatus?.({ status, processing, videoInfo })
-  }, [status, processing, videoInfo, onVideoStatus])
 
   // 清理
   useEffect(() => {
@@ -61,6 +56,8 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoStatus }
       const data = await resp.json()
       setVideoInfo(data)
       setStatus('uploaded')
+      // 通知 App：上传成功，传入 File 和视频信息，用于帧预览
+      onVideoUpload?.(file, data)
     } catch (err) {
       setErrorMsg(err.message)
       setStatus('error')
@@ -106,6 +103,8 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoStatus }
             pollTimerRef.current = null
             setProcessing(false)
             setStatus('done')
+            // 通知 App：处理完成，传入 jobId 用于预览播放
+            onVideoDone?.(videoInfo.jobId, format)
           } else if (pData.status === 'error') {
             clearInterval(pollTimerRef.current)
             pollTimerRef.current = null
@@ -147,6 +146,7 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoStatus }
     setErrorMsg('')
     setDownloadUrl('')
     if (inputRef.current) inputRef.current.value = ''
+    onVideoUpload?.(null, null)  // 通知 App 清空预览
   }
 
   const fmtTime = (s) => {
