@@ -22,7 +22,7 @@ require('./src/lib/canvas-polyfill.js');
 let applyKeying, composeToCanvas, autoCropKeyed;
 
 const app = express();
-const PORT = 3001;
+const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3001;
 
 // multer 配置：内存存储（图片），限制 500MB 以支持视频
 const upload = multer({
@@ -296,7 +296,14 @@ if (fs.existsSync(distPath)) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`\n  🟢 绿幕工具后端已启动: http://localhost:${PORT}`);
-  console.log(`  📁 项目路径: ${__dirname}\n`);
-});
+// 仅当作为主进程运行时才启动 listen（被 Electron require 时不启动）
+if (require.main === module) {
+  const port = process.env.PORT ? parseInt(process.env.PORT) : 3001;
+  app.listen(port, () => {
+    console.log(`\n  🟢 绿幕工具后端已启动: http://localhost:${port}`);
+    console.log(`  📁 项目路径: ${__dirname}\n`);
+  });
+}
+
+// 导出给 Electron 主进程 require
+module.exports = { app, defaultPort: 3001 };

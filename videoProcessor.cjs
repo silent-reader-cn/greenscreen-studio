@@ -9,11 +9,50 @@
  *   - mp4: H.264 绿幕合成 (不透明)
  */
 
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const { createCanvas, Image } = require('canvas');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+
+/**
+ * 解析 ffmpeg / ffprobe 实际可执行路径
+ * - 打包后的 Electron:ffmpeg-static / ffprobe-static 位于 extraResources 目录
+ * - 开发模式:从 node_modules 里取
+ */
+function resolveFfmpeg() {
+  // 1. 优先用 ffmpeg-static(开发模式)
+  try {
+    const p = require('ffmpeg-static');
+    if (p && fs.existsSync(p)) return p;
+  } catch (e) {}
+
+  // 2. 打包模式:resources/bin/ffmpeg.exe
+  const packaged = path.join(process.resourcesPath || '', 'bin', 'ffmpeg.exe');
+  if (fs.existsSync(packaged)) return packaged;
+
+  // 3. 退回系统 PATH
+  return 'ffmpeg';
+}
+
+function resolveFfprobe() {
+  try {
+    const mod = require('ffprobe-static');
+    const p = mod.path || mod;
+    if (p && fs.existsSync(p)) return p;
+  } catch (e) {}
+
+  const packaged = path.join(process.resourcesPath || '', 'bin', 'ffprobe.exe');
+  if (fs.existsSync(packaged)) return packaged;
+
+  return 'ffprobe';
+}
+
+const FFMPEG = resolveFfmpeg();
+const FFPROBE = resolveFfprobe();
+
+console.log(`  🎬 ffmpeg: ${FFMPEG}`);
+console.log(`  🎬 ffprobe: ${FFPROBE}`);
 
 // 动态加载共享算法
 let applyKeying, composeToCanvas, autoCropKeyed;
@@ -32,7 +71,7 @@ async function loadAlgorithms() {
  */
 function probeVideo(videoPath) {
   return new Promise((resolve, reject) => {
-    const ffprobe = spawn('ffprobe', [
+    const ffprobe = spawn(FFPROBE, [
       '-v', 'quiet',
       '-print_format', 'json',
       '-show_streams',
@@ -98,7 +137,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   let audioExtracted = false;
   if (hasAudio) {
     await new Promise((resolve, reject) => {
-      const ffmpeg = spawn('ffmpeg', [
+      const ffmpeg = spawn(FFMPEG, [
         '-i', inputPath,
         '-vn', '-acodec', 'aac',
         '-b:a', '192k',
@@ -120,11 +159,11 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
     '-pix_fmt', 'rgba',
     '-'
   ];
-  const extractor = spawn('ffmpeg', extractArgs);
+  const extractor = spawn(FFMPEG, extractArgs);
 
   // 5. 启动 ffmpeg 编码器（接收 raw RGBA pipe → 编码输出）
   const { encoderArgs, outputFormat } = buildEncoderArgs(outputPath, mode, layout, fps, audioExtracted ? audioPath : null);
-  const encoder = spawn('ffmpeg', encoderArgs);
+  const encoder = spawn(FFMPEG, encoderArgs);
 
   extractor.stderr.on('data', () => {});
   encoder.stderr.on('data', d => {

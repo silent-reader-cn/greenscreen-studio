@@ -1,5 +1,7 @@
 node_modules/
 dist/
+release/
+electron-dev.log
 *.png
 test-*.png
 gen-test*.cjs

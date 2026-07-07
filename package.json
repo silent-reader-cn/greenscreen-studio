@@ -2,24 +2,105 @@
   "name": "greenscreen-studio",
   "version": "1.0.0",
   "description": "绿幕人物素材标准化工具 — 抠像 + 等比缩放 + 居中重排 + 导出",
+  "main": "electron/main.cjs",
+  "author": "柚子",
+  "license": "MIT",
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
-    "dev:server": "node server.cjs",
+    "dev": "concurrently -k -n vite,server,electron -c blue,green,magenta \"npm:dev:client\" \"npm:dev:server\" \"npm:dev:electron\"",
     "dev:client": "vite",
+    "dev:server": "node server.cjs",
+    "dev:electron": "wait-on tcp:5174 tcp:3001 && cross-env NODE_ENV=development electron .",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "node server.cjs"
+    "start": "node server.cjs",
+    "package": "npm run build && electron-builder",
+    "package:dir": "npm run build && electron-builder --dir"
   },
   "dependencies": {
     "canvas": "^3.1.0",
     "express": "^4.21.0",
+    "ffmpeg-static": "^5.3.0",
+    "ffprobe-static": "^3.1.0",
     "multer": "^1.4.5-lts.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^9.1.0",
-    "vite": "^6.0.0"
+    "concurrently": "^9.2.3",
+    "cross-env": "^7.0.3",
+    "electron": "^43.0.0",
+    "electron-builder": "^26.15.3",
+    "vite": "^6.0.0",
+    "wait-on": "^9.0.10"
+  },
+  "build": {
+    "appId": "com.yuzu.greenscreen-studio",
+    "productName": "绿幕素材标准化工具",
+    "copyright": "Copyright © 2026 柚子",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "dist/**/*",
+      "server.cjs",
+      "videoProcessor.cjs",
+      "src/lib/**/*",
+      "package.json",
+      "node_modules/**/*",
+      "!node_modules/ffmpeg-static/*.exe",
+      "!node_modules/ffprobe-static/bin/**",
+      "!**/{.git,.DS_Store,*.log,*.tsbuildinfo,Thumbs.db}"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/ffmpeg-static/ffmpeg.exe",
+        "to": "bin/ffmpeg.exe"
+      },
+      {
+        "from": "node_modules/ffmpeg-static/ffmpeg.exe.LICENSE",
+        "to": "bin/ffmpeg.exe.LICENSE"
+      },
+      {
+        "from": "node_modules/ffprobe-static/bin/win32/x64/ffprobe.exe",
+        "to": "bin/ffprobe.exe"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/canvas/**/*",
+      "node_modules/canvas-prebuilt/**/*",
+      "node_modules/@napi-rs/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "绿幕素材工具",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    }
   }
 }
