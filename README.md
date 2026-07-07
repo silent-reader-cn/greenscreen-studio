@@ -7,7 +7,7 @@
 *把任意绿幕素材一键变成标准化尺寸的人物立绘*
 
 ![GitHub release (latest by tag)](https://img.shields.io/github/v/release/silent-reader-cn/greenscreen-studio)
-![GitHub](https://img.shields.io/github/license/silent-reader-cn/greenscreen-studio)
+![License](https://img.shields.io/badge/license-MIT-blue)
 ![Electron](https://img.shields.io/badge/Electron-43-47848F?logo=electron)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)
 
@@ -206,8 +206,3 @@ greenscreen-studio/
 
 MIT —— 随便用，随便改。
 
----
-
-<div align="center">
-  <sub>Built with ❤️ by 柚子 · Powered by Hermes Agent</sub>
-</div>
