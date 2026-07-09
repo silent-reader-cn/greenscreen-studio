@@ -9,39 +9,29 @@ import { applyKeying, composeToCanvas, autoCropKeyed } from '../lib/keying.js'
  *   2. 已上传未处理 → 时间轴选帧 + 实时抠像预览（滑块拖动即时生效）
  *   3. 处理完成 → <video> 播放器
  */
-export default function VideoPreview({ videoFile, videoInfo, keyingParams, layoutParams, resultJobId }) {
+export default function VideoPreview({ videoFile, videoInfo, keyingParams, layoutParams, resultJobId, range, onRangeChange }) {
   const [frameTime, setFrameTime] = useState(0)        // 当前选中的时间点（秒）
   const [frameImageData, setFrameImageData] = useState(null)  // 当前帧的 ImageData
   const [loading, setLoading] = useState(false)
   const [previewTab, setPreviewTab] = useState('keying')  // 'keying' | 'composite'
-  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 }) // frame-canvas-wrapper 尺寸
+  const [detecting, setDetecting] = useState(false)
+  const [loopCandidates, setLoopCandidates] = useState(null) // [{frame, score}, ...]
+  const [similarityHeatmap, setSimilarityHeatmap] = useState(null) // [{pct, opacity}, ...]
+  const [scoreRange, setScoreRange] = useState(null) // {min, max} 用于全局归一化
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
-  const wrapperRef = useRef(null)
   const tempCanvasRef = useRef(document.createElement('canvas'))
   const seekRef = useRef(false)  // 防止 seek 事件重入
-
-  // ===== 监听容器尺寸变化 =====
-  useEffect(() => {
-    const wrapper = wrapperRef.current
-    if (!wrapper) return
-
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const { width, height } = entry.contentRect
-        setContainerSize({ w: width, h: height })
-      }
-    })
-    observer.observe(wrapper)
-    return () => observer.disconnect()
-  }, [])
 
   // ===== 视频加载 =====
   useEffect(() => {
     if (!videoFile) {
       setFrameImageData(null)
       setFrameTime(0)
+      setLoopCandidates(null)
+      setSimilarityHeatmap(null)
+      setScoreRange(null)
       return
     }
     const video = videoRef.current
@@ -123,39 +113,6 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
     }
   }, [frameImageData, keyingParams, layoutParams, previewTab])
 
-  // ===== Canvas CSS 尺寸自适应（确保竖屏视频不被裁剪）=====
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || containerSize.w === 0 || containerSize.h === 0) return
-
-    // 获取视频帧的原始宽高比
-    let aspect
-    if (frameImageData) {
-      aspect = frameImageData.width / frameImageData.height
-    } else {
-      const video = videoRef.current
-      if (!video || !video.videoWidth) return
-      aspect = video.videoWidth / video.videoHeight
-    }
-
-    // 计算 fit=contain 的 CSS 尺寸
-    const cw = containerSize.w
-    const ch = containerSize.h
-    let cssW, cssH
-    if (aspect > cw / ch) {
-      // 宽比容器宽 → 宽度受限
-      cssW = cw
-      cssH = cw / aspect
-    } else {
-      // 高比容器高 → 高度受限
-      cssH = ch
-      cssW = ch * aspect
-    }
-
-    canvas.style.width = `${Math.round(cssW)}px`
-    canvas.style.height = `${Math.round(cssH)}px`
-  }, [frameImageData, containerSize])
-
   // ===== 处理完成后切换到播放器 =====
   if (resultJobId) {
     return (
@@ -211,7 +168,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       </div>
 
       {/* Canvas 预览 */}
-      <div className="frame-canvas-wrapper" ref={wrapperRef}>
+      <div className="frame-canvas-wrapper">
         {loading && <div className="frame-loading">截帧中...</div>}
         <canvas ref={canvasRef} className="preview-canvas" />
       </div>
@@ -219,21 +176,173 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       {/* 时间轴帧选择器 */}
       <div className="timeline-bar">
         <span className="time-label">{formatTime(frameTime)}</span>
-        <input
-          type="range"
-          className="timeline-slider"
-          min={0}
-          max={duration || 0}
-          step={0.01}
-          value={frameTime}
-          onChange={(e) => {
-            const t = Number(e.target.value)
-            setFrameTime(t)
-            seekToFrame(t)
-          }}
-        />
+        <div className="timeline-track-column">
+          <div className="timeline-track-wrap">
+            <div className="timeline-range-indicator" 
+              style={{
+                left: `${duration > 0 ? (range.startFrame / (videoInfo?.fps || 30) / duration * 100) : 0}%`,
+                width: `${duration > 0 ? ((range.endFrame - range.startFrame) / (videoInfo?.fps || 30) / duration * 100) : 0}%`
+              }}
+            />
+            {/* 起点/终点标记针 */}
+            {duration > 0 && videoInfo && (
+              <>
+                <div className="timeline-marker marker-start"
+                  style={{ left: `calc(${range.startFrame / (videoInfo.fps || 30) / duration * 100}% - 1px)` }}
+                  title={`起点: 第 ${range.startFrame} 帧`}
+                >
+                  <span className="marker-label">{range.startFrame}</span>
+                  <span className="marker-dot" />
+                </div>
+                <div className="timeline-marker marker-end"
+                  style={{ left: `calc(${range.endFrame / (videoInfo.fps || 30) / duration * 100}% - 1px)` }}
+                  title={`终点: 第 ${range.endFrame} 帧`}
+                >
+                  <span className="marker-label">{range.endFrame}</span>
+                  <span className="marker-dot" />
+                </div>
+              </>
+            )}
+            <input
+              type="range"
+              className="timeline-slider"
+              min={0}
+              max={duration || 0}
+              step={0.01}
+              value={frameTime}
+              onChange={(e) => {
+                const t = Number(e.target.value)
+                setFrameTime(t)
+                seekToFrame(t)
+              }}
+            />
+          </div>
+          {/* 相似度热力图 */}
+          {similarityHeatmap && (
+            <div className="timeline-heatmap">
+              {similarityHeatmap.map((h, i) => (
+                <div
+                  key={i}
+                  className="heatmap-bar"
+                  style={{
+                    left: `${h.pct}%`,
+                    opacity: Math.max(0.08, h.opacity),
+                  }}
+                />
+              ))}
+            </div>
+          )}
+        </div>
         <span className="time-label">{formatTime(duration)}</span>
       </div>
+
+      {/* 标记起点 / 终点 / 自动检测按钮 */}
+      {videoInfo && (
+        <div className="timeline-mark-actions">
+          <button
+            className="btn-mark"
+            onClick={() => {
+              const fps = videoInfo.fps || 30
+              const frame = Math.round(frameTime * fps)
+              onRangeChange({ ...range, startFrame: Math.min(frame, range.endFrame) })
+            }}
+          >↑ 标记起点</button>
+          <span className="mark-range-info">
+            {range.startFrame} ~ {range.endFrame} 帧
+          </span>
+          <button
+            className="btn-mark"
+            onClick={() => {
+              const fps = videoInfo.fps || 30
+              const frame = Math.round(frameTime * fps)
+              onRangeChange({ ...range, endFrame: Math.max(frame, range.startFrame + 1) })
+            }}
+          >↓ 标记终点</button>
+          <button
+            className="btn-mark btn-loop"
+            onClick={async () => {
+              if (!videoInfo?.jobId) return
+              const fps = videoInfo.fps || 30
+              const sf = range.startFrame
+
+              setDetecting(true)
+              setLoopCandidates(null)
+              try {
+                const resp = await fetch('/api/video/find-loop-end', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ jobId: videoInfo.jobId, startFrame: sf })
+                })
+                if (!resp.ok) throw new Error('检测失败')
+                const data = await resp.json()
+                setLoopCandidates(data.candidates || [])
+                // 从 scores 生成相似度热力图
+                if (data.scores?.length > 0) {
+                  const totalFrames = (videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration))
+                  const minScore = Math.min(...data.scores.map(s => s.score))
+                  const maxScore = Math.max(...data.scores.map(s => s.score))
+                  const range = Math.max(maxScore - minScore, 1)
+                  // 存全局 min/max 用于候选百分比归一化
+                  setScoreRange({ min: minScore, max: maxScore })
+                  const heatmap = data.scores.map(s => ({
+                    pct: (s.frame / totalFrames) * 100,
+                    opacity: 1 - (s.score - minScore) / range,
+                  }))
+                  setSimilarityHeatmap(heatmap)
+                } else {
+                  setSimilarityHeatmap(null)
+                }
+                // 自动选中最佳候选
+                if (data.candidates?.length > 0) {
+                  onRangeChange({ ...range, endFrame: data.candidates[0].frame })
+                  seekToFrame(data.candidates[0].frame / fps)
+                }
+              } catch (err) {
+                console.error('循环检测失败:', err)
+              } finally {
+                setDetecting(false)
+              }
+            }}
+            disabled={detecting}
+          >{detecting ? '检测中...' : '🔁 自动循环'}</button>
+        </div>
+      )}
+
+      {/* 候选帧列表 */}
+      {loopCandidates && loopCandidates.length > 0 && (
+        <div className="loop-candidates">
+          <span className="candidates-label">循环候选</span>
+          <div className="candidates-list">
+            {loopCandidates.length > 0 && (() => {
+              // 用全局 scores 的 min/max 归一化到 0%-100%
+              const mn = scoreRange?.min ?? Math.min(...loopCandidates.map(c => c.score))
+              const mx = scoreRange?.max ?? Math.max(...loopCandidates.map(c => c.score))
+              const scoreRangeVal = Math.max(mx - mn, 1)
+              return loopCandidates.map((c, i) => {
+                const active = c.frame === range.endFrame
+                const fps = videoInfo?.fps || 30
+                const similarity = Math.round(100 * (mx - c.score) / scoreRangeVal)
+                return (
+                  <button
+                    key={c.frame}
+                    className={`candidate-chip ${active ? 'active' : ''} ${i === 0 ? 'best' : ''}`}
+                    onClick={() => {
+                      onRangeChange({ ...range, endFrame: c.frame })
+                      seekToFrame(c.frame / fps)
+                      setFrameTime(c.frame / fps)
+                    }}
+                    title={`第 ${c.frame} 帧 · 相似度 ${similarity}%`}
+                  >
+                    <span className="chip-frame">{c.frame}f</span>
+                    <span className="chip-time">{formatTime(c.frame / fps)}</span>
+                    <span className="chip-score">{similarity}%</span>
+                  </button>
+                )
+              })
+            })()}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

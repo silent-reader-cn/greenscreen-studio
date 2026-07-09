@@ -109,15 +109,16 @@ function probeVideo(videoPath) {
  *
  * @param {string} inputPath - 输入视频路径
  * @param {string} outputPath - 输出视频路径
- * @param {Object} params - { keying, layout, mode }
+ * @param {Object} params - { keying, layout, mode, range? }
  *   mode: 'transparent' | 'greenscreen'
+ *   range?: { startFrame: number, endFrame: number } 帧范围（可选，默认全视频）
  * @param {Function} onProgress - (current, total) => void
  * @returns {Promise<Object>} 处理结果
  */
 async function processVideo(inputPath, outputPath, params, onProgress) {
   await loadAlgorithms();
 
-  const { keying, layout, mode } = params;
+  const { keying, layout, mode, range } = params;
   const { canvasWidth, canvasHeight } = layout;
 
   // 1. 探测视频
@@ -125,7 +126,17 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   const { width: srcW, height: srcH, fps, duration, hasAudio } = info;
   const totalFrames = info.frameCount || Math.round(fps * duration);
 
-  console.log(`  📹 视频信息: ${srcW}×${srcH} @ ${fps}fps, ${duration.toFixed(1)}s, ${totalFrames} frames, audio=${hasAudio}`);
+  // 计算帧范围
+  const startFrame = range?.startFrame ?? 0;
+  const endFrame = range?.endFrame ?? totalFrames;
+  const processFrameCount = endFrame - startFrame;
+  const startTime = startFrame / fps;
+  const rangeDuration = processFrameCount / fps;
+
+  const hasRange = startFrame > 0 || endFrame < totalFrames;
+  const rangeDesc = hasRange ? ` [${startFrame}–${endFrame}帧, ${processFrameCount}帧]` : '';
+
+  console.log(`  📹 视频信息: ${srcW}×${srcH} @ ${fps}fps, ${duration.toFixed(1)}s, ${totalFrames} frames, audio=${hasAudio}${rangeDesc}`);
 
   // 2. 临时文件：提取的原始音频
   const tmpDir = path.join(os.tmpdir(), 'greenscreen-studio');
@@ -133,16 +144,19 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   // ffmpeg 在 Windows 上对反斜杠路径处理不稳定，统一用正斜杠
   const audioPath = path.join(tmpDir, `audio_${Date.now()}.m4a`).replace(/\\/g, '/');
 
-  // 3. 提取音频（如果有）
+  // 3. 提取音频（如果有）— 如果指定了范围，同时裁剪音频
   let audioExtracted = false;
   if (hasAudio) {
+    const audioArgs = [
+      ...(hasRange ? ['-ss', String(startTime)] : []),
+      '-i', inputPath,
+      '-vn', '-acodec', 'aac',
+      '-b:a', '192k',
+      ...(hasRange ? ['-t', String(rangeDuration)] : []),
+      '-y', audioPath
+    ];
     await new Promise((resolve, reject) => {
-      const ffmpeg = spawn(FFMPEG, [
-        '-i', inputPath,
-        '-vn', '-acodec', 'aac',
-        '-b:a', '192k',
-        '-y', audioPath
-      ]);
+      const ffmpeg = spawn(FFMPEG, audioArgs);
       ffmpeg.stderr.on('data', () => {});
       ffmpeg.on('close', code => {
         audioExtracted = code === 0 && fs.existsSync(audioPath);
@@ -153,10 +167,13 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   }
 
   // 4. 启动 ffmpeg 提取帧（raw RGBA pipe）
+  //    如果指定了范围，用 -ss 快速定位 + -frames:v 限制输出帧数
   const extractArgs = [
+    ...(hasRange ? ['-ss', String(startTime)] : []),
     '-i', inputPath,
     '-f', 'rawvideo',
     '-pix_fmt', 'rgba',
+    ...(hasRange ? ['-frames:v', String(processFrameCount)] : []),
     '-'
   ];
   const extractor = spawn(FFMPEG, extractArgs);
@@ -169,10 +186,10 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   encoder.stderr.on('data', d => {
     const text = d.toString();
     console.log(`  [encoder] ${text.trim().slice(0, 200)}`);
-    // 解析进度
+    // 解析进度（encoder 报告的帧号，以 processFrameCount 为总数）
     const match = text.match(/frame=\s*(\d+)/);
     if (match && onProgress) {
-      onProgress(parseInt(match[1]), totalFrames);
+      onProgress(parseInt(match[1]), processFrameCount);
     }
   });
 
@@ -224,7 +241,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
           frameIndex++;
 
           if (frameIndex % 30 === 0 && onProgress) {
-            onProgress(frameIndex, totalFrames);
+            onProgress(frameIndex, processFrameCount);
           }
         }
       }
@@ -257,12 +274,13 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
       if (pipelineError) return reject(pipelineError);
       if (code !== 0) return reject(new Error(`ffmpeg encoder exited with code ${code}`));
 
-      onProgress && onProgress(totalFrames, totalFrames);
+      onProgress && onProgress(processFrameCount, processFrameCount);
       resolve({
         frameCount: frameIndex,
-        duration: duration,
+        duration: rangeDuration || duration,
         fps: fps,
         outputSize: fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0,
+        range: hasRange ? { startFrame, endFrame, processFrameCount } : null,
       });
     });
 
@@ -395,138 +413,307 @@ function buildEncoderArgs(outputPath, mode, layout, fps, audioPath) {
 }
 
 /**
- * 导出精灵图（Sprite Sheet）：将视频帧抠像后排列成网格 PNG
+ * 从视频中找与起始帧相似的循环终点帧候选列表
  *
- * @param {string} inputPath - 视频路径
- * @param {Object} params - { keying, layout }
- * @param {Object} spriteParams
- *   frameWidth: 每个精灵格宽度 (px)
- *   frameHeight: 每个精灵格高度 (px)
- *   framesPerRow: 每行帧数
- *   maxFrames: 最大导出帧数 (默认全部)
- *   sampleEvery: 采样间隔，每隔 N 帧取一帧 (默认 1 = 每帧都取)
- * @param {Function} onProgress - (current, total) => void
- * @returns {Promise<{ buffer, frameCount, sheetWidth, sheetHeight, cols, rows }>}
+ * 使用 dHash (Difference Hash) 算法：
+ *   1. 提取帧缩略图到 (hashSize+1) × hashSize 大小（默认 9×8）
+ *   2. 对每行比较相邻像素的亮度梯度 → 64-bit 感知哈希
+ *   3. 用汉明距离比较哈希，距离越低 = 画面越相似
+ *
+ * dHash 对比纯像素/直方图的优势：
+ *   - 捕捉梯度结构 → 同一人物/构图即使微移也能匹配
+ *   - 亮度标准化 → 对不同光照鲁棒
+ *   - 64-bit 哈希极易存储和比较
+ *
+ * @param {string} inputPath - 输入视频路径
+ * @param {number} startFrame - 起始帧号
+ * @param {number} fps - 视频帧率
+ * @param {number} totalFrames - 视频总帧数
+ * @param {Object} [options]
+ * @param {number} [options.maxSearch=300] - 最大向后搜索帧数
+ * @param {number} [options.step=2] - 每隔 step 帧检查一次
+ * @param {number} [options.hashSize=16] - dHash 尺寸（默认 16 → 17×16 缩略 → 256-bit）
+ * @param {number} [options.minSpacing=12] - 候选帧之间最小帧间距
+ * @param {number} [options.maxCandidates=5] - 最多返回多少个候选
+ * @returns {Promise<{candidates: Array<{frame:number,score:number}>, scores: Array<{frame:number,score:number}>}>}
  */
-async function exportSpriteSheet(inputPath, params, spriteParams, onProgress) {
-  await loadAlgorithms();
+function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {}) {
+  const {
+    maxSearch = 300,
+    step = 2,
+    hashSize = 16,
+    minSpacing = 12,
+    maxCandidates = 5
+  } = options;
+  const endSearch = Math.min(startFrame + maxSearch, totalFrames);
+  // 连续提取：从 startFrame + step 到 endSearch - 1
+  const searchCount = Math.max(0, endSearch - startFrame - step);
+  const scaleW = hashSize + 1;  // 9 for hashSize=8
+  const scaleH = hashSize;       // 8
+  const frameBytes = scaleW * scaleH * 4; // 288 bytes — 极轻量
 
-  const { keying, layout } = params;
-  const { frameWidth, frameHeight, framesPerRow, maxFrames = Infinity, sampleEvery = 1 } = spriteParams;
-
-  // 1. 探测视频
-  const info = await probeVideo(inputPath);
-  const { width: srcW, height: srcH, fps, duration } = info;
-  const totalFrames = info.frameCount || Math.round(fps * duration);
-  // 采样后最多能取到的帧数
-  const maxSampledFrames = Math.ceil(totalFrames / sampleEvery);
-  const maxToProcess = Math.min(maxFrames, maxSampledFrames);
-  const cols = framesPerRow;
-  const rows = Math.ceil(maxToProcess / cols);
-  const sheetWidth = cols * frameWidth;
-  const sheetHeight = rows * frameHeight;
-
-  console.log(`  📹 精灵图导出: ${srcW}×${srcH} @ ${fps}fps, 总${totalFrames}帧 每${sampleEvery}帧采样 → ${maxToProcess}帧, ${cols}×${rows}=${sheetWidth}×${sheetHeight}`);
-
-  // 2. 预分配精灵图画布（透明背景）
-  const sheetCanvas = createCanvas(sheetWidth, sheetHeight);
-  const sheetCtx = sheetCanvas.getContext('2d');
-
-  // 3. ffmpeg 提取帧（raw RGBA pipe）
-  const extractArgs = ['-i', inputPath, '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'];
-  const extractor = spawn(FFMPEG, extractArgs);
-
-  const frameSize = srcW * srcH * 4;
-  const srcBuffer = Buffer.alloc(frameSize);
-
-  let frameIndex = 0;          // 已采样的输出帧计数
-  let inputFrameIndex = 0;     // 输入帧计数（含跳过的）
-  let bytesBuffered = 0;
-  let pipelineError = null;
+  if (searchCount <= 0) {
+    return Promise.resolve({
+      candidates: [],
+      scores: [],
+      message: '搜索范围过小'
+    });
+  }
 
   return new Promise((resolve, reject) => {
-    extractor.stdout.on('data', chunk => {
-      if (pipelineError) return;
-      if (frameIndex >= maxToProcess) return;
+    // 1. 提取起始帧 — 单 -ss 快速定位（17×16 分辨率的微偏几帧可以接受）
+    const startArgs = [
+      '-ss', String(startFrame / fps),
+      '-i', inputPath,
+      '-vf', `scale=${scaleW}:${scaleH}`,
+      '-vsync', '0',
+      '-f', 'rawvideo',
+      '-pix_fmt', 'rgba',
+      '-frames:v', '1',
+      '-'
+    ];
+    const startProc = spawn(FFMPEG, startArgs);
+    let startBuf = Buffer.alloc(0);
+    let startErr = '';
 
-      let offset = 0;
-      while (offset < chunk.length && frameIndex < maxToProcess) {
-        const remaining = frameSize - bytesBuffered;
-        const toCopy = Math.min(remaining, chunk.length - offset);
-        chunk.copy(srcBuffer, bytesBuffered, offset, offset + toCopy);
-        bytesBuffered += toCopy;
-        offset += toCopy;
-
-        if (bytesBuffered === frameSize) {
-          const shouldSample = (inputFrameIndex % sampleEvery === 0);
-          inputFrameIndex++;
-
-          if (shouldSample) {
-            try {
-              // 抠像 + 自动裁剪
-              const srcData = {
-                data: new Uint8ClampedArray(srcBuffer),
-                width: srcW, height: srcH,
-              };
-              let keyed = applyKeying(srcData, keying);
-              if (layout.autoCrop !== false) {
-                keyed = autoCropKeyed(keyed);
-              }
-
-              // 抠像结果放到临时 canvas
-              const tempCanvas = createCanvas(keyed.width, keyed.height);
-              const tempCtx = tempCanvas.getContext('2d');
-              const imgData = tempCtx.createImageData(keyed.width, keyed.height);
-              imgData.data.set(keyed.data);
-              tempCtx.putImageData(imgData, 0, 0);
-
-              // 计算在精灵格中的位置（等比缩放 + 居中）
-              const scale = Math.min(frameWidth / keyed.width, frameHeight / keyed.height);
-              const sw = Math.round(keyed.width * scale);
-              const sh = Math.round(keyed.height * scale);
-              const col = frameIndex % cols;
-              const row = Math.floor(frameIndex / cols);
-              const ox = col * frameWidth + Math.round((frameWidth - sw) / 2);
-              const oy = row * frameHeight + Math.round((frameHeight - sh) / 2);
-
-              sheetCtx.drawImage(tempCanvas, ox, oy, sw, sh);
-              frameIndex++;
-
-              if (frameIndex % 30 === 0 && onProgress) {
-                onProgress(frameIndex, maxToProcess);
-              }
-            } catch (e) {
-              pipelineError = e;
-              return;
-            }
-          }
-          bytesBuffered = 0;
-        }
+    startProc.stdout.on('data', d => { startBuf = Buffer.concat([startBuf, d]); });
+    startProc.stderr.on('data', d => { startErr += d.toString(); });
+    startProc.on('close', code => {
+      if (code !== 0 || startBuf.length < frameBytes) {
+        return reject(new Error(`提取起始帧失败: ${startErr.slice(0, 200)}`));
       }
-    });
 
-    extractor.on('close', () => {
-      if (pipelineError) return reject(pipelineError);
+      const referenceHash = dHashRaw(startBuf, scaleW, scaleH);
 
-      onProgress && onProgress(maxToProcess, maxToProcess);
-      const buffer = sheetCanvas.toBuffer('image/png');
-      console.log(`  ✅ 精灵图导出完成: ${frameIndex}帧, ${sheetWidth}×${sheetHeight} PNG`);
+      // 2. 扫描后续帧 — 单 -ss 批量提取
+      const scanArgs = [
+        '-ss', String((startFrame + step) / fps),
+        '-i', inputPath,
+        '-vf', `scale=${scaleW}:${scaleH}`,
+        '-vsync', '0',
+        '-f', 'rawvideo',
+        '-pix_fmt', 'rgba',
+        '-frames:v', String(searchCount),
+        '-'
+      ];
+      const scanProc = spawn(FFMPEG, scanArgs);
+      let scanBuf = Buffer.alloc(0);
+      let scanErr = '';
 
-      resolve({
-        buffer,
-        frameCount: frameIndex,
-        sheetWidth,
-        sheetHeight,
-        cols,
-        rows,
+      scanProc.stdout.on('data', d => { scanBuf = Buffer.concat([scanBuf, d]); });
+      scanProc.stderr.on('data', d => { scanErr += d.toString(); });
+      scanProc.on('close', () => {
+        const scores = [];
+
+        const total = Math.min(searchCount, Math.floor(scanBuf.length / frameBytes));
+        for (let i = 0; i < total; i++) {
+          const offset = i * frameBytes;
+          const candidateBuf = scanBuf.subarray(offset, offset + frameBytes);
+          const candidateHash = dHashRaw(candidateBuf, scaleW, scaleH);
+          // 汉明距离: 0~256，越低越相似
+          const score = hammingDistance(referenceHash, candidateHash);
+          // ffmpeg -frames:v 输出连续帧，帧号 = startFrame + step + i
+          const frameNum = startFrame + step + i;
+          scores.push({ frame: frameNum, score });
+        }
+
+        // 2b. 如果最后一帧（总帧数-1）没有被 step 覆盖到，单独补提
+        const lastFrameIdx = totalFrames - 1;
+        const lastScanned = scores.length > 0 ? scores[scores.length - 1].frame : startFrame;
+        const needTail = lastScanned < lastFrameIdx && lastFrameIdx > startFrame;
+
+        // 搜索范围结束帧号
+        const searchEndFrame = totalFrames - 1;
+
+        if (!needTail) {
+          // 3. 从 scores 中筛选最佳候选
+          const candidates = pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
+          return resolve({ candidates, scores });
+        }
+
+        // 补提最后一帧
+        const tailTime = lastFrameIdx / fps;
+        const tailArgs = [
+          '-ss', String(tailTime),
+          '-i', inputPath,
+          '-vf', `scale=${scaleW}:${scaleH}`,
+          '-vsync', '0',
+          '-f', 'rawvideo',
+          '-pix_fmt', 'rgba',
+          '-frames:v', '1',
+          '-'
+        ];
+        const tailProc = spawn(FFMPEG, tailArgs);
+        let tailBuf = Buffer.alloc(0);
+        let tailErr = '';
+        tailProc.stdout.on('data', d => { tailBuf = Buffer.concat([tailBuf, d]); });
+        tailProc.stderr.on('data', d => { tailErr += d.toString(); });
+        tailProc.on('close', () => {
+          if (tailBuf.length >= frameBytes) {
+            const tailHash = dHashRaw(tailBuf.subarray(0, frameBytes), scaleW, scaleH);
+            const tailScore = hammingDistance(referenceHash, tailHash);
+            scores.push({ frame: lastFrameIdx, score: tailScore });
+            console.log(`  📌 补提尾帧 #${lastFrameIdx} score=${tailScore}`);
+          }
+
+          // 3. 从 scores 中筛选最佳候选
+          const candidates = pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
+          resolve({ candidates, scores });
+        });
+        tailProc.on('error', () => {
+          // 尾帧提取失败不影响主结果
+          const candidates = pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
+          resolve({ candidates, scores });
+        });
       });
+      scanProc.on('error', reject);
     });
-
-    extractor.on('error', e => {
-      pipelineError = e;
-      reject(e);
-    });
+    startProc.on('error', reject);
   });
 }
 
-module.exports = { processVideo, probeVideo, exportSpriteSheet };
+/**
+ * 对 raw RGBA 像素数据计算 dHash (Difference Hash)
+ *
+ * dHash 算法步骤：
+ *   1. 接收已缩放到 (hashSize+1)×hashSize 的 RGBA 像素数据
+ *   2. 计算每个像素的亮度 (luminance)
+ *   3. 对每行比较相邻像素的亮度，左<右 → 1，否则 → 0
+ *   4. 得到 hashSize×hashSize bits
+ *
+ * @param {Buffer|Uint8Array} rawBuf - RGBA 像素数据
+ * @param {number} w - 宽度（= hashSize + 1）
+ * @param {number} h - 高度（= hashSize）
+ * @returns {Buffer} 二进制哈希（大端位序）
+ */
+function dHashRaw(rawBuf, w, h) {
+  const hashBits = (w - 1) * h; // hashSize * hashSize
+  const hashBytes = Buffer.alloc(Math.ceil(hashBits / 8));
+  let byteIdx = hashBytes.length - 1; // 从最后一个字节开始（大端）
+  let bitIdx = 0;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w - 1; x++) {
+      const idxL = (y * w + x) * 4;
+      const idxR = (y * w + x + 1) * 4;
+      const lumL = 0.299 * rawBuf[idxL] + 0.587 * rawBuf[idxL + 1] + 0.114 * rawBuf[idxL + 2];
+      const lumR = 0.299 * rawBuf[idxR] + 0.587 * rawBuf[idxR + 1] + 0.114 * rawBuf[idxR + 2];
+
+      if (lumL < lumR) {
+        hashBytes[byteIdx] |= (1 << bitIdx);
+      }
+      bitIdx++;
+      if (bitIdx >= 8) {
+        bitIdx = 0;
+        byteIdx--;
+      }
+    }
+  }
+
+  return hashBytes;
+}
+
+/**
+ * 计算两个 dHash 之间的汉明距离（越低越相似）
+ *
+ * 本质上是 XOR 后数 1-bit 的数量。
+ */
+function hammingDistance(a, b) {
+  const len = Math.min(a.length, b.length);
+  let dist = 0;
+  for (let i = 0; i < len; i++) {
+    let xor = a[i] ^ b[i];
+    while (xor) {
+      dist += xor & 1;
+      xor >>= 1;
+    }
+  }
+  return dist;
+}
+
+/**
+ * 从相似度分数数组中，用「窗口分区 + 最小间距」筛选出最佳候选帧。
+ *
+ * 策略：
+ *   a) 找出所有局部极小值（比左右相邻更相似的帧）
+ *   b) 将搜索范围分成 N 个等宽窗口
+ *   c) 每个窗口取最佳候选，保证候选覆盖整个时间轴
+ *   d) 对距离起始帧太近的候选加惩罚
+ *   e) 返回最多 maxCandidates 个候选，按分数排序
+ *
+ * @param {Array<{frame:number,score:number}>} scores
+ * @param {Object} options
+ * @param {number} options.minSpacing - 最小帧间距
+ * @param {number} options.maxCandidates - 最多返回几个
+ * @param {number} options.startFrame - 起始帧号
+ * @param {number} options.endFrame - 搜索范围结束帧
+ * @returns {Array<{frame:number,score:number}>}
+ */
+function pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, endFrame }) {
+  if (scores.length === 0) return [];
+
+  // a) 找局部极小值（比左右都低或相等）
+  const localMinima = [];
+  for (let i = 1; i < scores.length - 1; i++) {
+    if (scores[i].score <= scores[i - 1].score && scores[i].score <= scores[i + 1].score) {
+      localMinima.push(scores[i]);
+    }
+  }
+  const pool = localMinima.length > 0 ? localMinima : scores;
+
+  // b) 分成 N 个等宽窗口（N = maxCandidates），每个窗口取最佳
+  const sf = startFrame ?? 0;
+  const ef = endFrame ?? (pool.length > 0 ? pool[pool.length - 1].frame : sf + 1);
+  const searchLen = ef - sf;
+  const windowSize = searchLen / maxCandidates;
+
+  const candidates = [];
+  for (let w = 0; w < maxCandidates; w++) {
+    const wStart = sf + Math.floor(w * windowSize);
+    const wEnd = sf + Math.floor((w + 1) * windowSize);
+
+    // 该窗口内的候选帧（局部极小值 + 距起始帧足够远）
+    const inWindow = pool.filter(s =>
+      s.frame > sf + 1 &&           // 跳过紧邻起始帧
+      s.frame >= wStart && s.frame < wEnd
+    );
+
+    if (inWindow.length === 0) continue;
+
+    // 选窗口内最佳（原始分最低）
+    inWindow.sort((a, b) => a.score - b.score);
+    let best = inWindow[0];
+
+    // d) 距离惩罚：距起始帧太近的帧不可能是循环终点
+    const dist = best.frame - sf;
+    let penalty = 0;
+    if (dist > 0 && dist < minSpacing) {
+      penalty = best.score * 0.5 * (1 - dist / minSpacing);
+    }
+
+    candidates.push({
+      frame: best.frame,
+      score: best.score,
+      adjusted: best.score + penalty,
+      window: w,
+    });
+  }
+
+  // 按调整后分数排序，取 top maxCandidates
+  candidates.sort((a, b) => a.adjusted - b.adjusted);
+  const topCandidates = candidates.slice(0, maxCandidates);
+
+  // 用 minSpacing 做最终去重
+  const deduped = [];
+  for (const c of topCandidates) {
+    const tooClose = deduped.some(d => Math.abs(d.frame - c.frame) < minSpacing);
+    if (!tooClose) {
+      deduped.push(c);
+    }
+  }
+
+  // 按原始分排序返回
+  return deduped.sort((a, b) => a.score - b.score).map(c => ({ frame: c.frame, score: c.score }));
+}
+
+module.exports = { processVideo, probeVideo, findLoopEndFrame };

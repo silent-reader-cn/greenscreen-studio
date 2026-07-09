@@ -13,7 +13,7 @@ const { createCanvas, Image } = require('canvas');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { processVideo, probeVideo, exportSpriteSheet } = require('./videoProcessor.cjs');
+const { processVideo, probeVideo, findLoopEndFrame } = require('./videoProcessor.cjs');
 
 // 加载 polyfill（必须在引入 keying.js 之前）
 require('./src/lib/canvas-polyfill.js');
@@ -194,7 +194,7 @@ app.post('/api/video/upload', videoUpload.single('video'), async (req, res) => {
  * 返回 { taskId } 用于轮询进度
  */
 app.post('/api/video/process', express.json({ limit: '10mb' }), (req, res) => {
-  const { jobId, params, format } = req.body;
+  const { jobId, params, format, range } = req.body;
   const job = videoJobs.get(jobId);
   if (!job) return res.status(404).json({ error: 'job not found' });
 
@@ -202,12 +202,25 @@ app.post('/api/video/process', express.json({ limit: '10mb' }), (req, res) => {
   const ext = format || (params.mode === 'transparent' ? 'webm' : 'mp4');
   const outputPath = path.join(tmpDir, `output_${taskId}.${ext}`).replace(/\\/g, '/');
 
+  // 计算帧范围（用于初始进度显示）
+  const info = job.info;
+  const totalFrames = info.frameCount || Math.round(info.fps * info.duration);
+  const startFrame = range?.startFrame ?? 0;
+  const endFrame = range?.endFrame ?? totalFrames;
+  const processFrameCount = endFrame - startFrame;
+
   job.taskId = taskId;
   job.status = 'processing';
-  job.progress = { current: 0, total: job.info.frameCount || 0, percent: 0 };
+  job.progress = { current: 0, total: processFrameCount, percent: 0 };
   job.outputPath = outputPath;
   job.outputFormat = ext;
   job.error = null;
+  job.range = range || null;
+
+  // 如果有 range，合并到 params 中传给 processVideo
+  if (range) {
+    params.range = range;
+  }
 
   // 异步处理（不阻塞响应）
   processVideo(job.inputPath, outputPath, params, (current, total) => {
@@ -217,7 +230,8 @@ app.post('/api/video/process', express.json({ limit: '10mb' }), (req, res) => {
     .then(result => {
       job.status = 'done';
       job.result = result;
-      console.log(`  ✅ 视频处理完成: ${jobId} | ${result.frameCount} frames`);
+      const rangeInfo = range ? ` [${range.startFrame}-${range.endFrame}帧]` : '';
+      console.log(`  ✅ 视频处理完成: ${jobId} | ${result.frameCount} frames${rangeInfo}`);
     })
     .catch(err => {
       job.status = 'error';
@@ -276,58 +290,43 @@ app.get('/api/video/download/:jobId', (req, res) => {
 });
 
 /**
- * POST /api/video/export-spritesheet
- * 导出精灵图 PNG。body: { jobId, params: { keying, layout }, spriteParams: { frameWidth, frameHeight, framesPerRow, maxFrames } }
- * 返回 PNG 图片（直接以 image/png 返回），同时保存副本到 tmpDir 供下载。
+ * POST /api/video/find-loop-end
+ * 自动检测与起始帧最相似的循环终点帧
+ * body: { jobId, startFrame, options?: { maxSearch?, step?, thumbSize? } }
  */
-app.post('/api/video/export-spritesheet', express.json({ limit: '10mb' }), async (req, res) => {
+app.post('/api/video/find-loop-end', express.json({ limit: '1mb' }), async (req, res) => {
   try {
-    const { jobId, params, spriteParams } = req.body;
+    const { jobId, startFrame, options } = req.body;
     const job = videoJobs.get(jobId);
     if (!job) return res.status(404).json({ error: 'job not found' });
 
-    const { frameWidth, frameHeight, framesPerRow, maxFrames } = spriteParams;
+    const { info } = job;
+    const fps = info.fps;
+    const totalFrames = info.frameCount || Math.round(fps * info.duration);
 
-    if (!frameWidth || !frameHeight || !framesPerRow) {
-      return res.status(400).json({ error: 'frameWidth, frameHeight, framesPerRow 为必填参数' });
+    if (startFrame == null || startFrame < 0 || startFrame >= totalFrames - 1) {
+      return res.status(400).json({ error: '无效的起始帧号' });
     }
-    if (frameWidth < 8 || frameHeight < 8 || framesPerRow < 1) {
-      return res.status(400).json({ error: 'frameWidth/frameHeight 最小 8px，framesPerRow 最小 1' });
-    }
 
-    job.status = 'processing';
-    job.progress = { current: 0, total: 0, percent: 0 };
-    job.error = null;
+    console.log(`  🔍 检测循环帧: ${jobId} 起始帧=${startFrame}, 总帧=${totalFrames}`);
 
-    console.log(`  🖼️ 精灵图导出: ${jobId} | 格子 ${frameWidth}×${frameHeight}, ${framesPerRow}列`);
+    const result = await findLoopEndFrame(
+      job.inputPath,
+      startFrame,
+      fps,
+      totalFrames,
+      options || {}
+    );
 
-    const result = await exportSpriteSheet(job.inputPath, params, spriteParams, (current, total) => {
-      const percent = total > 0 ? Math.round((current / total) * 100) : 0;
-      job.progress = { current, total, percent };
-    });
+    const top = result.candidates[0] || null;
+    console.log(`  ✅ 找到 ${result.candidates.length} 个候选: ${
+      result.candidates.map(c => `#${c.frame}(${c.score.toFixed(0)})`).join(', ')
+    }`);
 
-    job.status = 'done';
-    job.progress = { current: result.frameCount, total: result.frameCount, percent: 100 };
-
-    const filename = `spritesheet_${Date.now()}.png`;
-    res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.send(result.buffer);
-
-    console.log(`  🖼️✅ 精灵图导出完成: ${result.frameCount}帧, ${result.sheetWidth}×${result.sheetHeight}`);
+    res.json(result);
   } catch (err) {
-    console.error('精灵图导出失败:', err);
-    // 尝试更新 job 状态
-    for (const [_, j] of videoJobs) {
-      if (j.jobId === req.body.jobId) {
-        j.status = 'error';
-        j.error = err.message;
-      }
-    }
-    // 如果还没发响应，发错误
-    if (!res.headersSent) {
-      res.status(500).json({ error: err.message });
-    }
+    console.error('  ❌ 循环帧检测失败:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

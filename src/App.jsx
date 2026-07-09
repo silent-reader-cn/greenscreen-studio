@@ -66,66 +66,36 @@ export default function App() {
   const [videoInfo, setVideoInfo] = useState(null)
   const [resultJobId, setResultJobId] = useState(null)
 
-  // ===== 全局拖放 =====
-  const [dragOver, setDragOver] = useState(false)
-  const [droppedVideoFile, setDroppedVideoFile] = useState(null)
+  // 视频帧范围
+  const [frameRange, setFrameRange] = useState({ startFrame: 0, endFrame: 0 })
+  const handleRangeChange = useCallback((range) => {
+    setFrameRange(range)
+  }, [])
 
-  // 切换模式时保留另一边的文件状态（不销毁）
+  // 切换模式时清空视频状态
   const switchMode = (mode) => {
     setMediaMode(mode)
+    if (mode === 'image') {
+      setVideoFile(null)
+      setVideoInfo(null)
+      setResultJobId(null)
+    }
   }
 
   const handleVideoUpload = useCallback((file, info) => {
     setVideoFile(file)
     setVideoInfo(info)
     setResultJobId(null)
+    // 新视频上传后重置帧范围为全视频
+    if (info) {
+      const totalFrames = info.frameCount || Math.round(info.fps * info.duration)
+      setFrameRange({ startFrame: 0, endFrame: totalFrames })
+    }
   }, [])
 
   const handleVideoDone = useCallback((jobId) => {
     setResultJobId(jobId)
   }, [])
-
-  // ===== 全局拖放事件（原生 document 层拦截，防止浏览器打开文件）=====
-  useEffect(() => {
-    let dragOverTimer = null;
-
-    const onDragOver = (e) => {
-      e.preventDefault();
-      if (e.dataTransfer.types?.includes('Files')) {
-        setDragOver(true);
-      }
-    };
-    const onDragLeave = (e) => {
-      e.preventDefault();
-      if (e.relatedTarget === null || !document.querySelector('.app')?.contains(e.relatedTarget)) {
-        setDragOver(false);
-      }
-    };
-    const onDrop = (e) => {
-      e.preventDefault();
-      setDragOver(false);
-
-      const file = e.dataTransfer.files[0];
-      if (!file) return;
-
-      if (file.type.startsWith('image/')) {
-        switchMode('image');
-        handleFileLoad(file);
-      } else if (file.type.startsWith('video/')) {
-        switchMode('video');
-        setDroppedVideoFile(file);
-      }
-    };
-
-    document.addEventListener('dragover', onDragOver);
-    document.addEventListener('dragleave', onDragLeave);
-    document.addEventListener('drop', onDrop);
-    return () => {
-      document.removeEventListener('dragover', onDragOver);
-      document.removeEventListener('dragleave', onDragLeave);
-      document.removeEventListener('drop', onDrop);
-    };
-  }, []);
 
   // ===== 参数变化时持久化 =====
   useEffect(() => {
@@ -169,7 +139,7 @@ export default function App() {
 
   useEffect(() => {
     renderPreview()
-  }, [renderPreview, mediaMode])
+  }, [renderPreview])
 
   // ===== 文件加载 =====
   const handleFileLoad = useCallback((file) => {
@@ -237,11 +207,10 @@ export default function App() {
             <VideoPanel
               keyingParams={keyingParams}
               layoutParams={layoutParams}
-              videoFile={videoFile}
-              videoInfo={videoInfo}
               onVideoUpload={handleVideoUpload}
               onVideoDone={handleVideoDone}
-              droppedFile={droppedVideoFile}
+              range={frameRange}
+              onRangeChange={handleRangeChange}
             />
           )}
           <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
@@ -287,6 +256,8 @@ export default function App() {
                 keyingParams={keyingParams}
                 layoutParams={layoutParams}
                 resultJobId={resultJobId}
+                range={frameRange}
+                onRangeChange={handleRangeChange}
               />
             )}
           </div>
@@ -306,17 +277,6 @@ export default function App() {
           )}
         </section>
       </main>
-
-      {/* ===== 全局拖放覆盖层 ===== */}
-      {dragOver && (
-        <div className="drop-overlay">
-          <div className="drop-overlay-content">
-            <span className="drop-overlay-icon">📁</span>
-            <p className="drop-overlay-text">放开鼠标以加载文件</p>
-            <p className="drop-overlay-hint">支持图片 (PNG/JPG/WebP) 或视频 (MP4/MOV/WebM/AVI)</p>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
