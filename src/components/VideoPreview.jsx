@@ -17,6 +17,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const [detecting, setDetecting] = useState(false)
   const [loopCandidates, setLoopCandidates] = useState(null) // [{frame, score}, ...]
   const [similarityHeatmap, setSimilarityHeatmap] = useState(null) // [{pct, opacity}, ...]
+  const [scoreRange, setScoreRange] = useState(null) // {min, max} 用于全局归一化
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -30,6 +31,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       setFrameTime(0)
       setLoopCandidates(null)
       setSimilarityHeatmap(null)
+      setScoreRange(null)
       return
     }
     const video = videoRef.current
@@ -280,6 +282,8 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
                   const minScore = Math.min(...data.scores.map(s => s.score))
                   const maxScore = Math.max(...data.scores.map(s => s.score))
                   const range = Math.max(maxScore - minScore, 1)
+                  // 存全局 min/max 用于候选百分比归一化
+                  setScoreRange({ min: minScore, max: maxScore })
                   const heatmap = data.scores.map(s => ({
                     pct: (s.frame / totalFrames) * 100,
                     opacity: 1 - (s.score - minScore) / range,
@@ -310,15 +314,14 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
           <span className="candidates-label">循环候选</span>
           <div className="candidates-list">
             {loopCandidates.length > 0 && (() => {
-              // 将原始差异分（越低越好）转为相似度百分比（越高越好）
-              const scores = loopCandidates.map(c => c.score)
-              const minSc = Math.min(...scores)
-              const maxSc = Math.max(...scores)
-              const scoreRange = Math.max(maxSc - minSc, 1)
+              // 用全局 scores 的 min/max 归一化到 0%-100%
+              const mn = scoreRange?.min ?? Math.min(...loopCandidates.map(c => c.score))
+              const mx = scoreRange?.max ?? Math.max(...loopCandidates.map(c => c.score))
+              const scoreRangeVal = Math.max(mx - mn, 1)
               return loopCandidates.map((c, i) => {
                 const active = c.frame === range.endFrame
                 const fps = videoInfo?.fps || 30
-                const similarity = Math.round(100 * (maxSc - c.score) / scoreRange)
+                const similarity = Math.round(100 * (mx - c.score) / scoreRangeVal)
                 return (
                   <button
                     key={c.frame}
