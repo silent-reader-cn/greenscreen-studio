@@ -716,4 +716,4 @@ function pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, end
   return deduped.sort((a, b) => a.score - b.score).map(c => ({ frame: c.frame, score: c.score }));
 }
 
-module.exports = { processVideo, probeVideo, findLoopEndFrame };
+module.exports = { processVideo, probeVideo, findLoopEndFrame, dHashRaw, hammingDistance, pickLoopCandidates };

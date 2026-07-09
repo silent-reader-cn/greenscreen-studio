@@ -7,6 +7,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import request from 'supertest'
 
+// Mock videoProcessor for all tests in this file
+vi.mock('../../videoProcessor.cjs', () => ({
+  processVideo: vi.fn(),
+  probeVideo: vi.fn().mockResolvedValue({
+    width: 1920, height: 1080, fps: 30, duration: 10,
+    frameCount: 300, hasAudio: true,
+  }),
+  exportSpriteSheet: vi.fn(),
+  findLoopEndFrame: vi.fn().mockResolvedValue({
+    candidates: [{ frame: 120, score: 5 }, { frame: 200, score: 12 }],
+    scores: [{ frame: 2, score: 10 }, { frame: 3, score: 15 }],
+  }),
+  dHashRaw: vi.fn(),
+  hammingDistance: vi.fn(),
+  pickLoopCandidates: vi.fn(),
+}))
+
 // ===== /api/health 端点 =====
 
 describe('GET /api/health', () => {
@@ -22,6 +39,10 @@ describe('GET /api/health', () => {
         frameCount: 300, hasAudio: true,
       }),
       exportSpriteSheet: vi.fn(),
+      findLoopEndFrame: vi.fn(),
+      dHashRaw: vi.fn(),
+      hammingDistance: vi.fn(),
+      pickLoopCandidates: vi.fn(),
     }))
 
     const mod = await import('../../server.cjs')
@@ -80,6 +101,10 @@ describe('POST /api/video/upload', () => {
         frameCount: 300, hasAudio: true,
       }),
       exportSpriteSheet: vi.fn(),
+      findLoopEndFrame: vi.fn(),
+      dHashRaw: vi.fn(),
+      hammingDistance: vi.fn(),
+      pickLoopCandidates: vi.fn(),
     }))
 
     const mod = await import('../../server.cjs')
@@ -139,6 +164,25 @@ describe('GET /api/video/download/:jobId', () => {
   it('不存在的 jobId 返回 404', async () => {
     const res = await request(app)
       .get('/api/video/download/bad-job')
+    expect(res.status).toBe(404)
+    expect(res.body).toHaveProperty('error')
+  })
+})
+
+// ===== POST /api/video/find-loop-end =====
+
+describe('POST /api/video/find-loop-end', () => {
+  let app
+
+  beforeEach(async () => {
+    const mod = await import('../../server.cjs')
+    app = mod.app
+  })
+
+  it('不存在的 jobId 返回 404', async () => {
+    const res = await request(app)
+      .post('/api/video/find-loop-end')
+      .send({ jobId: 'nonexistent', startFrame: 10 })
     expect(res.status).toBe(404)
     expect(res.body).toHaveProperty('error')
   })
