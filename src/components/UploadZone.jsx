@@ -9,23 +9,18 @@ export default function UploadZone({ onFileLoad, imageSize }) {
     }
   }
 
-  const handleDrop = (e) => {
-    e.preventDefault()
-    const file = e.dataTransfer.files[0]
-    handleFile(file)
-  }
-
   return (
     <div className="panel upload-zone">
       <h3>📁 素材上传</h3>
       <div
         className="drop-area"
         onClick={() => inputRef.current?.click()}
-        onDrop={handleDrop}
-        onDragOver={(e) => e.preventDefault()}
       >
-        <p>点击或拖拽图片到此处</p>
+        <p>点击选择图片</p>
         <p className="hint">支持 PNG / JPG / WebP</p>
+        <p className="hint" style={{ marginTop: 6, color: '#bbb' }}>
+          拖放文件到窗口任意位置也可上传
+        </p>
         <input
           ref={inputRef}
           type="file"

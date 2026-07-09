@@ -547,7 +547,7 @@ body {
 .progress-bar-container {
   width: 100%;
   height: 8px;
-  background: #e0e0d8;
+  background: #e0e0e0;
   border-radius: 4px;
   overflow: hidden;
 }
@@ -556,7 +556,7 @@ body {
   height: 100%;
   background: #3366aa;
   border-radius: 4px;
-  transition: width 0.3s ease;
+  transition: width 0.3s;
 }
 
 .progress-text {
@@ -567,12 +567,11 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* 消息提示 */
 .error-msg {
   margin-top: 10px;
-  padding: 8px 10px;
-  background: #fee;
-  border: 1px solid #fcc;
+  padding: 8px 12px;
+  background: #fff0f0;
+  border: 1px solid #ffd0d0;
   border-radius: 4px;
   font-size: 12px;
   color: #c33;
@@ -580,15 +579,14 @@ body {
 
 .success-msg {
   margin-top: 10px;
-  padding: 8px 10px;
-  background: #efe;
-  border: 1px solid #cfc;
+  padding: 8px 12px;
+  background: #f0fff0;
+  border: 1px solid #d0ffd0;
   border-radius: 4px;
   font-size: 12px;
-  color: #363;
+  color: #383;
 }
 
-/* 视频操作按钮 */
 .video-actions {
   display: flex;
   gap: 8px;
@@ -598,107 +596,181 @@ body {
 .btn-video-process,
 .btn-video-download {
   flex: 1;
-  padding: 8px;
+  padding: 10px 16px;
+  background: #1a1a1a;
+  color: #fff;
   border: none;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
+  border-radius: 6px;
+  font-size: 13px;
   cursor: pointer;
   transition: opacity 0.2s;
 }
 
-.btn-video-process {
-  background: #3366aa;
-  color: #fff;
-}
-
-.btn-video-download {
-  background: #363;
-  color: #fff;
-}
-
 .btn-video-process:hover:not(:disabled),
-.btn-video-download:hover:not(:disabled) {
+.btn-video-download:hover {
   opacity: 0.85;
 }
 
-.btn-video-process:disabled,
-.btn-video-download:disabled {
+.btn-video-process:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
 .btn-video-reset {
-  padding: 8px 12px;
+  padding: 10px 16px;
   background: #fff;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 12px;
   color: #666;
-  cursor: pointer;
-}
-
-.btn-video-reset:hover:not(:disabled) {
-  background: #f5f5f0;
-}
-
-/* 视频预览提示 */
-.video-preview-hint {
-  text-align: center;
-  color: #aaa;
-}
-
-/* ===== 视频帧预览 ===== */
-.video-frame-preview {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  max-height: 100%;
-}
-
-.preview-tabs {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.mini-tab {
-  padding: 6px 16px;
-  background: #fff;
   border: 1px solid #ddd;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 12px;
-  color: #666;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.mini-tab.active {
-  background: #1a1a1a;
-  color: #fff;
-  border-color: #1a1a1a;
+.btn-video-reset:hover:not(:disabled) {
+  border-color: #999;
+  background: #f5f5f0;
 }
 
-.frame-canvas-wrapper {
+.btn-video-reset:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ===== 视频预览（VideoPreview） ===== */
+.video-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+}
+
+.video-preview-canvas {
+  max-width: 100%;
+  max-height: 65vh;
+  border-radius: 6px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.12);
+  background: repeating-conic-gradient(#e0e0e0 0% 25%, #c0c0c0 0% 50%) 0 0 / 20px 20px;
+}
+
+.video-empty-state {
+  text-align: center;
+  color: #aaa;
+}
+
+.video-empty-state .hint {
+  font-size: 13px;
+  color: #bbb;
+  margin-top: 4px;
+}
+
+/* 帧信息 */
+.frame-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 600px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.frame-label {
+  font-size: 12px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+  min-width: fit-content;
+}
+
+.frame-nav-btn {
+  padding: 6px 12px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 36px;
+  text-align: center;
+}
+
+.frame-nav-btn:hover:not(:disabled) {
+  border-color: #999;
+  background: #f5f5f0;
+}
+
+.frame-nav-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.frame-slider {
   flex: 1;
+  min-width: 180px;
+  -webkit-appearance: none;
+  height: 6px;
+  background: #ddd;
+  border-radius: 3px;
+  outline: none;
+}
+
+.frame-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #3366aa;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+
+/* 处理中覆盖层 */
+.processing-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255,255,255,0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 10;
+  border-radius: 6px;
+}
+
+.processing-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #e0e0e0;
+  border-top-color: #3366aa;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.processing-text {
+  font-size: 14px;
+  color: #333;
+  font-weight: 500;
+}
+
+/* 时间轴容器 */
+.timeline-container {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.frame-canvas-wrapper .preview-canvas {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  background: #fff;
-  border: 1px solid #e0e0d8;
-  border-radius: 4px;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  width: 100%;
 }
 
 .frame-loading {
@@ -790,4 +862,58 @@ body {
 .canvas-wrapper::-webkit-scrollbar-thumb {
   background: #ccc;
   border-radius: 3px;
+}
+
+/* ===== 全局拖放覆盖层 ===== */
+.drop-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.drop-overlay-content {
+  background: #fff;
+  border-radius: 16px;
+  padding: 48px 64px;
+  text-align: center;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  animation: scaleIn 0.2s ease-out;
+}
+
+.drop-overlay-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 16px;
+}
+
+.drop-overlay-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+}
+
+.drop-overlay-hint {
+  font-size: 13px;
+  color: #888;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.92); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
 }

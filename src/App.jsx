@@ -64,7 +64,11 @@ export default function App() {
   // 视频预览状态
   const [videoFile, setVideoFile] = useState(null)
   const [videoInfo, setVideoInfo] = useState(null)
-  const [resultJobId, setResultJobId] = useState(null)  // 处理完成后用于播放
+  const [resultJobId, setResultJobId] = useState(null)
+
+  // ===== 全局拖放 =====
+  const [dragOver, setDragOver] = useState(false)
+  const [droppedVideoFile, setDroppedVideoFile] = useState(null)
 
   // 切换模式时清空视频状态
   const switchMode = (mode) => {
@@ -84,6 +88,42 @@ export default function App() {
 
   const handleVideoDone = useCallback((jobId) => {
     setResultJobId(jobId)
+  }, [])
+
+  // ===== 全局拖放事件 =====
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.dataTransfer.types?.includes('Files')) {
+      setDragOver(true)
+    }
+  }, [])
+
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault()
+    // 只有当真正离开 app 容器时才隐藏覆盖层
+    if (e.currentTarget === e.target || e.relatedTarget === null) {
+      setDragOver(false)
+    }
+  }, [])
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+
+    const file = e.dataTransfer.files[0]
+    if (!file) return
+
+    if (file.type.startsWith('image/')) {
+      // 图片 → 切到图片模式并加载
+      switchMode('image')
+      handleFileLoad(file)
+    } else if (file.type.startsWith('video/')) {
+      // 视频 → 切到视频模式并触发上传
+      switchMode('video')
+      setDroppedVideoFile(file)
+    }
   }, [])
 
   // ===== 参数变化时持久化 =====
@@ -182,7 +222,12 @@ export default function App() {
   }
 
   return (
-    <div className="app">
+    <div
+      className="app"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <header className="header">
         <h1>🎬 绿幕素材标准化工具</h1>
         <p>抠像 · 等比缩放 · 居中重排 · 导出</p>
@@ -198,6 +243,7 @@ export default function App() {
               layoutParams={layoutParams}
               onVideoUpload={handleVideoUpload}
               onVideoDone={handleVideoDone}
+              droppedFile={droppedVideoFile}
             />
           )}
           <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
@@ -262,6 +308,17 @@ export default function App() {
           )}
         </section>
       </main>
+
+      {/* ===== 全局拖放覆盖层 ===== */}
+      {dragOver && (
+        <div className="drop-overlay">
+          <div className="drop-overlay-content">
+            <span className="drop-overlay-icon">📁</span>
+            <p className="drop-overlay-text">放开鼠标以加载文件</p>
+            <p className="drop-overlay-hint">支持图片 (PNG/JPG/WebP) 或视频 (MP4/MOV/WebM/AVI)</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
