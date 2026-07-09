@@ -6,15 +6,15 @@ const FMT_OPTIONS = [
   { value: 'mp4', label: 'MP4 (绿幕合成, H.264)', transparent: false },
 ]
 
-export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, onVideoDone }) {
-  const [mode, setMode] = useState('transparent')      // 'transparent' | 'greenscreen'
+export default function VideoPanel({ keyingParams, layoutParams, videoFile: propFile, videoInfo: propInfo, onVideoUpload, onVideoDone }) {
+  const [mode, setMode] = useState('transparent')
   const [format, setFormat] = useState('webm')
   const [exportMode, setExportMode] = useState('video') // 'video' | 'spritesheet'
-  const [videoInfo, setVideoInfo] = useState(null)       // {jobId, width, height, fps, duration, hasAudio}
+  const [videoInfo, setVideoInfo] = useState(propInfo || null)       // {jobId, width, height, fps, duration, hasAudio}
   const [uploading, setUploading] = useState(false)
   const [processing, setProcessing] = useState(false)
   const [progress, setProgress] = useState({ current: 0, total: 0, percent: 0 })
-  const [status, setStatus] = useState('')               // 'idle'|'uploaded'|'processing'|'done'|'error'
+  const [status, setStatus] = useState(propInfo ? 'uploaded' : '')  // 从 props 恢复
   const [errorMsg, setErrorMsg] = useState('')
 
   // 精灵图参数
@@ -30,7 +30,7 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
 
   const inputRef = useRef(null)
   const pollTimerRef = useRef(null)
-  const fileRef = useRef(null)
+  const fileRef = useRef(propFile || null)  // 从 props 恢复
 
   // 格式选项根据 mode 过滤
   const availableFormats = FMT_OPTIONS.filter(f => mode === 'transparent' ? f.transparent : !f.transparent)

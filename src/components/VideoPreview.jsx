@@ -14,11 +14,28 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const [frameImageData, setFrameImageData] = useState(null)  // 当前帧的 ImageData
   const [loading, setLoading] = useState(false)
   const [previewTab, setPreviewTab] = useState('keying')  // 'keying' | 'composite'
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 }) // frame-canvas-wrapper 尺寸
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
+  const wrapperRef = useRef(null)
   const tempCanvasRef = useRef(document.createElement('canvas'))
   const seekRef = useRef(false)  // 防止 seek 事件重入
+
+  // ===== 监听容器尺寸变化 =====
+  useEffect(() => {
+    const wrapper = wrapperRef.current
+    if (!wrapper) return
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect
+        setContainerSize({ w: width, h: height })
+      }
+    })
+    observer.observe(wrapper)
+    return () => observer.disconnect()
+  }, [])
 
   // ===== 视频加载 =====
   useEffect(() => {
@@ -106,6 +123,39 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
     }
   }, [frameImageData, keyingParams, layoutParams, previewTab])
 
+  // ===== Canvas CSS 尺寸自适应（确保竖屏视频不被裁剪）=====
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || containerSize.w === 0 || containerSize.h === 0) return
+
+    // 获取视频帧的原始宽高比
+    let aspect
+    if (frameImageData) {
+      aspect = frameImageData.width / frameImageData.height
+    } else {
+      const video = videoRef.current
+      if (!video || !video.videoWidth) return
+      aspect = video.videoWidth / video.videoHeight
+    }
+
+    // 计算 fit=contain 的 CSS 尺寸
+    const cw = containerSize.w
+    const ch = containerSize.h
+    let cssW, cssH
+    if (aspect > cw / ch) {
+      // 宽比容器宽 → 宽度受限
+      cssW = cw
+      cssH = cw / aspect
+    } else {
+      // 高比容器高 → 高度受限
+      cssH = ch
+      cssW = ch * aspect
+    }
+
+    canvas.style.width = `${Math.round(cssW)}px`
+    canvas.style.height = `${Math.round(cssH)}px`
+  }, [frameImageData, containerSize])
+
   // ===== 处理完成后切换到播放器 =====
   if (resultJobId) {
     return (
@@ -161,7 +211,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       </div>
 
       {/* Canvas 预览 */}
-      <div className="frame-canvas-wrapper">
+      <div className="frame-canvas-wrapper" ref={wrapperRef}>
         {loading && <div className="frame-loading">截帧中...</div>}
         <canvas ref={canvasRef} className="preview-canvas" />
       </div>

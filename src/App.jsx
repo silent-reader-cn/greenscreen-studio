@@ -66,14 +66,9 @@ export default function App() {
   const [videoInfo, setVideoInfo] = useState(null)
   const [resultJobId, setResultJobId] = useState(null)  // 处理完成后用于播放
 
-  // 切换模式时清空视频状态
+  // 切换模式时保留另一边的文件状态（不销毁）
   const switchMode = (mode) => {
     setMediaMode(mode)
-    if (mode === 'image') {
-      setVideoFile(null)
-      setVideoInfo(null)
-      setResultJobId(null)
-    }
   }
 
   const handleVideoUpload = useCallback((file, info) => {
@@ -196,6 +191,8 @@ export default function App() {
             <VideoPanel
               keyingParams={keyingParams}
               layoutParams={layoutParams}
+              videoFile={videoFile}
+              videoInfo={videoInfo}
               onVideoUpload={handleVideoUpload}
               onVideoDone={handleVideoDone}
             />
