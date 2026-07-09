@@ -637,8 +637,8 @@ function pickLoopCandidates(scores, { minSpacing, maxCandidates }) {
     }
   }
 
-  // d) 按帧号排序返回
-  return selected.sort((a, b) => a.frame - b.frame);
+  // d) 按相似度排序（最佳候选在前）
+  return selected.sort((a, b) => a.score - b.score);
 }
 
 module.exports = { processVideo, probeVideo, findLoopEndFrame };

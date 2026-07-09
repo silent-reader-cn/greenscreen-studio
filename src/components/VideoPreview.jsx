@@ -242,7 +242,6 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
               if (!videoInfo?.jobId) return
               const fps = videoInfo.fps || 30
               const sf = range.startFrame
-              if (sf <= 0) return
 
               setDetecting(true)
               setLoopCandidates(null)
@@ -266,7 +265,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
                 setDetecting(false)
               }
             }}
-            disabled={detecting || range.startFrame <= 0}
+            disabled={detecting}
           >{detecting ? '检测中...' : '🔁 自动循环'}</button>
         </div>
       )}
