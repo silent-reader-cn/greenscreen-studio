@@ -446,7 +446,8 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
     maxCandidates = 5
   } = options;
   const endSearch = Math.min(startFrame + maxSearch, totalFrames);
-  const searchCount = Math.floor((endSearch - startFrame - 1) / step);
+  // 连续提取：从 startFrame + step 到 endSearch - 1
+  const searchCount = Math.max(0, endSearch - startFrame - step);
   const scaleW = hashSize + 1;  // 9 for hashSize=8
   const scaleH = hashSize;       // 8
   const frameBytes = scaleW * scaleH * 4; // 288 bytes — 极轻量
@@ -460,14 +461,12 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
   }
 
   return new Promise((resolve, reject) => {
-    // 1. 提取起始帧 — 用双 -ss 保证帧精确
-    const preRoll = Math.min(1.0, startFrame / fps / 2);
-    const fineSeek = preRoll;
+    // 1. 提取起始帧 — 单 -ss 快速定位（17×16 分辨率的微偏几帧可以接受）
     const startArgs = [
-      '-ss', String(Math.max(0, startFrame / fps - preRoll)),
+      '-ss', String(startFrame / fps),
       '-i', inputPath,
-      '-ss', String(fineSeek),
       '-vf', `scale=${scaleW}:${scaleH}`,
+      '-vsync', '0',
       '-f', 'rawvideo',
       '-pix_fmt', 'rgba',
       '-frames:v', '1',
@@ -486,14 +485,12 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
 
       const referenceHash = dHashRaw(startBuf, scaleW, scaleH);
 
-      // 2. 扫描后续帧 — 同样双 -ss
-      const scanStartTime = (startFrame + step) / fps;
-      const scanPreRoll = Math.min(1.0, scanStartTime / 2);
+      // 2. 扫描后续帧 — 单 -ss 批量提取
       const scanArgs = [
-        '-ss', String(Math.max(0, scanStartTime - scanPreRoll)),
+        '-ss', String((startFrame + step) / fps),
         '-i', inputPath,
-        '-ss', String(scanPreRoll),
         '-vf', `scale=${scaleW}:${scaleH}`,
+        '-vsync', '0',
         '-f', 'rawvideo',
         '-pix_fmt', 'rgba',
         '-frames:v', String(searchCount),
@@ -513,9 +510,10 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
           const offset = i * frameBytes;
           const candidateBuf = scanBuf.subarray(offset, offset + frameBytes);
           const candidateHash = dHashRaw(candidateBuf, scaleW, scaleH);
-          // 汉明距离: 0-64，越低越相似
+          // 汉明距离: 0~256，越低越相似
           const score = hammingDistance(referenceHash, candidateHash);
-          const frameNum = startFrame + (i + 1) * step;
+          // ffmpeg -frames:v 输出连续帧，帧号 = startFrame + step + i
+          const frameNum = startFrame + step + i;
           scores.push({ frame: frameNum, score });
         }
 
@@ -535,12 +533,11 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
 
         // 补提最后一帧
         const tailTime = lastFrameIdx / fps;
-        const tailPreRoll = Math.min(1.0, tailTime / 2);
         const tailArgs = [
-          '-ss', String(Math.max(0, tailTime - tailPreRoll)),
+          '-ss', String(tailTime),
           '-i', inputPath,
-          '-ss', String(tailPreRoll),
           '-vf', `scale=${scaleW}:${scaleH}`,
+          '-vsync', '0',
           '-f', 'rawvideo',
           '-pix_fmt', 'rgba',
           '-frames:v', '1',
