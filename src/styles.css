@@ -638,13 +638,19 @@ body {
   z-index: 1;
 }
 
-/* 相似度热力图 — 独立色带 */
+/* 相似度热力图 — 与轨道同宽 */
+.timeline-track-column {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .timeline-heatmap {
   position: relative;
   width: 100%;
-  max-width: 600px;
   height: 14px;
-  margin: 2px auto 0;
   border-radius: 3px;
   overflow: hidden;
   background: #f0f0e8;

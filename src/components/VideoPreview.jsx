@@ -174,64 +174,65 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       {/* 时间轴帧选择器 */}
       <div className="timeline-bar">
         <span className="time-label">{formatTime(frameTime)}</span>
-        <div className="timeline-track-wrap">
-          <div className="timeline-range-indicator" 
-            style={{
-              left: `${duration > 0 ? (range.startFrame / (videoInfo?.fps || 30) / duration * 100) : 0}%`,
-              width: `${duration > 0 ? ((range.endFrame - range.startFrame) / (videoInfo?.fps || 30) / duration * 100) : 0}%`
-            }}
-          />
-          {/* 起点/终点标记针 */}
-          {duration > 0 && videoInfo && (
-            <>
-              <div className="timeline-marker marker-start"
-                style={{ left: `calc(${range.startFrame / (videoInfo.fps || 30) / duration * 100}% - 1px)` }}
-                title={`起点: 第 ${range.startFrame} 帧`}
-              >
-                <span className="marker-label">{range.startFrame}</span>
-                <span className="marker-dot" />
-              </div>
-              <div className="timeline-marker marker-end"
-                style={{ left: `calc(${range.endFrame / (videoInfo.fps || 30) / duration * 100}% - 1px)` }}
-                title={`终点: 第 ${range.endFrame} 帧`}
-              >
-                <span className="marker-label">{range.endFrame}</span>
-                <span className="marker-dot" />
-              </div>
-            </>
+        <div className="timeline-track-column">
+          <div className="timeline-track-wrap">
+            <div className="timeline-range-indicator" 
+              style={{
+                left: `${duration > 0 ? (range.startFrame / (videoInfo?.fps || 30) / duration * 100) : 0}%`,
+                width: `${duration > 0 ? ((range.endFrame - range.startFrame) / (videoInfo?.fps || 30) / duration * 100) : 0}%`
+              }}
+            />
+            {/* 起点/终点标记针 */}
+            {duration > 0 && videoInfo && (
+              <>
+                <div className="timeline-marker marker-start"
+                  style={{ left: `calc(${range.startFrame / (videoInfo.fps || 30) / duration * 100}% - 1px)` }}
+                  title={`起点: 第 ${range.startFrame} 帧`}
+                >
+                  <span className="marker-label">{range.startFrame}</span>
+                  <span className="marker-dot" />
+                </div>
+                <div className="timeline-marker marker-end"
+                  style={{ left: `calc(${range.endFrame / (videoInfo.fps || 30) / duration * 100}% - 1px)` }}
+                  title={`终点: 第 ${range.endFrame} 帧`}
+                >
+                  <span className="marker-label">{range.endFrame}</span>
+                  <span className="marker-dot" />
+                </div>
+              </>
+            )}
+            <input
+              type="range"
+              className="timeline-slider"
+              min={0}
+              max={duration || 0}
+              step={0.01}
+              value={frameTime}
+              onChange={(e) => {
+                const t = Number(e.target.value)
+                setFrameTime(t)
+                seekToFrame(t)
+              }}
+            />
+          </div>
+          {/* 相似度热力图 */}
+          {similarityHeatmap && (
+            <div className="timeline-heatmap">
+              {similarityHeatmap.map((h, i) => (
+                <div
+                  key={i}
+                  className="heatmap-bar"
+                  style={{
+                    left: `${h.pct}%`,
+                    opacity: Math.max(0.08, h.opacity),
+                  }}
+                />
+              ))}
+            </div>
           )}
-          <input
-            type="range"
-            className="timeline-slider"
-            min={0}
-            max={duration || 0}
-            step={0.01}
-            value={frameTime}
-            onChange={(e) => {
-              const t = Number(e.target.value)
-              setFrameTime(t)
-              seekToFrame(t)
-            }}
-          />
         </div>
         <span className="time-label">{formatTime(duration)}</span>
       </div>
-
-      {/* 相似度热力图 */}
-      {similarityHeatmap && (
-        <div className="timeline-heatmap">
-          {similarityHeatmap.map((h, i) => (
-            <div
-              key={i}
-              className="heatmap-bar"
-              style={{
-                left: `${h.pct}%`,
-                opacity: Math.max(0.08, h.opacity),
-              }}
-            />
-          ))}
-        </div>
-      )}
 
       {/* 标记起点 / 终点 / 自动检测按钮 */}
       {videoInfo && (
