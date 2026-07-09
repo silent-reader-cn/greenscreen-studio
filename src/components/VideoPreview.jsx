@@ -309,26 +309,34 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
         <div className="loop-candidates">
           <span className="candidates-label">循环候选</span>
           <div className="candidates-list">
-            {loopCandidates.map((c, i) => {
-              const active = c.frame === range.endFrame
-              const fps = videoInfo?.fps || 30
-              return (
-                <button
-                  key={c.frame}
-                  className={`candidate-chip ${active ? 'active' : ''} ${i === 0 ? 'best' : ''}`}
-                  onClick={() => {
-                    onRangeChange({ ...range, endFrame: c.frame })
-                    seekToFrame(c.frame / fps)
-                    setFrameTime(c.frame / fps)
-                  }}
-                  title={`第 ${c.frame} 帧 · 差异分 ${c.score.toFixed(0)}`}
-                >
-                  <span className="chip-frame">{c.frame}f</span>
-                  <span className="chip-time">{formatTime(c.frame / fps)}</span>
-                  <span className="chip-score">{c.score.toFixed(0)}</span>
-                </button>
-              )
-            })}
+            {loopCandidates.length > 0 && (() => {
+              // 将原始差异分（越低越好）转为相似度百分比（越高越好）
+              const scores = loopCandidates.map(c => c.score)
+              const minSc = Math.min(...scores)
+              const maxSc = Math.max(...scores)
+              const scoreRange = Math.max(maxSc - minSc, 1)
+              return loopCandidates.map((c, i) => {
+                const active = c.frame === range.endFrame
+                const fps = videoInfo?.fps || 30
+                const similarity = Math.round(100 * (maxSc - c.score) / scoreRange)
+                return (
+                  <button
+                    key={c.frame}
+                    className={`candidate-chip ${active ? 'active' : ''} ${i === 0 ? 'best' : ''}`}
+                    onClick={() => {
+                      onRangeChange({ ...range, endFrame: c.frame })
+                      seekToFrame(c.frame / fps)
+                      setFrameTime(c.frame / fps)
+                    }}
+                    title={`第 ${c.frame} 帧 · 相似度 ${similarity}%`}
+                  >
+                    <span className="chip-frame">{c.frame}f</span>
+                    <span className="chip-time">{formatTime(c.frame / fps)}</span>
+                    <span className="chip-score">{similarity}%</span>
+                  </button>
+                )
+              })
+            })()}
           </div>
         </div>
       )}
