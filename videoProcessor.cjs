@@ -434,7 +434,7 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
   const {
     maxSearch = 300,
     step = 2,
-    thumbSize = 64,
+    thumbSize = 32,
     minSpacing = 12,
     maxCandidates = 5
   } = options;
@@ -451,10 +451,14 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
   }
 
   return new Promise((resolve, reject) => {
-    // 1. 提取起始帧（缩略尺寸）
+    // 1. 提取起始帧 — 用双 -ss 保证帧精确
+    //    -ss <近似的> -i input -ss <精确微调> : 先快跳到附近，再精确解码到目标帧
+    const preRoll = Math.min(1.0, startFrame / fps / 2); // 最多回退 1s
+    const fineSeek = preRoll;
     const startArgs = [
-      '-ss', String(startFrame / fps),
+      '-ss', String(Math.max(0, startFrame / fps - preRoll)),
       '-i', inputPath,
+      '-ss', String(fineSeek),
       '-vf', `scale=${thumbSize}:${thumbSize}`,
       '-f', 'rawvideo',
       '-pix_fmt', 'rgba',
@@ -474,11 +478,13 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
 
       const reference = new Uint8Array(startBuf.subarray(0, frameBytes));
 
-      // 2. 扫描后续帧（批量提取缩略 raw RGBA）
-      const scanTime = (startFrame + step) / fps;
+      // 2. 扫描后续帧 — 同样双 -ss 保证每帧精确
+      const scanStartTime = (startFrame + step) / fps;
+      const scanPreRoll = Math.min(1.0, scanStartTime / 2);
       const scanArgs = [
-        '-ss', String(scanTime),
+        '-ss', String(Math.max(0, scanStartTime - scanPreRoll)),
         '-i', inputPath,
+        '-ss', String(scanPreRoll),
         '-vf', `scale=${thumbSize}:${thumbSize}`,
         '-f', 'rawvideo',
         '-pix_fmt', 'rgba',
@@ -498,7 +504,8 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
         for (let i = 0; i < total; i++) {
           const offset = i * frameBytes;
           const candidate = new Uint8Array(scanBuf.subarray(offset, offset + frameBytes));
-          const score = pixelDiff(reference, candidate);
+          // 用直方图差异代替像素级对比，对微小平移更鲁棒
+          const score = histogramDiff(reference, candidate);
           const frameNum = startFrame + (i + 1) * step;
           scores.push({ frame: frameNum, score });
         }
@@ -566,18 +573,55 @@ function pickLoopCandidates(scores, { minSpacing, maxCandidates }) {
 }
 
 /**
- * 计算两帧缩略图之间的平均 RGB 差异（越低越相似）
+ * 用颜色直方图比较两帧的感知相似度（越低越相似）
+ *
+ * 将每帧的 RGB 像素分到 4×4×4=64 个 bin 中，
+ * 用卡方距离测量直方图差异。对物体的微小平移、
+ * 抖动不敏感，更适合找视觉上相似的循环帧。
+ *
+ * 返回卡方距离 (0 ~ 正无穷)，典型值 < 20 为非常相似，
+ * < 50 为较相似，> 200 为差异很大。
  */
-function pixelDiff(a, b) {
-  let total = 0;
+function histogramDiff(a, b) {
+  const BINS = 4;          // 每通道 4 个 bin → 4×4×4 = 64
+  const STEP = 256 / BINS; // 64
+  const totalBins = BINS * BINS * BINS;
+
+  const histA = new Float64Array(totalBins);
+  const histB = new Float64Array(totalBins);
+
   const pixelCount = a.length / 4;
+
   for (let i = 0; i < a.length; i += 4) {
-    total += Math.abs(a[i] - b[i])     // R
-         + Math.abs(a[i + 1] - b[i + 1]) // G
-         + Math.abs(a[i + 2] - b[i + 2]); // B
-    // 跳过 Alpha 通道
+    // 跳过 Alpha 通道 (i+3)
+    const rA = Math.min(Math.floor(a[i] / STEP), BINS - 1);
+    const gA = Math.min(Math.floor(a[i + 1] / STEP), BINS - 1);
+    const bA = Math.min(Math.floor(a[i + 2] / STEP), BINS - 1);
+    histA[rA * BINS * BINS + gA * BINS + bA]++;
+
+    const rB = Math.min(Math.floor(b[i] / STEP), BINS - 1);
+    const gB = Math.min(Math.floor(b[i + 1] / STEP), BINS - 1);
+    const bB = Math.min(Math.floor(b[i + 2] / STEP), BINS - 1);
+    histB[rB * BINS * BINS + gB * BINS + bB]++;
   }
-  return total / pixelCount; // 平均每像素 RGB 差异 (0-765)
+
+  // 归一化到 [0, 1]（除以像素数）
+  for (let i = 0; i < totalBins; i++) {
+    histA[i] /= pixelCount;
+    histB[i] /= pixelCount;
+  }
+
+  // 卡方距离: Σ (A-B)² / (A+B+ε)
+  let chi2 = 0;
+  for (let i = 0; i < totalBins; i++) {
+    const sum = histA[i] + histB[i];
+    if (sum > 1e-10) {
+      const diff = histA[i] - histB[i];
+      chi2 += (diff * diff) / sum;
+    }
+  }
+
+  return chi2;
 }
 
 module.exports = { processVideo, probeVideo, findLoopEndFrame };
