@@ -764,6 +764,19 @@ body {
   color: #3366aa;
 }
 
+.btn-play-loop {
+  color: #3366aa;
+  border-color: #b8c9e6;
+  min-width: 72px;
+}
+
+.btn-play-loop:hover,
+.btn-play-loop.active {
+  border-color: #3366aa;
+  color: #fff;
+  background: #3366aa;
+}
+
 .btn-loop {
   color: #2a6;
   border-color: #b8e6c8;

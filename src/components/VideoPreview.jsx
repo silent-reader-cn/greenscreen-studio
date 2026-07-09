@@ -18,14 +18,116 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const [loopCandidates, setLoopCandidates] = useState(null) // [{frame, score}, ...]
   const [similarityHeatmap, setSimilarityHeatmap] = useState(null) // [{pct, opacity}, ...]
   const [scoreRange, setScoreRange] = useState(null) // {min, max} 用于全局归一化
+  const [isLoopPlaying, setIsLoopPlaying] = useState(false)
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const tempCanvasRef = useRef(document.createElement('canvas'))
   const seekRef = useRef(false)  // 防止 seek 事件重入
+  const playbackRef = useRef({ playing: false, rafId: null })
+
+  // ===== 从当前视频时间截取一帧 =====
+  const captureCurrentFrame = useCallback(() => {
+    const video = videoRef.current
+    if (!video || !video.videoWidth) return false
+
+    const w = video.videoWidth
+    const h = video.videoHeight
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const ctx = canvas.getContext('2d')
+    ctx.drawImage(video, 0, 0)
+    const imgData = ctx.getImageData(0, 0, w, h)
+    setFrameImageData(imgData)
+    return true
+  }, [])
+
+  const stopLoopPreview = useCallback(() => {
+    playbackRef.current.playing = false
+    if (playbackRef.current.rafId) {
+      cancelAnimationFrame(playbackRef.current.rafId)
+      playbackRef.current.rafId = null
+    }
+    const video = videoRef.current
+    if (video) video.pause()
+    setIsLoopPlaying(false)
+  }, [])
+
+  // ===== Seek 到指定时间并提取帧 =====
+  const seekToFrame = useCallback((time) => {
+    const video = videoRef.current
+    if (!video || !video.videoWidth) return
+    if (seekRef.current) return
+    seekRef.current = true
+
+    setLoading(true)
+    video.currentTime = Math.min(time, video.duration || 0)
+  }, [])
+
+  const onSeeked = useCallback(() => {
+    const captured = captureCurrentFrame()
+    setLoading(false)
+    seekRef.current = false
+    if (!captured) return
+  }, [captureCurrentFrame])
+
+  const renderLoopFrame = useCallback(() => {
+    const video = videoRef.current
+    if (!video || !playbackRef.current.playing) return
+
+    const fps = videoInfo?.fps || 30
+    const startFrame = Math.max(0, range?.startFrame ?? 0)
+    const endFrame = Math.max(range?.endFrame ?? startFrame + 1, startFrame + 1)
+    const startTime = startFrame / fps
+    const endTime = Math.min(video.duration || endFrame / fps, endFrame / fps)
+
+    if (video.currentTime >= endTime) {
+      video.currentTime = startTime
+    }
+
+    if (captureCurrentFrame()) {
+      setFrameTime(video.currentTime)
+    }
+
+    playbackRef.current.rafId = requestAnimationFrame(renderLoopFrame)
+  }, [captureCurrentFrame, range, videoInfo])
+
+  const toggleLoopPreview = useCallback(async () => {
+    if (isLoopPlaying) {
+      stopLoopPreview()
+      return
+    }
+
+    const video = videoRef.current
+    if (!video || !videoInfo) return
+
+    const fps = videoInfo.fps || 30
+    const startFrame = Math.max(0, range?.startFrame ?? 0)
+    const endFrame = Math.max(range?.endFrame ?? startFrame + 1, startFrame + 1)
+    const startTime = startFrame / fps
+    const endTime = Math.min(video.duration || endFrame / fps, endFrame / fps)
+
+    if (video.currentTime < startTime || video.currentTime >= endTime) {
+      video.currentTime = startTime
+      setFrameTime(startTime)
+    }
+
+    try {
+      setLoading(false)
+      playbackRef.current.playing = true
+      setIsLoopPlaying(true)
+      await video.play()
+      playbackRef.current.rafId = requestAnimationFrame(renderLoopFrame)
+    } catch (err) {
+      console.error('区间循环播放失败:', err)
+      stopLoopPreview()
+    }
+  }, [isLoopPlaying, range, renderLoopFrame, stopLoopPreview, videoInfo])
 
   // ===== 视频加载 =====
   useEffect(() => {
+    stopLoopPreview()
     if (!videoFile) {
       setFrameImageData(null)
       setFrameTime(0)
@@ -50,39 +152,13 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       video.removeEventListener('loadeddata', onLoaded)
       URL.revokeObjectURL(url)
     }
-  }, [videoFile])
+  }, [seekToFrame, stopLoopPreview, videoFile])
 
-  // ===== Seek 到指定时间并提取帧 =====
-  const seekToFrame = useCallback((time) => {
-    const video = videoRef.current
-    if (!video || !video.videoWidth) return
-    if (seekRef.current) return
-    seekRef.current = true
+  useEffect(() => () => stopLoopPreview(), [stopLoopPreview])
 
-    setLoading(true)
-    video.currentTime = Math.min(time, video.duration || 0)
-  }, [])
-
-  const onSeeked = useCallback(() => {
-    const video = videoRef.current
-    if (!video || !video.videoWidth) {
-      seekRef.current = false
-      return
-    }
-
-    // 截取当前帧到 canvas
-    const w = video.videoWidth
-    const h = video.videoHeight
-    const canvas = document.createElement('canvas')
-    canvas.width = w
-    canvas.height = h
-    const ctx = canvas.getContext('2d')
-    ctx.drawImage(video, 0, 0)
-    const imgData = ctx.getImageData(0, 0, w, h)
-    setFrameImageData(imgData)
-    setLoading(false)
-    seekRef.current = false
-  }, [])
+  useEffect(() => {
+    if (resultJobId) stopLoopPreview()
+  }, [resultJobId, stopLoopPreview])
 
   // ===== 实时抠像预览（参数变化时重新渲染）=====
   useEffect(() => {
@@ -211,6 +287,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
               step={0.01}
               value={frameTime}
               onChange={(e) => {
+                stopLoopPreview()
                 const t = Number(e.target.value)
                 setFrameTime(t)
                 seekToFrame(t)
@@ -240,8 +317,14 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       {videoInfo && (
         <div className="timeline-mark-actions">
           <button
+            className={`btn-mark btn-play-loop ${isLoopPlaying ? 'active' : ''}`}
+            onClick={toggleLoopPreview}
+            title="播放当前帧范围，循环预览区间效果"
+          >{isLoopPlaying ? '暂停区间' : '播放区间'}</button>
+          <button
             className="btn-mark"
             onClick={() => {
+              stopLoopPreview()
               const fps = videoInfo.fps || 30
               const frame = Math.round(frameTime * fps)
               onRangeChange({ ...range, startFrame: Math.min(frame, range.endFrame) })
@@ -253,6 +336,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
           <button
             className="btn-mark"
             onClick={() => {
+              stopLoopPreview()
               const fps = videoInfo.fps || 30
               const frame = Math.round(frameTime * fps)
               onRangeChange({ ...range, endFrame: Math.max(frame, range.startFrame + 1) })
@@ -261,6 +345,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
           <button
             className="btn-mark btn-loop"
             onClick={async () => {
+              stopLoopPreview()
               if (!videoInfo?.jobId) return
               const fps = videoInfo.fps || 30
               const sf = range.startFrame
@@ -327,6 +412,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
                     key={c.frame}
                     className={`candidate-chip ${active ? 'active' : ''} ${i === 0 ? 'best' : ''}`}
                     onClick={() => {
+                      stopLoopPreview()
                       onRangeChange({ ...range, endFrame: c.frame })
                       seekToFrame(c.frame / fps)
                       setFrameTime(c.frame / fps)
