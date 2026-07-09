@@ -175,21 +175,6 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       <div className="timeline-bar">
         <span className="time-label">{formatTime(frameTime)}</span>
         <div className="timeline-track-wrap">
-          {/* 相似度热力图背景 */}
-          {similarityHeatmap && (
-            <div className="heatmap-layer">
-              {similarityHeatmap.map((h, i) => (
-                <div
-                  key={i}
-                  className="heatmap-bar"
-                  style={{
-                    left: `${h.pct}%`,
-                    opacity: Math.max(0.05, h.opacity),
-                  }}
-                />
-              ))}
-            </div>
-          )}
           <div className="timeline-range-indicator" 
             style={{
               left: `${duration > 0 ? (range.startFrame / (videoInfo?.fps || 30) / duration * 100) : 0}%`,
@@ -231,6 +216,22 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
         </div>
         <span className="time-label">{formatTime(duration)}</span>
       </div>
+
+      {/* 相似度热力图 */}
+      {similarityHeatmap && (
+        <div className="timeline-heatmap">
+          {similarityHeatmap.map((h, i) => (
+            <div
+              key={i}
+              className="heatmap-bar"
+              style={{
+                left: `${h.pct}%`,
+                opacity: Math.max(0.08, h.opacity),
+              }}
+            />
+          ))}
+        </div>
+      )}
 
       {/* 标记起点 / 终点 / 自动检测按钮 */}
       {videoInfo && (
