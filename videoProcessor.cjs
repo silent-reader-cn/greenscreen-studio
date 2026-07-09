@@ -432,7 +432,7 @@ function buildEncoderArgs(outputPath, mode, layout, fps, audioPath) {
  * @param {Object} [options]
  * @param {number} [options.maxSearch=300] - 最大向后搜索帧数
  * @param {number} [options.step=2] - 每隔 step 帧检查一次
- * @param {number} [options.hashSize=8] - dHash 尺寸（默认 8 → 9×8 缩略 → 64-bit）
+ * @param {number} [options.hashSize=16] - dHash 尺寸（默认 16 → 17×16 缩略 → 256-bit）
  * @param {number} [options.minSpacing=12] - 候选帧之间最小帧间距
  * @param {number} [options.maxCandidates=5] - 最多返回多少个候选
  * @returns {Promise<{candidates: Array<{frame:number,score:number}>, scores: Array<{frame:number,score:number}>}>}
@@ -441,7 +441,7 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
   const {
     maxSearch = 300,
     step = 2,
-    hashSize = 8,
+    hashSize = 16,
     minSpacing = 12,
     maxCandidates = 5
   } = options;
@@ -519,10 +519,55 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
           scores.push({ frame: frameNum, score });
         }
 
-        // 3. 从 scores 中筛选最佳候选
-        const candidates = pickLoopCandidates(scores, { minSpacing, maxCandidates });
+        // 2b. 如果最后一帧（总帧数-1）没有被 step 覆盖到，单独补提
+        const lastFrameIdx = totalFrames - 1;
+        const lastScanned = scores.length > 0 ? scores[scores.length - 1].frame : startFrame;
+        const needTail = lastScanned < lastFrameIdx && lastFrameIdx > startFrame;
 
-        resolve({ candidates, scores });
+        // 搜索范围结束帧号
+        const searchEndFrame = totalFrames - 1;
+
+        if (!needTail) {
+          // 3. 从 scores 中筛选最佳候选
+          const candidates = pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
+          return resolve({ candidates, scores });
+        }
+
+        // 补提最后一帧
+        const tailTime = lastFrameIdx / fps;
+        const tailPreRoll = Math.min(1.0, tailTime / 2);
+        const tailArgs = [
+          '-ss', String(Math.max(0, tailTime - tailPreRoll)),
+          '-i', inputPath,
+          '-ss', String(tailPreRoll),
+          '-vf', `scale=${scaleW}:${scaleH}`,
+          '-f', 'rawvideo',
+          '-pix_fmt', 'rgba',
+          '-frames:v', '1',
+          '-'
+        ];
+        const tailProc = spawn(FFMPEG, tailArgs);
+        let tailBuf = Buffer.alloc(0);
+        let tailErr = '';
+        tailProc.stdout.on('data', d => { tailBuf = Buffer.concat([tailBuf, d]); });
+        tailProc.stderr.on('data', d => { tailErr += d.toString(); });
+        tailProc.on('close', () => {
+          if (tailBuf.length >= frameBytes) {
+            const tailHash = dHashRaw(tailBuf.subarray(0, frameBytes), scaleW, scaleH);
+            const tailScore = hammingDistance(referenceHash, tailHash);
+            scores.push({ frame: lastFrameIdx, score: tailScore });
+            console.log(`  📌 补提尾帧 #${lastFrameIdx} score=${tailScore}`);
+          }
+
+          // 3. 从 scores 中筛选最佳候选
+          const candidates = pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
+          resolve({ candidates, scores });
+        });
+        tailProc.on('error', () => {
+          // 尾帧提取失败不影响主结果
+          const candidates = pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
+          resolve({ candidates, scores });
+        });
       });
       scanProc.on('error', reject);
     });
@@ -537,34 +582,33 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
  *   1. 接收已缩放到 (hashSize+1)×hashSize 的 RGBA 像素数据
  *   2. 计算每个像素的亮度 (luminance)
  *   3. 对每行比较相邻像素的亮度，左<右 → 1，否则 → 0
- *   4. 得到 hashSize×hashSize bits（默认 8×8=64 bits）
+ *   4. 得到 hashSize×hashSize bits
  *
  * @param {Buffer|Uint8Array} rawBuf - RGBA 像素数据
  * @param {number} w - 宽度（= hashSize + 1）
  * @param {number} h - 高度（= hashSize）
- * @returns {Buffer} 8 字节的哈希（高 4 字节在前，大端）
+ * @returns {Buffer} 二进制哈希（大端位序）
  */
 function dHashRaw(rawBuf, w, h) {
-  const hashBytes = Buffer.alloc(8); // 64 bits
-  let byteIdx = 0;
+  const hashBits = (w - 1) * h; // hashSize * hashSize
+  const hashBytes = Buffer.alloc(Math.ceil(hashBits / 8));
+  let byteIdx = hashBytes.length - 1; // 从最后一个字节开始（大端）
   let bitIdx = 0;
 
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w - 1; x++) {
-      // 取相邻两个像素的亮度
       const idxL = (y * w + x) * 4;
       const idxR = (y * w + x + 1) * 4;
       const lumL = 0.299 * rawBuf[idxL] + 0.587 * rawBuf[idxL + 1] + 0.114 * rawBuf[idxL + 2];
       const lumR = 0.299 * rawBuf[idxR] + 0.587 * rawBuf[idxR + 1] + 0.114 * rawBuf[idxR + 2];
 
-      // 左 < 右 → bit=1（梯度上升）
       if (lumL < lumR) {
-        hashBytes[7 - byteIdx] |= (1 << bitIdx);
+        hashBytes[byteIdx] |= (1 << bitIdx);
       }
       bitIdx++;
       if (bitIdx >= 8) {
         bitIdx = 0;
-        byteIdx++;
+        byteIdx--;
       }
     }
   }
@@ -573,15 +617,15 @@ function dHashRaw(rawBuf, w, h) {
 }
 
 /**
- * 计算两个 dHash 之间的汉明距离（0-64，越低越相似）
+ * 计算两个 dHash 之间的汉明距离（越低越相似）
  *
  * 本质上是 XOR 后数 1-bit 的数量。
  */
 function hammingDistance(a, b) {
+  const len = Math.min(a.length, b.length);
   let dist = 0;
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < len; i++) {
     let xor = a[i] ^ b[i];
-    // 逐位 popcount
     while (xor) {
       dist += xor & 1;
       xor >>= 1;
@@ -591,54 +635,88 @@ function hammingDistance(a, b) {
 }
 
 /**
- * 从相似度分数数组中，用「局部极小值 + 最小间距」筛选出最佳候选帧。
+ * 从相似度分数数组中，用「窗口分区 + 最小间距」筛选出最佳候选帧。
  *
  * 策略：
  *   a) 找出所有局部极小值（比左右相邻更相似的帧）
- *   b) 按相似度排序（分数越低越相似）
- *   c) 用最小间距去重，避免扎堆推荐同一画面附近的多帧
- *   d) 返回最多 maxCandidates 个候选，按帧号排序
+ *   b) 将搜索范围分成 N 个等宽窗口
+ *   c) 每个窗口取最佳候选，保证候选覆盖整个时间轴
+ *   d) 对距离起始帧太近的候选加惩罚
+ *   e) 返回最多 maxCandidates 个候选，按分数排序
  *
  * @param {Array<{frame:number,score:number}>} scores
  * @param {Object} options
  * @param {number} options.minSpacing - 最小帧间距
  * @param {number} options.maxCandidates - 最多返回几个
+ * @param {number} options.startFrame - 起始帧号
+ * @param {number} options.endFrame - 搜索范围结束帧
  * @returns {Array<{frame:number,score:number}>}
  */
-function pickLoopCandidates(scores, { minSpacing, maxCandidates }) {
+function pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, endFrame }) {
   if (scores.length === 0) return [];
 
-  // a) 找局部极小值
+  // a) 找局部极小值（比左右都低或相等）
   const localMinima = [];
   for (let i = 1; i < scores.length - 1; i++) {
-    const prev = scores[i - 1];
-    const cur = scores[i];
-    const next = scores[i + 1];
-    // cur 比左右都低（或相等），就是局部极小值
-    if (cur.score <= prev.score && cur.score <= next.score) {
-      // 避免平坦区域的连续等同帧全部入选：只取中间的那个
-      localMinima.push(cur);
+    if (scores[i].score <= scores[i - 1].score && scores[i].score <= scores[i + 1].score) {
+      localMinima.push(scores[i]);
     }
   }
-
-  // 如果没有任何局部极小值（单调递增或递减），回退到全局最低
   const pool = localMinima.length > 0 ? localMinima : scores;
 
-  // b) 按相似度排序（低分在前）
-  const sorted = [...pool].sort((a, b) => a.score - b.score);
+  // b) 分成 N 个等宽窗口（N = maxCandidates），每个窗口取最佳
+  const sf = startFrame ?? 0;
+  const ef = endFrame ?? (pool.length > 0 ? pool[pool.length - 1].frame : sf + 1);
+  const searchLen = ef - sf;
+  const windowSize = searchLen / maxCandidates;
 
-  // c) 贪心选择：拿最高分（最低 diff）的，筛掉太近的
-  const selected = [];
-  for (const cand of sorted) {
-    const tooClose = selected.some(s => Math.abs(s.frame - cand.frame) < minSpacing);
+  const candidates = [];
+  for (let w = 0; w < maxCandidates; w++) {
+    const wStart = sf + Math.floor(w * windowSize);
+    const wEnd = sf + Math.floor((w + 1) * windowSize);
+
+    // 该窗口内的候选帧（局部极小值 + 距起始帧足够远）
+    const inWindow = pool.filter(s =>
+      s.frame > sf + 1 &&           // 跳过紧邻起始帧
+      s.frame >= wStart && s.frame < wEnd
+    );
+
+    if (inWindow.length === 0) continue;
+
+    // 选窗口内最佳（原始分最低）
+    inWindow.sort((a, b) => a.score - b.score);
+    let best = inWindow[0];
+
+    // d) 距离惩罚：距起始帧太近的帧不可能是循环终点
+    const dist = best.frame - sf;
+    let penalty = 0;
+    if (dist > 0 && dist < minSpacing) {
+      penalty = best.score * 0.5 * (1 - dist / minSpacing);
+    }
+
+    candidates.push({
+      frame: best.frame,
+      score: best.score,
+      adjusted: best.score + penalty,
+      window: w,
+    });
+  }
+
+  // 按调整后分数排序，取 top maxCandidates
+  candidates.sort((a, b) => a.adjusted - b.adjusted);
+  const topCandidates = candidates.slice(0, maxCandidates);
+
+  // 用 minSpacing 做最终去重
+  const deduped = [];
+  for (const c of topCandidates) {
+    const tooClose = deduped.some(d => Math.abs(d.frame - c.frame) < minSpacing);
     if (!tooClose) {
-      selected.push(cand);
-      if (selected.length >= maxCandidates) break;
+      deduped.push(c);
     }
   }
 
-  // d) 按相似度排序（最佳候选在前）
-  return selected.sort((a, b) => a.score - b.score);
+  // 按原始分排序返回
+  return deduped.sort((a, b) => a.score - b.score).map(c => ({ frame: c.frame, score: c.score }));
 }
 
 module.exports = { processVideo, probeVideo, findLoopEndFrame };
