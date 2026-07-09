@@ -539,6 +539,40 @@ body {
   border-color: #999;
 }
 
+/* 精灵图参数 */
+.sprite-params {
+  margin-bottom: 12px;
+}
+.sprite-param-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.sprite-param-row label {
+  font-size: 11px;
+  color: #888;
+  white-space: nowrap;
+}
+.sprite-param-row input {
+  width: 60px;
+  padding: 4px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #333;
+  outline: none;
+  text-align: center;
+}
+.sprite-param-row input:focus {
+  border-color: #888;
+}
+.sprite-hint {
+  font-size: 11px;
+  color: #aaa;
+  white-space: nowrap;
+}
+
 /* 进度条 */
 .progress-section {
   margin-top: 12px;

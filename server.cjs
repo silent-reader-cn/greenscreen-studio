@@ -13,7 +13,7 @@ const { createCanvas, Image } = require('canvas');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { processVideo, probeVideo } = require('./videoProcessor.cjs');
+const { processVideo, probeVideo, exportSpriteSheet } = require('./videoProcessor.cjs');
 
 // 加载 polyfill（必须在引入 keying.js 之前）
 require('./src/lib/canvas-polyfill.js');
@@ -273,6 +273,62 @@ app.get('/api/video/download/:jobId', (req, res) => {
       } catch (e) {}
     }, 5000);
   });
+});
+
+/**
+ * POST /api/video/export-spritesheet
+ * 导出精灵图 PNG。body: { jobId, params: { keying, layout }, spriteParams: { frameWidth, frameHeight, framesPerRow, maxFrames } }
+ * 返回 PNG 图片（直接以 image/png 返回），同时保存副本到 tmpDir 供下载。
+ */
+app.post('/api/video/export-spritesheet', express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    const { jobId, params, spriteParams } = req.body;
+    const job = videoJobs.get(jobId);
+    if (!job) return res.status(404).json({ error: 'job not found' });
+
+    const { frameWidth, frameHeight, framesPerRow, maxFrames } = spriteParams;
+
+    if (!frameWidth || !frameHeight || !framesPerRow) {
+      return res.status(400).json({ error: 'frameWidth, frameHeight, framesPerRow 为必填参数' });
+    }
+    if (frameWidth < 8 || frameHeight < 8 || framesPerRow < 1) {
+      return res.status(400).json({ error: 'frameWidth/frameHeight 最小 8px，framesPerRow 最小 1' });
+    }
+
+    job.status = 'processing';
+    job.progress = { current: 0, total: 0, percent: 0 };
+    job.error = null;
+
+    console.log(`  🖼️ 精灵图导出: ${jobId} | 格子 ${frameWidth}×${frameHeight}, ${framesPerRow}列`);
+
+    const result = await exportSpriteSheet(job.inputPath, params, spriteParams, (current, total) => {
+      const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+      job.progress = { current, total, percent };
+    });
+
+    job.status = 'done';
+    job.progress = { current: result.frameCount, total: result.frameCount, percent: 100 };
+
+    const filename = `spritesheet_${Date.now()}.png`;
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(result.buffer);
+
+    console.log(`  🖼️✅ 精灵图导出完成: ${result.frameCount}帧, ${result.sheetWidth}×${result.sheetHeight}`);
+  } catch (err) {
+    console.error('精灵图导出失败:', err);
+    // 尝试更新 job 状态
+    for (const [_, j] of videoJobs) {
+      if (j.jobId === req.body.jobId) {
+        j.status = 'error';
+        j.error = err.message;
+      }
+    }
+    // 如果还没发响应，发错误
+    if (!res.headersSent) {
+      res.status(500).json({ error: err.message });
+    }
+  }
 });
 
 function getVideoMime(ext) {
