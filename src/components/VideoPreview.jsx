@@ -16,6 +16,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const [previewTab, setPreviewTab] = useState('keying')  // 'keying' | 'composite'
   const [detecting, setDetecting] = useState(false)
   const [loopCandidates, setLoopCandidates] = useState(null) // [{frame, score}, ...]
+  const [similarityHeatmap, setSimilarityHeatmap] = useState(null) // [{pct, opacity}, ...]
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -27,6 +28,8 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
     if (!videoFile) {
       setFrameImageData(null)
       setFrameTime(0)
+      setLoopCandidates(null)
+      setSimilarityHeatmap(null)
       return
     }
     const video = videoRef.current
@@ -172,6 +175,21 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       <div className="timeline-bar">
         <span className="time-label">{formatTime(frameTime)}</span>
         <div className="timeline-track-wrap">
+          {/* 相似度热力图背景 */}
+          {similarityHeatmap && (
+            <div className="heatmap-layer">
+              {similarityHeatmap.map((h, i) => (
+                <div
+                  key={i}
+                  className="heatmap-bar"
+                  style={{
+                    left: `${h.pct}%`,
+                    opacity: Math.max(0.05, h.opacity),
+                  }}
+                />
+              ))}
+            </div>
+          )}
           <div className="timeline-range-indicator" 
             style={{
               left: `${duration > 0 ? (range.startFrame / (videoInfo?.fps || 30) / duration * 100) : 0}%`,
@@ -254,6 +272,20 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
                 if (!resp.ok) throw new Error('检测失败')
                 const data = await resp.json()
                 setLoopCandidates(data.candidates || [])
+                // 从 scores 生成相似度热力图
+                if (data.scores?.length > 0) {
+                  const totalFrames = (videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration))
+                  const minScore = Math.min(...data.scores.map(s => s.score))
+                  const maxScore = Math.max(...data.scores.map(s => s.score))
+                  const range = Math.max(maxScore - minScore, 1)
+                  const heatmap = data.scores.map(s => ({
+                    pct: (s.frame / totalFrames) * 100,
+                    opacity: 1 - (s.score - minScore) / range,
+                  }))
+                  setSimilarityHeatmap(heatmap)
+                } else {
+                  setSimilarityHeatmap(null)
+                }
                 // 自动选中最佳候选
                 if (data.candidates?.length > 0) {
                   onRangeChange({ ...range, endFrame: data.candidates[0].frame })

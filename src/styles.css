@@ -638,6 +638,30 @@ body {
   z-index: 1;
 }
 
+/* 相似度热力图 */
+.heatmap-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: stretch;
+  pointer-events: none;
+  z-index: 0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.heatmap-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #3366aa;
+  border-radius: 1px;
+}
+
 /* 起点/终点标记针 */
 .timeline-marker {
   position: absolute;
