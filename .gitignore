@@ -6,3 +6,4 @@ electron-dev.log
 test-*.png
 gen-test*.cjs
 .DS_Store
+logs/
