@@ -760,6 +760,84 @@ body {
   text-align: center;
 }
 
+/* 循环候选帧列表 */
+.loop-candidates {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 600px;
+  justify-content: center;
+  padding: 4px 0;
+}
+
+.candidates-label {
+  font-size: 10px;
+  color: #888;
+  white-space: nowrap;
+}
+
+.candidates-list {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 2px 0;
+}
+
+.candidate-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 4px 8px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-width: 48px;
+}
+
+.candidate-chip:hover {
+  border-color: #3366aa;
+  background: #f0f5ff;
+}
+
+.candidate-chip.active {
+  border-color: #3366aa;
+  background: #e8effa;
+  box-shadow: 0 0 0 1px #3366aa;
+}
+
+.candidate-chip.best {
+  border-color: #2a6;
+  background: #f0faf4;
+}
+
+.candidate-chip.best.active {
+  border-color: #2a6;
+  box-shadow: 0 0 0 1px #2a6;
+}
+
+.chip-frame {
+  font-size: 11px;
+  font-weight: 600;
+  color: #333;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip-time {
+  font-size: 9px;
+  color: #888;
+}
+
+.chip-score {
+  font-size: 9px;
+  color: #2a6;
+  font-weight: 500;
+}
+
 /* 进度条 */
 .progress-section {
   margin-top: 12px;

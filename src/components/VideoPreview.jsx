@@ -15,6 +15,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const [loading, setLoading] = useState(false)
   const [previewTab, setPreviewTab] = useState('keying')  // 'keying' | 'composite'
   const [detecting, setDetecting] = useState(false)
+  const [loopCandidates, setLoopCandidates] = useState(null) // [{frame, score}, ...]
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -244,6 +245,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
               if (sf <= 0) return
 
               setDetecting(true)
+              setLoopCandidates(null)
               try {
                 const resp = await fetch('/api/video/find-loop-end', {
                   method: 'POST',
@@ -252,8 +254,11 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
                 })
                 if (!resp.ok) throw new Error('检测失败')
                 const data = await resp.json()
-                if (data.bestFrame && data.bestFrame > sf) {
-                  onRangeChange({ ...range, endFrame: data.bestFrame })
+                setLoopCandidates(data.candidates || [])
+                // 自动选中最佳候选
+                if (data.candidates?.length > 0) {
+                  onRangeChange({ ...range, endFrame: data.candidates[0].frame })
+                  seekToFrame(data.candidates[0].frame / fps)
                 }
               } catch (err) {
                 console.error('循环检测失败:', err)
@@ -263,6 +268,35 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
             }}
             disabled={detecting || range.startFrame <= 0}
           >{detecting ? '检测中...' : '🔁 自动循环'}</button>
+        </div>
+      )}
+
+      {/* 候选帧列表 */}
+      {loopCandidates && loopCandidates.length > 0 && (
+        <div className="loop-candidates">
+          <span className="candidates-label">循环候选</span>
+          <div className="candidates-list">
+            {loopCandidates.map((c, i) => {
+              const active = c.frame === range.endFrame
+              const fps = videoInfo?.fps || 30
+              return (
+                <button
+                  key={c.frame}
+                  className={`candidate-chip ${active ? 'active' : ''} ${i === 0 ? 'best' : ''}`}
+                  onClick={() => {
+                    onRangeChange({ ...range, endFrame: c.frame })
+                    seekToFrame(c.frame / fps)
+                    setFrameTime(c.frame / fps)
+                  }}
+                  title={`第 ${c.frame} 帧 · 差异分 ${c.score.toFixed(0)}`}
+                >
+                  <span className="chip-frame">{c.frame}f</span>
+                  <span className="chip-time">{formatTime(c.frame / fps)}</span>
+                  <span className="chip-score">{c.score.toFixed(0)}</span>
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>

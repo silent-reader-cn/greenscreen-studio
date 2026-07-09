@@ -318,7 +318,10 @@ app.post('/api/video/find-loop-end', express.json({ limit: '1mb' }), async (req,
       options || {}
     );
 
-    console.log(`  ✅ 最佳循环帧: ${result.bestFrame} (差异分=${result.bestScore.toFixed(1)}, 扫描了${result.searchCount}帧)`);
+    const top = result.candidates[0] || null;
+    console.log(`  ✅ 找到 ${result.candidates.length} 个候选: ${
+      result.candidates.map(c => `#${c.frame}(${c.score.toFixed(0)})`).join(', ')
+    }`);
 
     res.json(result);
   } catch (err) {
