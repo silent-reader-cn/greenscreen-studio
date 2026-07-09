@@ -90,41 +90,47 @@ export default function App() {
     setResultJobId(jobId)
   }, [])
 
-  // ===== 全局拖放事件 =====
-  const handleDragOver = useCallback((e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (e.dataTransfer.types?.includes('Files')) {
-      setDragOver(true)
-    }
-  }, [])
+  // ===== 全局拖放事件（原生 document 层拦截，防止浏览器打开文件）=====
+  useEffect(() => {
+    let dragOverTimer = null;
 
-  const handleDragLeave = useCallback((e) => {
-    e.preventDefault()
-    // 只有当真正离开 app 容器时才隐藏覆盖层
-    if (e.currentTarget === e.target || e.relatedTarget === null) {
-      setDragOver(false)
-    }
-  }, [])
+    const onDragOver = (e) => {
+      e.preventDefault();
+      if (e.dataTransfer.types?.includes('Files')) {
+        setDragOver(true);
+      }
+    };
+    const onDragLeave = (e) => {
+      e.preventDefault();
+      if (e.relatedTarget === null || !document.querySelector('.app')?.contains(e.relatedTarget)) {
+        setDragOver(false);
+      }
+    };
+    const onDrop = (e) => {
+      e.preventDefault();
+      setDragOver(false);
 
-  const handleDrop = useCallback((e) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragOver(false)
+      const file = e.dataTransfer.files[0];
+      if (!file) return;
 
-    const file = e.dataTransfer.files[0]
-    if (!file) return
+      if (file.type.startsWith('image/')) {
+        switchMode('image');
+        handleFileLoad(file);
+      } else if (file.type.startsWith('video/')) {
+        switchMode('video');
+        setDroppedVideoFile(file);
+      }
+    };
 
-    if (file.type.startsWith('image/')) {
-      // 图片 → 切到图片模式并加载
-      switchMode('image')
-      handleFileLoad(file)
-    } else if (file.type.startsWith('video/')) {
-      // 视频 → 切到视频模式并触发上传
-      switchMode('video')
-      setDroppedVideoFile(file)
-    }
-  }, [])
+    document.addEventListener('dragover', onDragOver);
+    document.addEventListener('dragleave', onDragLeave);
+    document.addEventListener('drop', onDrop);
+    return () => {
+      document.removeEventListener('dragover', onDragOver);
+      document.removeEventListener('dragleave', onDragLeave);
+      document.removeEventListener('drop', onDrop);
+    };
+  }, []);
 
   // ===== 参数变化时持久化 =====
   useEffect(() => {
@@ -222,12 +228,7 @@ export default function App() {
   }
 
   return (
-    <div
-      className="app"
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
+    <div className="app">
       <header className="header">
         <h1>🎬 绿幕素材标准化工具</h1>
         <p>抠像 · 等比缩放 · 居中重排 · 导出</p>
