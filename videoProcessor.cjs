@@ -415,8 +415,15 @@ function buildEncoderArgs(outputPath, mode, layout, fps, audioPath) {
 /**
  * 从视频中找与起始帧相似的循环终点帧候选列表
  *
- * 将帧缩略到 thumbSize×thumbSize 后逐像素比较 RGB，
- * 用局部极小值检测 + 最小间距过滤，返回多个有间隔的最佳候选。
+ * 使用 dHash (Difference Hash) 算法：
+ *   1. 提取帧缩略图到 (hashSize+1) × hashSize 大小（默认 9×8）
+ *   2. 对每行比较相邻像素的亮度梯度 → 64-bit 感知哈希
+ *   3. 用汉明距离比较哈希，距离越低 = 画面越相似
+ *
+ * dHash 对比纯像素/直方图的优势：
+ *   - 捕捉梯度结构 → 同一人物/构图即使微移也能匹配
+ *   - 亮度标准化 → 对不同光照鲁棒
+ *   - 64-bit 哈希极易存储和比较
  *
  * @param {string} inputPath - 输入视频路径
  * @param {number} startFrame - 起始帧号
@@ -424,9 +431,9 @@ function buildEncoderArgs(outputPath, mode, layout, fps, audioPath) {
  * @param {number} totalFrames - 视频总帧数
  * @param {Object} [options]
  * @param {number} [options.maxSearch=300] - 最大向后搜索帧数
- * @param {number} [options.step=2] - 每隔 step 帧检查一次（兼顾速度与精度）
- * @param {number} [options.thumbSize=64] - 缩略图尺寸
- * @param {number} [options.minSpacing=12] - 候选帧之间最小帧间距（避免扎堆，默认 ~0.4s@30fps）
+ * @param {number} [options.step=2] - 每隔 step 帧检查一次
+ * @param {number} [options.hashSize=8] - dHash 尺寸（默认 8 → 9×8 缩略 → 64-bit）
+ * @param {number} [options.minSpacing=12] - 候选帧之间最小帧间距
  * @param {number} [options.maxCandidates=5] - 最多返回多少个候选
  * @returns {Promise<{candidates: Array<{frame:number,score:number}>, scores: Array<{frame:number,score:number}>}>}
  */
@@ -434,13 +441,15 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
   const {
     maxSearch = 300,
     step = 2,
-    thumbSize = 32,
+    hashSize = 8,
     minSpacing = 12,
     maxCandidates = 5
   } = options;
   const endSearch = Math.min(startFrame + maxSearch, totalFrames);
   const searchCount = Math.floor((endSearch - startFrame - 1) / step);
-  const frameBytes = thumbSize * thumbSize * 4;
+  const scaleW = hashSize + 1;  // 9 for hashSize=8
+  const scaleH = hashSize;       // 8
+  const frameBytes = scaleW * scaleH * 4; // 288 bytes — 极轻量
 
   if (searchCount <= 0) {
     return Promise.resolve({
@@ -452,14 +461,13 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
 
   return new Promise((resolve, reject) => {
     // 1. 提取起始帧 — 用双 -ss 保证帧精确
-    //    -ss <近似的> -i input -ss <精确微调> : 先快跳到附近，再精确解码到目标帧
-    const preRoll = Math.min(1.0, startFrame / fps / 2); // 最多回退 1s
+    const preRoll = Math.min(1.0, startFrame / fps / 2);
     const fineSeek = preRoll;
     const startArgs = [
       '-ss', String(Math.max(0, startFrame / fps - preRoll)),
       '-i', inputPath,
       '-ss', String(fineSeek),
-      '-vf', `scale=${thumbSize}:${thumbSize}`,
+      '-vf', `scale=${scaleW}:${scaleH}`,
       '-f', 'rawvideo',
       '-pix_fmt', 'rgba',
       '-frames:v', '1',
@@ -476,16 +484,16 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
         return reject(new Error(`提取起始帧失败: ${startErr.slice(0, 200)}`));
       }
 
-      const reference = new Uint8Array(startBuf.subarray(0, frameBytes));
+      const referenceHash = dHashRaw(startBuf, scaleW, scaleH);
 
-      // 2. 扫描后续帧 — 同样双 -ss 保证每帧精确
+      // 2. 扫描后续帧 — 同样双 -ss
       const scanStartTime = (startFrame + step) / fps;
       const scanPreRoll = Math.min(1.0, scanStartTime / 2);
       const scanArgs = [
         '-ss', String(Math.max(0, scanStartTime - scanPreRoll)),
         '-i', inputPath,
         '-ss', String(scanPreRoll),
-        '-vf', `scale=${thumbSize}:${thumbSize}`,
+        '-vf', `scale=${scaleW}:${scaleH}`,
         '-f', 'rawvideo',
         '-pix_fmt', 'rgba',
         '-frames:v', String(searchCount),
@@ -503,9 +511,10 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
         const total = Math.min(searchCount, Math.floor(scanBuf.length / frameBytes));
         for (let i = 0; i < total; i++) {
           const offset = i * frameBytes;
-          const candidate = new Uint8Array(scanBuf.subarray(offset, offset + frameBytes));
-          // 用直方图差异代替像素级对比，对微小平移更鲁棒
-          const score = histogramDiff(reference, candidate);
+          const candidateBuf = scanBuf.subarray(offset, offset + frameBytes);
+          const candidateHash = dHashRaw(candidateBuf, scaleW, scaleH);
+          // 汉明距离: 0-64，越低越相似
+          const score = hammingDistance(referenceHash, candidateHash);
           const frameNum = startFrame + (i + 1) * step;
           scores.push({ frame: frameNum, score });
         }
@@ -519,6 +528,66 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
     });
     startProc.on('error', reject);
   });
+}
+
+/**
+ * 对 raw RGBA 像素数据计算 dHash (Difference Hash)
+ *
+ * dHash 算法步骤：
+ *   1. 接收已缩放到 (hashSize+1)×hashSize 的 RGBA 像素数据
+ *   2. 计算每个像素的亮度 (luminance)
+ *   3. 对每行比较相邻像素的亮度，左<右 → 1，否则 → 0
+ *   4. 得到 hashSize×hashSize bits（默认 8×8=64 bits）
+ *
+ * @param {Buffer|Uint8Array} rawBuf - RGBA 像素数据
+ * @param {number} w - 宽度（= hashSize + 1）
+ * @param {number} h - 高度（= hashSize）
+ * @returns {Buffer} 8 字节的哈希（高 4 字节在前，大端）
+ */
+function dHashRaw(rawBuf, w, h) {
+  const hashBytes = Buffer.alloc(8); // 64 bits
+  let byteIdx = 0;
+  let bitIdx = 0;
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w - 1; x++) {
+      // 取相邻两个像素的亮度
+      const idxL = (y * w + x) * 4;
+      const idxR = (y * w + x + 1) * 4;
+      const lumL = 0.299 * rawBuf[idxL] + 0.587 * rawBuf[idxL + 1] + 0.114 * rawBuf[idxL + 2];
+      const lumR = 0.299 * rawBuf[idxR] + 0.587 * rawBuf[idxR + 1] + 0.114 * rawBuf[idxR + 2];
+
+      // 左 < 右 → bit=1（梯度上升）
+      if (lumL < lumR) {
+        hashBytes[7 - byteIdx] |= (1 << bitIdx);
+      }
+      bitIdx++;
+      if (bitIdx >= 8) {
+        bitIdx = 0;
+        byteIdx++;
+      }
+    }
+  }
+
+  return hashBytes;
+}
+
+/**
+ * 计算两个 dHash 之间的汉明距离（0-64，越低越相似）
+ *
+ * 本质上是 XOR 后数 1-bit 的数量。
+ */
+function hammingDistance(a, b) {
+  let dist = 0;
+  for (let i = 0; i < 8; i++) {
+    let xor = a[i] ^ b[i];
+    // 逐位 popcount
+    while (xor) {
+      dist += xor & 1;
+      xor >>= 1;
+    }
+  }
+  return dist;
 }
 
 /**
@@ -570,58 +639,6 @@ function pickLoopCandidates(scores, { minSpacing, maxCandidates }) {
 
   // d) 按帧号排序返回
   return selected.sort((a, b) => a.frame - b.frame);
-}
-
-/**
- * 用颜色直方图比较两帧的感知相似度（越低越相似）
- *
- * 将每帧的 RGB 像素分到 4×4×4=64 个 bin 中，
- * 用卡方距离测量直方图差异。对物体的微小平移、
- * 抖动不敏感，更适合找视觉上相似的循环帧。
- *
- * 返回卡方距离 (0 ~ 正无穷)，典型值 < 20 为非常相似，
- * < 50 为较相似，> 200 为差异很大。
- */
-function histogramDiff(a, b) {
-  const BINS = 4;          // 每通道 4 个 bin → 4×4×4 = 64
-  const STEP = 256 / BINS; // 64
-  const totalBins = BINS * BINS * BINS;
-
-  const histA = new Float64Array(totalBins);
-  const histB = new Float64Array(totalBins);
-
-  const pixelCount = a.length / 4;
-
-  for (let i = 0; i < a.length; i += 4) {
-    // 跳过 Alpha 通道 (i+3)
-    const rA = Math.min(Math.floor(a[i] / STEP), BINS - 1);
-    const gA = Math.min(Math.floor(a[i + 1] / STEP), BINS - 1);
-    const bA = Math.min(Math.floor(a[i + 2] / STEP), BINS - 1);
-    histA[rA * BINS * BINS + gA * BINS + bA]++;
-
-    const rB = Math.min(Math.floor(b[i] / STEP), BINS - 1);
-    const gB = Math.min(Math.floor(b[i + 1] / STEP), BINS - 1);
-    const bB = Math.min(Math.floor(b[i + 2] / STEP), BINS - 1);
-    histB[rB * BINS * BINS + gB * BINS + bB]++;
-  }
-
-  // 归一化到 [0, 1]（除以像素数）
-  for (let i = 0; i < totalBins; i++) {
-    histA[i] /= pixelCount;
-    histB[i] /= pixelCount;
-  }
-
-  // 卡方距离: Σ (A-B)² / (A+B+ε)
-  let chi2 = 0;
-  for (let i = 0; i < totalBins; i++) {
-    const sum = histA[i] + histB[i];
-    if (sum > 1e-10) {
-      const diff = histA[i] - histB[i];
-      chi2 += (diff * diff) / sum;
-    }
-  }
-
-  return chi2;
 }
 
 module.exports = { processVideo, probeVideo, findLoopEndFrame };
