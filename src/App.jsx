@@ -123,7 +123,7 @@ export default function App() {
 
   useEffect(() => {
     renderPreview()
-  }, [renderPreview])
+  }, [renderPreview, mediaMode])
 
   // ===== 文件加载 =====
   const handleFileLoad = useCallback((file) => {
