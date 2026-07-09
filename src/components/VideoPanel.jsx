@@ -6,7 +6,7 @@ const FMT_OPTIONS = [
   { value: 'mp4', label: 'MP4 (绿幕合成, H.264)', transparent: false },
 ]
 
-export default function VideoPanel({ keyingParams, layoutParams, videoFile: propFile, videoInfo: propInfo, onVideoUpload, onVideoDone }) {
+export default function VideoPanel({ keyingParams, layoutParams, videoFile: propFile, videoInfo: propInfo, onVideoUpload, onVideoDone, droppedFile }) {
   const [mode, setMode] = useState('transparent')
   const [format, setFormat] = useState('webm')
   const [exportMode, setExportMode] = useState('video') // 'video' | 'spritesheet'
@@ -48,6 +48,20 @@ export default function VideoPanel({ keyingParams, layoutParams, videoFile: prop
       if (downloadUrl) URL.revokeObjectURL(downloadUrl)
     }
   }, [])
+
+  // 处理外部拖入的视频文件
+  useEffect(() => {
+    if (droppedFile && droppedFile.type.startsWith('video/')) {
+      // 清空之前的状态再处理新文件
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current)
+      setVideoInfo(null)
+      setStatus('')
+      setProgress({ current: 0, total: 0, percent: 0 })
+      setErrorMsg('')
+      setDownloadUrl('')
+      handleFile(droppedFile)
+    }
+  }, [droppedFile])
 
   const handleFile = useCallback(async (file) => {
     if (!file || !file.type.startsWith('video/')) return
@@ -214,8 +228,6 @@ export default function VideoPanel({ keyingParams, layoutParams, videoFile: prop
       <div
         className="video-drop-area"
         onClick={() => inputRef.current?.click()}
-        onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]) }}
-        onDragOver={(e) => e.preventDefault()}
       >
         {uploading ? (
           <p className="uploading-text">上传中...</p>
@@ -229,8 +241,11 @@ export default function VideoPanel({ keyingParams, layoutParams, videoFile: prop
           </div>
         ) : (
           <>
-            <p>点击或拖拽视频到此处</p>
+            <p>点击选择视频</p>
             <p className="hint">支持 MP4 / MOV / WebM / AVI</p>
+            <p className="hint" style={{ marginTop: 6, color: '#bbb' }}>
+              拖放文件到窗口任意位置也可上传
+            </p>
           </>
         )}
         <input
