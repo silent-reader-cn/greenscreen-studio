@@ -64,7 +64,13 @@ export default function App() {
   // 视频预览状态
   const [videoFile, setVideoFile] = useState(null)
   const [videoInfo, setVideoInfo] = useState(null)
-  const [resultJobId, setResultJobId] = useState(null)  // 处理完成后用于播放
+  const [resultJobId, setResultJobId] = useState(null)
+
+  // 视频帧范围
+  const [frameRange, setFrameRange] = useState({ startFrame: 0, endFrame: 0 })
+  const handleRangeChange = useCallback((range) => {
+    setFrameRange(range)
+  }, [])
 
   // 切换模式时清空视频状态
   const switchMode = (mode) => {
@@ -80,6 +86,11 @@ export default function App() {
     setVideoFile(file)
     setVideoInfo(info)
     setResultJobId(null)
+    // 新视频上传后重置帧范围为全视频
+    if (info) {
+      const totalFrames = info.frameCount || Math.round(info.fps * info.duration)
+      setFrameRange({ startFrame: 0, endFrame: totalFrames })
+    }
   }, [])
 
   const handleVideoDone = useCallback((jobId) => {
@@ -198,6 +209,8 @@ export default function App() {
               layoutParams={layoutParams}
               onVideoUpload={handleVideoUpload}
               onVideoDone={handleVideoDone}
+              range={frameRange}
+              onRangeChange={handleRangeChange}
             />
           )}
           <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
@@ -243,6 +256,8 @@ export default function App() {
                 keyingParams={keyingParams}
                 layoutParams={layoutParams}
                 resultJobId={resultJobId}
+                range={frameRange}
+                onRangeChange={handleRangeChange}
               />
             )}
           </div>

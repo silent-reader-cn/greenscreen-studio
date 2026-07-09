@@ -9,7 +9,7 @@ import { applyKeying, composeToCanvas, autoCropKeyed } from '../lib/keying.js'
  *   2. 已上传未处理 → 时间轴选帧 + 实时抠像预览（滑块拖动即时生效）
  *   3. 处理完成 → <video> 播放器
  */
-export default function VideoPreview({ videoFile, videoInfo, keyingParams, layoutParams, resultJobId }) {
+export default function VideoPreview({ videoFile, videoInfo, keyingParams, layoutParams, resultJobId, range, onRangeChange }) {
   const [frameTime, setFrameTime] = useState(0)        // 当前选中的时间点（秒）
   const [frameImageData, setFrameImageData] = useState(null)  // 当前帧的 ImageData
   const [loading, setLoading] = useState(false)
@@ -169,21 +169,54 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       {/* 时间轴帧选择器 */}
       <div className="timeline-bar">
         <span className="time-label">{formatTime(frameTime)}</span>
-        <input
-          type="range"
-          className="timeline-slider"
-          min={0}
-          max={duration || 0}
-          step={0.01}
-          value={frameTime}
-          onChange={(e) => {
-            const t = Number(e.target.value)
-            setFrameTime(t)
-            seekToFrame(t)
-          }}
-        />
+        <div className="timeline-track-wrap">
+          <div className="timeline-range-indicator" 
+            style={{
+              left: `${duration > 0 ? (range.startFrame / (videoInfo?.fps || 30) / duration * 100) : 0}%`,
+              width: `${duration > 0 ? ((range.endFrame - range.startFrame) / (videoInfo?.fps || 30) / duration * 100) : 0}%`
+            }}
+          />
+          <input
+            type="range"
+            className="timeline-slider"
+            min={0}
+            max={duration || 0}
+            step={0.01}
+            value={frameTime}
+            onChange={(e) => {
+              const t = Number(e.target.value)
+              setFrameTime(t)
+              seekToFrame(t)
+            }}
+          />
+        </div>
         <span className="time-label">{formatTime(duration)}</span>
       </div>
+
+      {/* 标记起点 / 终点按钮 */}
+      {videoInfo && (
+        <div className="timeline-mark-actions">
+          <button
+            className="btn-mark"
+            onClick={() => {
+              const fps = videoInfo.fps || 30
+              const frame = Math.round(frameTime * fps)
+              onRangeChange({ ...range, startFrame: Math.min(frame, range.endFrame) })
+            }}
+          >↑ 标记起点</button>
+          <span className="mark-range-info">
+            {range.startFrame} ~ {range.endFrame} 帧
+          </span>
+          <button
+            className="btn-mark"
+            onClick={() => {
+              const fps = videoInfo.fps || 30
+              const frame = Math.round(frameTime * fps)
+              onRangeChange({ ...range, endFrame: Math.max(frame, range.startFrame + 1) })
+            }}
+          >↓ 标记终点</button>
+        </div>
+      )}
     </div>
   )
 }

@@ -539,6 +539,163 @@ body {
   border-color: #999;
 }
 
+/* 帧范围输入 */
+.range-group {
+  margin-top: 4px;
+}
+
+.range-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.range-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.range-field label {
+  font-size: 10px;
+  color: #aaa;
+  text-align: center;
+}
+
+.range-num {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: #333;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.range-num:focus {
+  border-color: #888;
+}
+
+.range-num:disabled {
+  background: #f5f5f0;
+  color: #aaa;
+}
+
+.range-sep {
+  font-size: 14px;
+  color: #aaa;
+  margin-top: 14px;
+}
+
+.range-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+}
+
+.btn-range-reset {
+  padding: 2px 8px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  font-size: 10px;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-range-reset:hover:not(:disabled) {
+  border-color: #999;
+}
+
+.btn-range-reset:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 时间轴范围指示器 */
+.timeline-track-wrap {
+  flex: 1;
+  position: relative;
+  height: 6px;
+  display: flex;
+  align-items: center;
+}
+
+.timeline-range-indicator {
+  position: absolute;
+  height: 100%;
+  background: rgba(51, 102, 170, 0.25);
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.timeline-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 6px;
+  background: #ddd;
+  border-radius: 3px;
+  outline: none;
+  position: relative;
+  z-index: 2;
+}
+
+.timeline-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  background: #3366aa;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+
+/* 标记起点/终点按钮 */
+.timeline-mark-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 600px;
+  justify-content: center;
+}
+
+.btn-mark {
+  padding: 4px 12px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-mark:hover {
+  border-color: #3366aa;
+  color: #3366aa;
+}
+
+.mark-range-info {
+  font-size: 11px;
+  color: #3366aa;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  min-width: 80px;
+  text-align: center;
+}
+
 /* 进度条 */
 .progress-section {
   margin-top: 12px;
@@ -731,26 +888,6 @@ body {
   font-variant-numeric: tabular-nums;
   min-width: 36px;
   text-align: center;
-}
-
-.timeline-slider {
-  flex: 1;
-  -webkit-appearance: none;
-  height: 6px;
-  background: #ddd;
-  border-radius: 3px;
-  outline: none;
-}
-
-.timeline-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  background: #3366aa;
-  border-radius: 50%;
-  cursor: pointer;
-  border: 2px solid #fff;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
 }
 
 /* 视频播放器 */

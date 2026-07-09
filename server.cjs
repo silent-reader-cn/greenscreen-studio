@@ -194,7 +194,7 @@ app.post('/api/video/upload', videoUpload.single('video'), async (req, res) => {
  * 返回 { taskId } 用于轮询进度
  */
 app.post('/api/video/process', express.json({ limit: '10mb' }), (req, res) => {
-  const { jobId, params, format } = req.body;
+  const { jobId, params, format, range } = req.body;
   const job = videoJobs.get(jobId);
   if (!job) return res.status(404).json({ error: 'job not found' });
 
@@ -202,12 +202,25 @@ app.post('/api/video/process', express.json({ limit: '10mb' }), (req, res) => {
   const ext = format || (params.mode === 'transparent' ? 'webm' : 'mp4');
   const outputPath = path.join(tmpDir, `output_${taskId}.${ext}`).replace(/\\/g, '/');
 
+  // 计算帧范围（用于初始进度显示）
+  const info = job.info;
+  const totalFrames = info.frameCount || Math.round(info.fps * info.duration);
+  const startFrame = range?.startFrame ?? 0;
+  const endFrame = range?.endFrame ?? totalFrames;
+  const processFrameCount = endFrame - startFrame;
+
   job.taskId = taskId;
   job.status = 'processing';
-  job.progress = { current: 0, total: job.info.frameCount || 0, percent: 0 };
+  job.progress = { current: 0, total: processFrameCount, percent: 0 };
   job.outputPath = outputPath;
   job.outputFormat = ext;
   job.error = null;
+  job.range = range || null;
+
+  // 如果有 range，合并到 params 中传给 processVideo
+  if (range) {
+    params.range = range;
+  }
 
   // 异步处理（不阻塞响应）
   processVideo(job.inputPath, outputPath, params, (current, total) => {
@@ -217,7 +230,8 @@ app.post('/api/video/process', express.json({ limit: '10mb' }), (req, res) => {
     .then(result => {
       job.status = 'done';
       job.result = result;
-      console.log(`  ✅ 视频处理完成: ${jobId} | ${result.frameCount} frames`);
+      const rangeInfo = range ? ` [${range.startFrame}-${range.endFrame}帧]` : '';
+      console.log(`  ✅ 视频处理完成: ${jobId} | ${result.frameCount} frames${rangeInfo}`);
     })
     .catch(err => {
       job.status = 'error';

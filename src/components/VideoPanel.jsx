@@ -6,7 +6,7 @@ const FMT_OPTIONS = [
   { value: 'mp4', label: 'MP4 (绿幕合成, H.264)', transparent: false },
 ]
 
-export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, onVideoDone }) {
+export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, onVideoDone, range, onRangeChange }) {
   const [mode, setMode] = useState('transparent')      // 'transparent' | 'greenscreen'
   const [format, setFormat] = useState('webm')
   const [videoInfo, setVideoInfo] = useState(null)       // {jobId, width, height, fps, duration, hasAudio}
@@ -76,14 +76,20 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
 
     try {
       // 发起处理
+      const body = {
+        jobId: videoInfo.jobId,
+        params: { keying: keyingParams, layout: layoutParams, mode },
+        format,
+      }
+      // 如果指定了帧范围，传入 range
+      const totalFrames = videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)
+      if (range && (range.startFrame > 0 || range.endFrame < totalFrames)) {
+        body.range = { startFrame: range.startFrame, endFrame: range.endFrame }
+      }
       const resp = await fetch('/api/video/process', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobId: videoInfo.jobId,
-          params: { keying: keyingParams, layout: layoutParams, mode },
-          format,
-        })
+        body: JSON.stringify(body)
       })
       if (!resp.ok) throw new Error('启动处理失败')
       const { taskId } = await resp.json()
@@ -218,6 +224,55 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
                   onClick={() => setFormat(f.value)}
                 >{f.label}</button>
               ))}
+            </div>
+          </div>
+
+          {/* 帧范围 */}
+          <div className="opt-group range-group">
+            <p className="opt-label">帧范围</p>
+            <div className="range-inputs">
+              <div className="range-field">
+                <label>起始</label>
+                <input
+                  type="number"
+                  className="range-num"
+                  min={0}
+                  max={range.endFrame}
+                  value={range.startFrame}
+                  onChange={(e) => {
+                    const v = Math.max(0, parseInt(e.target.value) || 0)
+                    onRangeChange({ ...range, startFrame: Math.min(v, range.endFrame) })
+                  }}
+                  disabled={processing}
+                />
+              </div>
+              <span className="range-sep">→</span>
+              <div className="range-field">
+                <label>结束</label>
+                <input
+                  type="number"
+                  className="range-num"
+                  min={range.startFrame}
+                  value={range.endFrame}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value) || 0
+                    onRangeChange({ ...range, endFrame: Math.max(v, range.startFrame) })
+                  }}
+                  disabled={processing}
+                />
+              </div>
+            </div>
+            <div className="range-info">
+              {range.endFrame - range.startFrame} 帧
+              {range.startFrame > 0 || range.endFrame < (videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)) ? ' (局部)' : ' (全视频)'}
+              <button
+                className="btn-range-reset"
+                onClick={() => {
+                  const total = videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)
+                  onRangeChange({ startFrame: 0, endFrame: total })
+                }}
+                disabled={processing}
+              >全视频</button>
             </div>
           </div>
         </div>

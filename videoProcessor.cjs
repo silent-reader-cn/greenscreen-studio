@@ -109,15 +109,16 @@ function probeVideo(videoPath) {
  *
  * @param {string} inputPath - 输入视频路径
  * @param {string} outputPath - 输出视频路径
- * @param {Object} params - { keying, layout, mode }
+ * @param {Object} params - { keying, layout, mode, range? }
  *   mode: 'transparent' | 'greenscreen'
+ *   range?: { startFrame: number, endFrame: number } 帧范围（可选，默认全视频）
  * @param {Function} onProgress - (current, total) => void
  * @returns {Promise<Object>} 处理结果
  */
 async function processVideo(inputPath, outputPath, params, onProgress) {
   await loadAlgorithms();
 
-  const { keying, layout, mode } = params;
+  const { keying, layout, mode, range } = params;
   const { canvasWidth, canvasHeight } = layout;
 
   // 1. 探测视频
@@ -125,7 +126,17 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   const { width: srcW, height: srcH, fps, duration, hasAudio } = info;
   const totalFrames = info.frameCount || Math.round(fps * duration);
 
-  console.log(`  📹 视频信息: ${srcW}×${srcH} @ ${fps}fps, ${duration.toFixed(1)}s, ${totalFrames} frames, audio=${hasAudio}`);
+  // 计算帧范围
+  const startFrame = range?.startFrame ?? 0;
+  const endFrame = range?.endFrame ?? totalFrames;
+  const processFrameCount = endFrame - startFrame;
+  const startTime = startFrame / fps;
+  const rangeDuration = processFrameCount / fps;
+
+  const hasRange = startFrame > 0 || endFrame < totalFrames;
+  const rangeDesc = hasRange ? ` [${startFrame}–${endFrame}帧, ${processFrameCount}帧]` : '';
+
+  console.log(`  📹 视频信息: ${srcW}×${srcH} @ ${fps}fps, ${duration.toFixed(1)}s, ${totalFrames} frames, audio=${hasAudio}${rangeDesc}`);
 
   // 2. 临时文件：提取的原始音频
   const tmpDir = path.join(os.tmpdir(), 'greenscreen-studio');
@@ -133,16 +144,19 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   // ffmpeg 在 Windows 上对反斜杠路径处理不稳定，统一用正斜杠
   const audioPath = path.join(tmpDir, `audio_${Date.now()}.m4a`).replace(/\\/g, '/');
 
-  // 3. 提取音频（如果有）
+  // 3. 提取音频（如果有）— 如果指定了范围，同时裁剪音频
   let audioExtracted = false;
   if (hasAudio) {
+    const audioArgs = [
+      ...(hasRange ? ['-ss', String(startTime)] : []),
+      '-i', inputPath,
+      '-vn', '-acodec', 'aac',
+      '-b:a', '192k',
+      ...(hasRange ? ['-t', String(rangeDuration)] : []),
+      '-y', audioPath
+    ];
     await new Promise((resolve, reject) => {
-      const ffmpeg = spawn(FFMPEG, [
-        '-i', inputPath,
-        '-vn', '-acodec', 'aac',
-        '-b:a', '192k',
-        '-y', audioPath
-      ]);
+      const ffmpeg = spawn(FFMPEG, audioArgs);
       ffmpeg.stderr.on('data', () => {});
       ffmpeg.on('close', code => {
         audioExtracted = code === 0 && fs.existsSync(audioPath);
@@ -153,10 +167,13 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   }
 
   // 4. 启动 ffmpeg 提取帧（raw RGBA pipe）
+  //    如果指定了范围，用 -ss 快速定位 + -frames:v 限制输出帧数
   const extractArgs = [
+    ...(hasRange ? ['-ss', String(startTime)] : []),
     '-i', inputPath,
     '-f', 'rawvideo',
     '-pix_fmt', 'rgba',
+    ...(hasRange ? ['-frames:v', String(processFrameCount)] : []),
     '-'
   ];
   const extractor = spawn(FFMPEG, extractArgs);
@@ -169,10 +186,10 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   encoder.stderr.on('data', d => {
     const text = d.toString();
     console.log(`  [encoder] ${text.trim().slice(0, 200)}`);
-    // 解析进度
+    // 解析进度（encoder 报告的帧号，以 processFrameCount 为总数）
     const match = text.match(/frame=\s*(\d+)/);
     if (match && onProgress) {
-      onProgress(parseInt(match[1]), totalFrames);
+      onProgress(parseInt(match[1]), processFrameCount);
     }
   });
 
@@ -224,7 +241,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
           frameIndex++;
 
           if (frameIndex % 30 === 0 && onProgress) {
-            onProgress(frameIndex, totalFrames);
+            onProgress(frameIndex, processFrameCount);
           }
         }
       }
@@ -257,12 +274,13 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
       if (pipelineError) return reject(pipelineError);
       if (code !== 0) return reject(new Error(`ffmpeg encoder exited with code ${code}`));
 
-      onProgress && onProgress(totalFrames, totalFrames);
+      onProgress && onProgress(processFrameCount, processFrameCount);
       resolve({
         frameCount: frameIndex,
-        duration: duration,
+        duration: rangeDuration || duration,
         fps: fps,
         outputSize: fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0,
+        range: hasRange ? { startFrame, endFrame, processFrameCount } : null,
       });
     });
 
