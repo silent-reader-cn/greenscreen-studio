@@ -176,6 +176,25 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
               width: `${duration > 0 ? ((range.endFrame - range.startFrame) / (videoInfo?.fps || 30) / duration * 100) : 0}%`
             }}
           />
+          {/* 起点/终点标记针 */}
+          {duration > 0 && videoInfo && (
+            <>
+              <div className="timeline-marker marker-start"
+                style={{ left: `calc(${range.startFrame / (videoInfo.fps || 30) / duration * 100}% - 1px)` }}
+                title={`起点: 第 ${range.startFrame} 帧`}
+              >
+                <span className="marker-label">{range.startFrame}</span>
+                <span className="marker-dot" />
+              </div>
+              <div className="timeline-marker marker-end"
+                style={{ left: `calc(${range.endFrame / (videoInfo.fps || 30) / duration * 100}% - 1px)` }}
+                title={`终点: 第 ${range.endFrame} 帧`}
+              >
+                <span className="marker-label">{range.endFrame}</span>
+                <span className="marker-dot" />
+              </div>
+            </>
+          )}
           <input
             type="range"
             className="timeline-slider"

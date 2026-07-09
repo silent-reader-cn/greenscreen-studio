@@ -638,6 +638,54 @@ body {
   z-index: 1;
 }
 
+/* 起点/终点标记针 */
+.timeline-marker {
+  position: absolute;
+  top: -18px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.marker-label {
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  padding: 1px 4px;
+  border-radius: 3px;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+.marker-start .marker-label {
+  background: #3366aa;
+  color: #fff;
+}
+
+.marker-end .marker-label {
+  background: #aa5533;
+  color: #fff;
+}
+
+.marker-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+}
+
+.marker-start .marker-dot {
+  background: #3366aa;
+}
+
+.marker-end .marker-dot {
+  background: #aa5533;
+}
+
 .timeline-slider {
   flex: 1;
   -webkit-appearance: none;
@@ -879,7 +927,8 @@ body {
   width: 100%;
   max-width: 600px;
   flex-shrink: 0;
-  padding: 8px 0;
+  padding: 22px 0 8px 0;
+  position: relative;
 }
 
 .time-label {
