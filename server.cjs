@@ -13,7 +13,7 @@ const { createCanvas, Image } = require('canvas');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { processVideo, probeVideo } = require('./videoProcessor.cjs');
+const { processVideo, probeVideo, findLoopEndFrame } = require('./videoProcessor.cjs');
 
 // 加载 polyfill（必须在引入 keying.js 之前）
 require('./src/lib/canvas-polyfill.js');
@@ -287,6 +287,44 @@ app.get('/api/video/download/:jobId', (req, res) => {
       } catch (e) {}
     }, 5000);
   });
+});
+
+/**
+ * POST /api/video/find-loop-end
+ * 自动检测与起始帧最相似的循环终点帧
+ * body: { jobId, startFrame, options?: { maxSearch?, step?, thumbSize? } }
+ */
+app.post('/api/video/find-loop-end', express.json({ limit: '1mb' }), async (req, res) => {
+  try {
+    const { jobId, startFrame, options } = req.body;
+    const job = videoJobs.get(jobId);
+    if (!job) return res.status(404).json({ error: 'job not found' });
+
+    const { info } = job;
+    const fps = info.fps;
+    const totalFrames = info.frameCount || Math.round(fps * info.duration);
+
+    if (startFrame == null || startFrame < 0 || startFrame >= totalFrames - 1) {
+      return res.status(400).json({ error: '无效的起始帧号' });
+    }
+
+    console.log(`  🔍 检测循环帧: ${jobId} 起始帧=${startFrame}, 总帧=${totalFrames}`);
+
+    const result = await findLoopEndFrame(
+      job.inputPath,
+      startFrame,
+      fps,
+      totalFrames,
+      options || {}
+    );
+
+    console.log(`  ✅ 最佳循环帧: ${result.bestFrame} (差异分=${result.bestScore.toFixed(1)}, 扫描了${result.searchCount}帧)`);
+
+    res.json(result);
+  } catch (err) {
+    console.error('  ❌ 循环帧检测失败:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 function getVideoMime(ext) {

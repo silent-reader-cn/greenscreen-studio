@@ -412,4 +412,118 @@ function buildEncoderArgs(outputPath, mode, layout, fps, audioPath) {
   return { encoderArgs: args, outputFormat: path.extname(outputPath) };
 }
 
-module.exports = { processVideo, probeVideo };
+/**
+ * 从视频中找与起始帧最相似的循环终点帧
+ *
+ * 将帧缩略到 thumbSize×thumbSize 后逐像素比较 RGB，
+ * 返回与 startFrame 差异最小的帧号。
+ *
+ * @param {string} inputPath - 输入视频路径
+ * @param {number} startFrame - 起始帧号
+ * @param {number} fps - 视频帧率
+ * @param {number} totalFrames - 视频总帧数
+ * @param {Object} [options]
+ * @param {number} [options.maxSearch=300] - 最大向后搜索帧数
+ * @param {number} [options.step=2] - 每隔 step 帧检查一次（兼顾速度与精度）
+ * @param {number} [options.thumbSize=64] - 缩略图尺寸
+ * @returns {Promise<{bestFrame: number, bestScore: number, scores: Array<{frame:number,score:number}>}>}
+ */
+function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {}) {
+  const { maxSearch = 300, step = 2, thumbSize = 64 } = options;
+  const endSearch = Math.min(startFrame + maxSearch, totalFrames);
+  const searchCount = Math.floor((endSearch - startFrame - 1) / step);
+  const frameBytes = thumbSize * thumbSize * 4;
+
+  if (searchCount <= 0) {
+    return Promise.resolve({
+      bestFrame: startFrame,
+      bestScore: 0,
+      scores: [],
+      message: '搜索范围过小'
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    // 1. 提取起始帧（缩略尺寸）
+    const startArgs = [
+      '-ss', String(startFrame / fps),
+      '-i', inputPath,
+      '-vf', `scale=${thumbSize}:${thumbSize}`,
+      '-f', 'rawvideo',
+      '-pix_fmt', 'rgba',
+      '-frames:v', '1',
+      '-'
+    ];
+    const startProc = spawn(FFMPEG, startArgs);
+    let startBuf = Buffer.alloc(0);
+    let startErr = '';
+
+    startProc.stdout.on('data', d => { startBuf = Buffer.concat([startBuf, d]); });
+    startProc.stderr.on('data', d => { startErr += d.toString(); });
+    startProc.on('close', code => {
+      if (code !== 0 || startBuf.length < frameBytes) {
+        return reject(new Error(`提取起始帧失败: ${startErr.slice(0, 200)}`));
+      }
+
+      const reference = new Uint8Array(startBuf.subarray(0, frameBytes));
+
+      // 2. 扫描后续帧（批量提取缩略 raw RGBA）
+      const scanTime = (startFrame + step) / fps;
+      const scanArgs = [
+        '-ss', String(scanTime),
+        '-i', inputPath,
+        '-vf', `scale=${thumbSize}:${thumbSize}`,
+        '-f', 'rawvideo',
+        '-pix_fmt', 'rgba',
+        '-frames:v', String(searchCount),
+        '-'
+      ];
+      const scanProc = spawn(FFMPEG, scanArgs);
+      let scanBuf = Buffer.alloc(0);
+      let scanErr = '';
+
+      scanProc.stdout.on('data', d => { scanBuf = Buffer.concat([scanBuf, d]); });
+      scanProc.stderr.on('data', d => { scanErr += d.toString(); });
+      scanProc.on('close', () => {
+        const scores = [];
+        let bestScore = Infinity;
+        let bestFrame = startFrame;
+
+        const total = Math.min(searchCount, Math.floor(scanBuf.length / frameBytes));
+        for (let i = 0; i < total; i++) {
+          const offset = i * frameBytes;
+          const candidate = new Uint8Array(scanBuf.subarray(offset, offset + frameBytes));
+          const score = pixelDiff(reference, candidate);
+          const frameNum = startFrame + (i + 1) * step;
+
+          scores.push({ frame: frameNum, score });
+          if (score < bestScore) {
+            bestScore = score;
+            bestFrame = frameNum;
+          }
+        }
+
+        resolve({ bestFrame, bestScore, scores, searchCount: total });
+      });
+      scanProc.on('error', reject);
+    });
+    startProc.on('error', reject);
+  });
+}
+
+/**
+ * 计算两帧缩略图之间的平均 RGB 差异（越低越相似）
+ */
+function pixelDiff(a, b) {
+  let total = 0;
+  const pixelCount = a.length / 4;
+  for (let i = 0; i < a.length; i += 4) {
+    total += Math.abs(a[i] - b[i])     // R
+         + Math.abs(a[i + 1] - b[i + 1]) // G
+         + Math.abs(a[i + 2] - b[i + 2]); // B
+    // 跳过 Alpha 通道
+  }
+  return total / pixelCount; // 平均每像素 RGB 差异 (0-765)
+}
+
+module.exports = { processVideo, probeVideo, findLoopEndFrame };

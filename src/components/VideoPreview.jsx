@@ -14,6 +14,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const [frameImageData, setFrameImageData] = useState(null)  // 当前帧的 ImageData
   const [loading, setLoading] = useState(false)
   const [previewTab, setPreviewTab] = useState('keying')  // 'keying' | 'composite'
+  const [detecting, setDetecting] = useState(false)
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -212,7 +213,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
         <span className="time-label">{formatTime(duration)}</span>
       </div>
 
-      {/* 标记起点 / 终点按钮 */}
+      {/* 标记起点 / 终点 / 自动检测按钮 */}
       {videoInfo && (
         <div className="timeline-mark-actions">
           <button
@@ -234,6 +235,34 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
               onRangeChange({ ...range, endFrame: Math.max(frame, range.startFrame + 1) })
             }}
           >↓ 标记终点</button>
+          <button
+            className="btn-mark btn-loop"
+            onClick={async () => {
+              if (!videoInfo?.jobId) return
+              const fps = videoInfo.fps || 30
+              const sf = range.startFrame
+              if (sf <= 0) return
+
+              setDetecting(true)
+              try {
+                const resp = await fetch('/api/video/find-loop-end', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ jobId: videoInfo.jobId, startFrame: sf })
+                })
+                if (!resp.ok) throw new Error('检测失败')
+                const data = await resp.json()
+                if (data.bestFrame && data.bestFrame > sf) {
+                  onRangeChange({ ...range, endFrame: data.bestFrame })
+                }
+              } catch (err) {
+                console.error('循环检测失败:', err)
+              } finally {
+                setDetecting(false)
+              }
+            }}
+            disabled={detecting || range.startFrame <= 0}
+          >{detecting ? '检测中...' : '🔁 自动循环'}</button>
         </div>
       )}
     </div>

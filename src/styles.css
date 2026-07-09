@@ -735,6 +735,22 @@ body {
   color: #3366aa;
 }
 
+.btn-loop {
+  color: #2a6;
+  border-color: #b8e6c8;
+}
+
+.btn-loop:hover:not(:disabled) {
+  border-color: #2a6;
+  color: #2a6;
+  background: #f0faf4;
+}
+
+.btn-loop:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .mark-range-info {
   font-size: 11px;
   color: #3366aa;
