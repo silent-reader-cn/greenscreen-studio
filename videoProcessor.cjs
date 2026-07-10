@@ -552,7 +552,7 @@ async function exportSpriteSheet(inputPath, params, spriteParams, onProgress) {
  * @param {number} [options.hashSize=16] - dHash 尺寸（默认 16 → 17×16 缩略 → 256-bit）
  * @param {number} [options.minSpacing=12] - 候选帧之间最小帧间距
  * @param {number} [options.maxCandidates=5] - 最多返回多少个候选
- * @returns {Promise<{candidates: Array<{frame:number,score:number}>, scores: Array<{frame:number,score:number}>}>}
+ * @returns {Promise<{candidates: Array<{frame:number,score:number}>, scores: Array<{frame:number,score:number,displayOnly?:boolean}>}>}
  */
 function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {}) {
   const {
@@ -563,8 +563,10 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
     maxCandidates = 5
   } = options;
   const endSearch = Math.min(startFrame + maxSearch, totalFrames);
-  // 连续提取：从 startFrame + step 到 endSearch - 1
-  const searchCount = Math.max(0, endSearch - startFrame - step);
+  // 连续提取：从 startFrame + 1 到 endSearch - 1。
+  // startFrame 以及 step 范围内的近邻帧只用于热度展示，不进入候选池。
+  const scanStartFrame = startFrame + 1;
+  const searchCount = Math.max(0, endSearch - scanStartFrame);
   const scaleW = hashSize + 1;  // 9 for hashSize=8
   const scaleH = hashSize;       // 8
   const frameBytes = scaleW * scaleH * 4; // 288 bytes — 极轻量
@@ -604,7 +606,7 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
 
       // 2. 扫描后续帧 — 单 -ss 批量提取
       const scanArgs = [
-        '-ss', String((startFrame + step) / fps),
+        '-ss', String(scanStartFrame / fps),
         '-i', inputPath,
         '-vf', `scale=${scaleW}:${scaleH}`,
         '-vsync', '0',
@@ -620,7 +622,7 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
       scanProc.stdout.on('data', d => { scanBuf = Buffer.concat([scanBuf, d]); });
       scanProc.stderr.on('data', d => { scanErr += d.toString(); });
       scanProc.on('close', () => {
-        const scores = [];
+        const scores = [{ frame: startFrame, score: 0, displayOnly: true }];
 
         const total = Math.min(searchCount, Math.floor(scanBuf.length / frameBytes));
         for (let i = 0; i < total; i++) {
@@ -629,10 +631,16 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
           const candidateHash = dHashRaw(candidateBuf, scaleW, scaleH);
           // 汉明距离: 0~256，越低越相似
           const score = hammingDistance(referenceHash, candidateHash);
-          // ffmpeg -frames:v 输出连续帧，帧号 = startFrame + step + i
-          const frameNum = startFrame + step + i;
-          scores.push({ frame: frameNum, score });
+          // ffmpeg -frames:v 输出连续帧，帧号 = scanStartFrame + i
+          const frameNum = scanStartFrame + i;
+          scores.push({
+            frame: frameNum,
+            score,
+            ...(frameNum < startFrame + step ? { displayOnly: true } : {}),
+          });
         }
+
+        const candidateScores = scores.filter(s => !s.displayOnly);
 
         // 2b. 如果最后一帧（总帧数-1）没有被 step 覆盖到，单独补提
         const lastFrameIdx = totalFrames - 1;
@@ -644,7 +652,7 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
 
         if (!needTail) {
           // 3. 从 scores 中筛选最佳候选
-          const candidates = pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
+          const candidates = pickLoopCandidates(candidateScores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
           return resolve({ candidates, scores });
         }
 
@@ -666,20 +674,23 @@ function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {})
         tailProc.stdout.on('data', d => { tailBuf = Buffer.concat([tailBuf, d]); });
         tailProc.stderr.on('data', d => { tailErr += d.toString(); });
         tailProc.on('close', () => {
+          const finalCandidateScores = [...candidateScores];
           if (tailBuf.length >= frameBytes) {
             const tailHash = dHashRaw(tailBuf.subarray(0, frameBytes), scaleW, scaleH);
             const tailScore = hammingDistance(referenceHash, tailHash);
-            scores.push({ frame: lastFrameIdx, score: tailScore });
+            const tailEntry = { frame: lastFrameIdx, score: tailScore };
+            scores.push(tailEntry);
+            finalCandidateScores.push(tailEntry);
             console.log(`  📌 补提尾帧 #${lastFrameIdx} score=${tailScore}`);
           }
 
           // 3. 从 scores 中筛选最佳候选
-          const candidates = pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
+          const candidates = pickLoopCandidates(finalCandidateScores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
           resolve({ candidates, scores });
         });
         tailProc.on('error', () => {
           // 尾帧提取失败不影响主结果
-          const candidates = pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
+          const candidates = pickLoopCandidates(candidateScores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
           resolve({ candidates, scores });
         });
       });

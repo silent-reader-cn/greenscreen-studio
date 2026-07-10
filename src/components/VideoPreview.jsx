@@ -1,6 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { applyKeying, composeToCanvas, autoCropKeyed } from '../lib/keying.js'
 
+const AUTO_LOOP_DETECT_KEY = 'greenscreen-studio-auto-loop-detect'
+
 /**
  * 视频预览组件
  *
@@ -19,14 +21,37 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const [similarityHeatmap, setSimilarityHeatmap] = useState(null) // [{pct, opacity}, ...]
   const [scoreRange, setScoreRange] = useState(null) // {min, max} 用于全局归一化
   const [isLoopPlaying, setIsLoopPlaying] = useState(false)
+  const [autoLoopDetect, setAutoLoopDetect] = useState(() => loadStoredBoolean(AUTO_LOOP_DETECT_KEY, false))
+  const [loadedVideoJobId, setLoadedVideoJobId] = useState(null)
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const wrapperRef = useRef(null)
   const tempCanvasRef = useRef(document.createElement('canvas'))
+  const timelineTrackRef = useRef(null)
   const seekRef = useRef(false)  // 防止 seek 事件重入
+  const scrubbingRef = useRef(false)
+  const rangeRef = useRef(range)
+  const detectRequestRef = useRef(0)
+  const lastAutoDetectKeyRef = useRef('')
   const playbackRef = useRef({ playing: false, rafId: null })
+
+  const duration = videoInfo?.duration || videoRef.current?.duration || 0
+  const fps = videoInfo?.fps || 30
+  const startFrame = range?.startFrame ?? 0
+  const endFrame = range?.endFrame ?? 0
+  const startPct = duration > 0 ? clamp((startFrame / fps / duration) * 100, 0, 100) : 0
+  const endPct = duration > 0 ? clamp((endFrame / fps / duration) * 100, 0, 100) : 0
+  const currentPct = duration > 0 ? clamp((frameTime / duration) * 100, 0, 100) : 0
+
+  useEffect(() => {
+    rangeRef.current = range
+  }, [range])
+
+  useEffect(() => {
+    saveStoredBoolean(AUTO_LOOP_DETECT_KEY, autoLoopDetect)
+  }, [autoLoopDetect])
 
   // ===== 监听预览容器尺寸变化，用于计算 canvas 的 contain 尺寸 =====
   useEffect(() => {
@@ -148,6 +173,78 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
     }
   }, [isLoopPlaying, range, renderLoopFrame, stopLoopPreview, videoInfo])
 
+  const detectLoopEnd = useCallback(async (targetStartFrame = rangeRef.current?.startFrame ?? 0) => {
+    stopLoopPreview()
+    if (!videoInfo?.jobId) return
+
+    const requestId = detectRequestRef.current + 1
+    detectRequestRef.current = requestId
+    const currentFps = videoInfo.fps || 30
+
+    setDetecting(true)
+    setLoopCandidates(null)
+    try {
+      const resp = await fetch('/api/video/find-loop-end', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId: videoInfo.jobId, startFrame: targetStartFrame })
+      })
+      if (!resp.ok) throw new Error('检测失败')
+      const data = await resp.json()
+      if (requestId !== detectRequestRef.current) return
+
+      const candidates = data.candidates || []
+      const scores = data.scores || []
+      setLoopCandidates(candidates)
+
+      if (scores.length > 0) {
+        const totalFrames = videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)
+        const minScore = Math.min(...scores.map(s => s.score))
+        const maxScore = Math.max(...scores.map(s => s.score))
+        const heatmapScoreRange = Math.max(maxScore - minScore, 1)
+        const candidateScores = scores.filter(s => !s.displayOnly)
+        const scoreBase = candidateScores.length > 0 ? candidateScores : scores
+        const scoreMin = Math.min(...scoreBase.map(s => s.score))
+        const scoreMax = Math.max(...scoreBase.map(s => s.score))
+
+        setScoreRange({ min: scoreMin, max: scoreMax })
+        setSimilarityHeatmap(scores.map(s => ({
+          pct: (s.frame / totalFrames) * 100,
+          opacity: 1 - (s.score - minScore) / heatmapScoreRange,
+          displayOnly: !!s.displayOnly,
+        })))
+      } else {
+        setScoreRange(null)
+        setSimilarityHeatmap(null)
+      }
+
+      if (candidates.length > 0) {
+        const currentRange = rangeRef.current || {}
+        const nextEndFrame = candidates[0].frame
+        onRangeChange({ ...currentRange, endFrame: nextEndFrame })
+        seekToFrame(nextEndFrame / currentFps)
+        setFrameTime(nextEndFrame / currentFps)
+      }
+    } catch (err) {
+      if (requestId === detectRequestRef.current) {
+        console.error('循环检测失败:', err)
+      }
+    } finally {
+      if (requestId === detectRequestRef.current) {
+        setDetecting(false)
+      }
+    }
+  }, [onRangeChange, seekToFrame, stopLoopPreview, videoInfo])
+
+  useEffect(() => {
+    if (!autoLoopDetect || !videoInfo?.jobId || loadedVideoJobId !== videoInfo.jobId) return
+    const key = `${videoInfo.jobId}:${startFrame}`
+    if (lastAutoDetectKeyRef.current === key) return
+
+    lastAutoDetectKeyRef.current = key
+    detectLoopEnd(startFrame)
+  }, [autoLoopDetect, detectLoopEnd, loadedVideoJobId, startFrame, videoInfo?.jobId])
+
   // ===== 视频加载 =====
   useEffect(() => {
     stopLoopPreview()
@@ -157,17 +254,20 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       setLoopCandidates(null)
       setSimilarityHeatmap(null)
       setScoreRange(null)
+      setLoadedVideoJobId(null)
       return
     }
     const video = videoRef.current
     if (!video) return
 
+    setLoadedVideoJobId(null)
     const url = URL.createObjectURL(videoFile)
     video.src = url
 
     const onLoaded = () => {
       // 加载完后 seek 到第一帧
       seekToFrame(0)
+      setLoadedVideoJobId(videoInfo?.jobId ?? '')
     }
     video.addEventListener('loadeddata', onLoaded)
 
@@ -175,7 +275,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       video.removeEventListener('loadeddata', onLoaded)
       URL.revokeObjectURL(url)
     }
-  }, [seekToFrame, stopLoopPreview, videoFile])
+  }, [seekToFrame, stopLoopPreview, videoFile, videoInfo?.jobId])
 
   useEffect(() => () => stopLoopPreview(), [stopLoopPreview])
 
@@ -234,6 +334,67 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
     canvas.style.height = `${Math.max(1, Math.round(cssH))}px`
   }, [containerSize, frameImageData, keyingParams, layoutParams, previewTab])
 
+  // ===== 帧选择器拖拽：按可见轨道计算，保证 0% / 100% 能落到两端 =====
+  const timeFromTimelineX = useCallback((clientX) => {
+    const track = timelineTrackRef.current
+    if (!track || duration <= 0) return 0
+    const rect = track.getBoundingClientRect()
+    if (rect.width <= 0) return 0
+    const pct = clamp((clientX - rect.left) / rect.width, 0, 1)
+    return pct * duration
+  }, [duration])
+
+  const scrubTimelineTo = useCallback((clientX) => {
+    if (duration <= 0) return
+    stopLoopPreview()
+    const t = timeFromTimelineX(clientX)
+    setFrameTime(t)
+    seekToFrame(t)
+  }, [duration, seekToFrame, stopLoopPreview, timeFromTimelineX])
+
+  const onTimelinePointerDown = useCallback((event) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.preventDefault()
+    scrubbingRef.current = true
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    scrubTimelineTo(event.clientX)
+  }, [scrubTimelineTo])
+
+  const onTimelinePointerMove = useCallback((event) => {
+    if (!scrubbingRef.current) return
+    event.preventDefault()
+    scrubTimelineTo(event.clientX)
+  }, [scrubTimelineTo])
+
+  const stopScrubbingTimeline = useCallback((event) => {
+    scrubbingRef.current = false
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+  }, [])
+
+  const nudgeTimeline = useCallback((delta) => {
+    if (duration <= 0) return
+    stopLoopPreview()
+    const t = clamp(frameTime + delta, 0, duration)
+    setFrameTime(t)
+    seekToFrame(t)
+  }, [duration, frameTime, seekToFrame, stopLoopPreview])
+
+  const onTimelineKeyDown = useCallback((event) => {
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      nudgeTimeline(event.shiftKey ? -1 : -0.01)
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      nudgeTimeline(event.shiftKey ? 1 : 0.01)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      nudgeTimeline(-duration)
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      nudgeTimeline(duration)
+    }
+  }, [duration, nudgeTimeline])
+
   // ===== 处理完成后切换到播放器 =====
   if (resultJobId) {
     return (
@@ -263,8 +424,6 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   }
 
   // ===== 帧选择 + 实时预览 =====
-  const duration = videoInfo?.duration || videoRef.current?.duration || 0
-
   return (
     <div className="video-frame-preview">
       {/* 隐藏的 video 元素用于 seek 截帧 */}
@@ -298,25 +457,33 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       <div className="timeline-bar">
         <span className="time-label">{formatTime(frameTime)}</span>
         <div className="timeline-track-column">
-          <div className="timeline-track-wrap">
+          <div
+            ref={timelineTrackRef}
+            className="timeline-track-wrap"
+            onPointerDown={onTimelinePointerDown}
+            onPointerMove={onTimelinePointerMove}
+            onPointerUp={stopScrubbingTimeline}
+            onPointerCancel={stopScrubbingTimeline}
+          >
+            <div className="timeline-track-base" />
             <div className="timeline-range-indicator" 
               style={{
-                left: `${duration > 0 ? (range.startFrame / (videoInfo?.fps || 30) / duration * 100) : 0}%`,
-                width: `${duration > 0 ? ((range.endFrame - range.startFrame) / (videoInfo?.fps || 30) / duration * 100) : 0}%`
+                left: `${startPct}%`,
+                width: `${Math.max(0, endPct - startPct)}%`
               }}
             />
             {/* 起点/终点标记针 */}
             {duration > 0 && videoInfo && (
               <>
                 <div className="timeline-marker marker-start"
-                  style={{ left: `calc(${range.startFrame / (videoInfo.fps || 30) / duration * 100}% - 1px)` }}
+                  style={{ left: `${startPct}%` }}
                   title={`起点: 第 ${range.startFrame} 帧`}
                 >
                   <span className="marker-label">{range.startFrame}</span>
                   <span className="marker-dot" />
                 </div>
                 <div className="timeline-marker marker-end"
-                  style={{ left: `calc(${range.endFrame / (videoInfo.fps || 30) / duration * 100}% - 1px)` }}
+                  style={{ left: `${endPct}%` }}
                   title={`终点: 第 ${range.endFrame} 帧`}
                 >
                   <span className="marker-label">{range.endFrame}</span>
@@ -324,19 +491,16 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
                 </div>
               </>
             )}
-            <input
-              type="range"
-              className="timeline-slider"
-              min={0}
-              max={duration || 0}
-              step={0.01}
-              value={frameTime}
-              onChange={(e) => {
-                stopLoopPreview()
-                const t = Number(e.target.value)
-                setFrameTime(t)
-                seekToFrame(t)
-              }}
+            <div
+              className="timeline-current-marker"
+              style={{ left: `${currentPct}%` }}
+              role="slider"
+              tabIndex={duration > 0 ? 0 : -1}
+              aria-label="当前预览帧"
+              aria-valuemin={0}
+              aria-valuemax={duration}
+              aria-valuenow={frameTime}
+              onKeyDown={onTimelineKeyDown}
             />
           </div>
           {/* 相似度热力图 */}
@@ -389,52 +553,20 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
           >↓ 标记终点</button>
           <button
             className="btn-mark btn-loop"
-            onClick={async () => {
-              stopLoopPreview()
-              if (!videoInfo?.jobId) return
-              const fps = videoInfo.fps || 30
-              const sf = range.startFrame
-
-              setDetecting(true)
-              setLoopCandidates(null)
-              try {
-                const resp = await fetch('/api/video/find-loop-end', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ jobId: videoInfo.jobId, startFrame: sf })
-                })
-                if (!resp.ok) throw new Error('检测失败')
-                const data = await resp.json()
-                setLoopCandidates(data.candidates || [])
-                // 从 scores 生成相似度热力图
-                if (data.scores?.length > 0) {
-                  const totalFrames = (videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration))
-                  const minScore = Math.min(...data.scores.map(s => s.score))
-                  const maxScore = Math.max(...data.scores.map(s => s.score))
-                  const range = Math.max(maxScore - minScore, 1)
-                  // 存全局 min/max 用于候选百分比归一化
-                  setScoreRange({ min: minScore, max: maxScore })
-                  const heatmap = data.scores.map(s => ({
-                    pct: (s.frame / totalFrames) * 100,
-                    opacity: 1 - (s.score - minScore) / range,
-                  }))
-                  setSimilarityHeatmap(heatmap)
-                } else {
-                  setSimilarityHeatmap(null)
-                }
-                // 自动选中最佳候选
-                if (data.candidates?.length > 0) {
-                  onRangeChange({ ...range, endFrame: data.candidates[0].frame })
-                  seekToFrame(data.candidates[0].frame / fps)
-                }
-              } catch (err) {
-                console.error('循环检测失败:', err)
-              } finally {
-                setDetecting(false)
-              }
-            }}
+            onClick={() => detectLoopEnd(range.startFrame)}
             disabled={detecting}
-          >{detecting ? '检测中...' : '🔁 自动循环'}</button>
+          >
+            <input
+              type="checkbox"
+              className="loop-auto-checkbox"
+              checked={autoLoopDetect}
+              onClick={(event) => event.stopPropagation()}
+              onChange={(event) => setAutoLoopDetect(event.target.checked)}
+              disabled={detecting}
+              aria-label="自动触发循环检测"
+            />
+            <span>{detecting ? '检测中...' : '自动循环'}</span>
+          </button>
         </div>
       )}
 
@@ -449,18 +581,33 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
               const mx = scoreRange?.max ?? Math.max(...loopCandidates.map(c => c.score))
               const scoreRangeVal = Math.max(mx - mn, 1)
               return loopCandidates.map((c, i) => {
-                const active = c.frame === range.endFrame
+                const activeEnd = c.frame === range.endFrame
+                const activeStart = c.frame === range.startFrame
                 const fps = videoInfo?.fps || 30
                 const similarity = Math.round(100 * (mx - c.score) / scoreRangeVal)
+                const totalFrames = videoInfo?.frameCount || Math.round(fps * duration) || range.endFrame
+                const selectEndFrame = () => {
+                  stopLoopPreview()
+                  onRangeChange({ ...range, endFrame: Math.max(c.frame, range.startFrame + 1) })
+                  seekToFrame(c.frame / fps)
+                  setFrameTime(c.frame / fps)
+                }
+                const selectStartFrame = () => {
+                  stopLoopPreview()
+                  const nextEnd = Math.min(Math.max(range.endFrame, c.frame + 1), totalFrames)
+                  const nextStart = Math.max(0, Math.min(c.frame, nextEnd - 1))
+                  onRangeChange({ ...range, startFrame: nextStart, endFrame: nextEnd })
+                  seekToFrame(c.frame / fps)
+                  setFrameTime(c.frame / fps)
+                }
                 return (
                   <button
                     key={c.frame}
-                    className={`candidate-chip ${active ? 'active' : ''} ${i === 0 ? 'best' : ''}`}
-                    onClick={() => {
-                      stopLoopPreview()
-                      onRangeChange({ ...range, endFrame: c.frame })
-                      seekToFrame(c.frame / fps)
-                      setFrameTime(c.frame / fps)
+                    className={`candidate-chip ${activeEnd ? 'active active-end' : ''} ${activeStart ? 'active active-start' : ''} ${i === 0 ? 'best' : ''}`}
+                    onClick={selectEndFrame}
+                    onContextMenu={(event) => {
+                      event.preventDefault()
+                      selectStartFrame()
                     }}
                     title={`第 ${c.frame} 帧 · 相似度 ${similarity}%`}
                   >
@@ -483,6 +630,26 @@ function formatTime(s) {
   const m = Math.floor(s / 60)
   const sec = Math.floor(s % 60)
   return `${m}:${sec.toString().padStart(2, '0')}`
+}
+
+function loadStoredBoolean(key, fallback) {
+  try {
+    const value = localStorage.getItem(key)
+    if (value == null) return fallback
+    return value === 'true'
+  } catch (e) {
+    return fallback
+  }
+}
+
+function saveStoredBoolean(key, value) {
+  try {
+    localStorage.setItem(key, String(value))
+  } catch (e) { /* ignore */ }
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
 }
 
 function drawCheckerboard(ctx, w, h) {
