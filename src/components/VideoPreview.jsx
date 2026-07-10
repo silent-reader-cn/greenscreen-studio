@@ -103,10 +103,10 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   }, [])
 
   // ===== Seek 到指定时间并提取帧 =====
-  const seekToFrame = useCallback((time) => {
+  const seekToFrame = useCallback((time, { force = false } = {}) => {
     const video = videoRef.current
     if (!video || !video.videoWidth) return
-    if (seekRef.current) return
+    if (seekRef.current && !force) return
     seekRef.current = true
 
     setLoading(true)
@@ -173,7 +173,10 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
     }
   }, [isLoopPlaying, range, renderLoopFrame, stopLoopPreview, videoInfo])
 
-  const detectLoopEnd = useCallback(async (targetStartFrame = rangeRef.current?.startFrame ?? 0) => {
+  const detectLoopEnd = useCallback(async (
+    targetStartFrame = rangeRef.current?.startFrame ?? 0,
+    { seekToCandidate = true } = {}
+  ) => {
     stopLoopPreview()
     if (!videoInfo?.jobId) return
 
@@ -222,8 +225,10 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
         const currentRange = rangeRef.current || {}
         const nextEndFrame = candidates[0].frame
         onRangeChange({ ...currentRange, endFrame: nextEndFrame })
-        seekToFrame(nextEndFrame / currentFps)
-        setFrameTime(nextEndFrame / currentFps)
+        if (seekToCandidate) {
+          seekToFrame(nextEndFrame / currentFps, { force: true })
+          setFrameTime(nextEndFrame / currentFps)
+        }
       }
     } catch (err) {
       if (requestId === detectRequestRef.current) {
@@ -242,7 +247,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
     if (lastAutoDetectKeyRef.current === key) return
 
     lastAutoDetectKeyRef.current = key
-    detectLoopEnd(startFrame)
+    detectLoopEnd(startFrame, { seekToCandidate: false })
   }, [autoLoopDetect, detectLoopEnd, loadedVideoJobId, startFrame, videoInfo?.jobId])
 
   // ===== 视频加载 =====
@@ -589,7 +594,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
                 const selectEndFrame = () => {
                   stopLoopPreview()
                   onRangeChange({ ...range, endFrame: Math.max(c.frame, range.startFrame + 1) })
-                  seekToFrame(c.frame / fps)
+                  seekToFrame(c.frame / fps, { force: true })
                   setFrameTime(c.frame / fps)
                 }
                 const selectStartFrame = () => {
@@ -597,8 +602,8 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
                   const nextEnd = Math.min(Math.max(range.endFrame, c.frame + 1), totalFrames)
                   const nextStart = Math.max(0, Math.min(c.frame, nextEnd - 1))
                   onRangeChange({ ...range, startFrame: nextStart, endFrame: nextEnd })
-                  seekToFrame(c.frame / fps)
-                  setFrameTime(c.frame / fps)
+                  seekToFrame(nextStart / fps, { force: true })
+                  setFrameTime(nextStart / fps)
                 }
                 return (
                   <button
