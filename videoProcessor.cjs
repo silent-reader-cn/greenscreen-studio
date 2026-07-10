@@ -413,6 +413,123 @@ function buildEncoderArgs(outputPath, mode, layout, fps, audioPath) {
 }
 
 /**
+ * 导出精灵图（Sprite Sheet）：将视频帧抠像后排列成网格 PNG
+ */
+async function exportSpriteSheet(inputPath, params, spriteParams, onProgress) {
+  await loadAlgorithms();
+
+  const { keying, layout } = params;
+  const { frameWidth, frameHeight, framesPerRow, maxFrames = Infinity, sampleEvery = 1 } = spriteParams;
+
+  const info = await probeVideo(inputPath);
+  const { width: srcW, height: srcH, fps, duration } = info;
+  const totalFrames = info.frameCount || Math.round(fps * duration);
+  const maxSampledFrames = Math.ceil(totalFrames / sampleEvery);
+  const maxToProcess = Math.min(maxFrames, maxSampledFrames);
+  const cols = framesPerRow;
+  const rows = Math.ceil(maxToProcess / cols);
+  const sheetWidth = cols * frameWidth;
+  const sheetHeight = rows * frameHeight;
+
+  console.log(`  📹 精灵图导出: ${srcW}×${srcH} @ ${fps}fps, 总${totalFrames}帧 每${sampleEvery}帧采样 → ${maxToProcess}帧, ${cols}×${rows}=${sheetWidth}×${sheetHeight}`);
+
+  const sheetCanvas = createCanvas(sheetWidth, sheetHeight);
+  const sheetCtx = sheetCanvas.getContext('2d');
+
+  const extractArgs = ['-i', inputPath, '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'];
+  const extractor = spawn(FFMPEG, extractArgs);
+
+  const frameSize = srcW * srcH * 4;
+  const srcBuffer = Buffer.alloc(frameSize);
+
+  let frameIndex = 0;
+  let inputFrameIndex = 0;
+  let bytesBuffered = 0;
+  let pipelineError = null;
+
+  return new Promise((resolve, reject) => {
+    extractor.stdout.on('data', chunk => {
+      if (pipelineError || frameIndex >= maxToProcess) return;
+
+      let offset = 0;
+      while (offset < chunk.length && frameIndex < maxToProcess) {
+        const remaining = frameSize - bytesBuffered;
+        const toCopy = Math.min(remaining, chunk.length - offset);
+        chunk.copy(srcBuffer, bytesBuffered, offset, offset + toCopy);
+        bytesBuffered += toCopy;
+        offset += toCopy;
+
+        if (bytesBuffered === frameSize) {
+          const shouldSample = inputFrameIndex % sampleEvery === 0;
+          inputFrameIndex++;
+
+          if (shouldSample) {
+            try {
+              const srcData = {
+                data: new Uint8ClampedArray(srcBuffer),
+                width: srcW,
+                height: srcH,
+              };
+              let keyed = applyKeying(srcData, keying);
+              if (layout.autoCrop !== false) {
+                keyed = autoCropKeyed(keyed);
+              }
+
+              const tempCanvas = createCanvas(keyed.width, keyed.height);
+              const tempCtx = tempCanvas.getContext('2d');
+              const imgData = tempCtx.createImageData(keyed.width, keyed.height);
+              imgData.data.set(keyed.data);
+              tempCtx.putImageData(imgData, 0, 0);
+
+              const scale = Math.min(frameWidth / keyed.width, frameHeight / keyed.height);
+              const sw = Math.round(keyed.width * scale);
+              const sh = Math.round(keyed.height * scale);
+              const col = frameIndex % cols;
+              const row = Math.floor(frameIndex / cols);
+              const ox = col * frameWidth + Math.round((frameWidth - sw) / 2);
+              const oy = row * frameHeight + Math.round((frameHeight - sh) / 2);
+
+              sheetCtx.drawImage(tempCanvas, ox, oy, sw, sh);
+              frameIndex++;
+
+              if (frameIndex % 30 === 0 && onProgress) {
+                onProgress(frameIndex, maxToProcess);
+              }
+            } catch (e) {
+              pipelineError = e;
+              return;
+            }
+          }
+          bytesBuffered = 0;
+        }
+      }
+    });
+
+    extractor.on('close', () => {
+      if (pipelineError) return reject(pipelineError);
+
+      onProgress && onProgress(frameIndex, maxToProcess);
+      const buffer = sheetCanvas.toBuffer('image/png');
+      console.log(`  ✅ 精灵图导出完成: ${frameIndex}帧, ${sheetWidth}×${sheetHeight} PNG`);
+
+      resolve({
+        buffer,
+        frameCount: frameIndex,
+        sheetWidth,
+        sheetHeight,
+        cols,
+        rows,
+      });
+    });
+
+    extractor.on('error', e => {
+      pipelineError = e;
+      reject(e);
+    });
+  });
+}
+
+/**
  * 从视频中找与起始帧相似的循环终点帧候选列表
  *
  * 使用 dHash (Difference Hash) 算法：
@@ -716,4 +833,4 @@ function pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, end
   return deduped.sort((a, b) => a.score - b.score).map(c => ({ frame: c.frame, score: c.score }));
 }
 
-module.exports = { processVideo, probeVideo, findLoopEndFrame, dHashRaw, hammingDistance, pickLoopCandidates };
+module.exports = { processVideo, probeVideo, findLoopEndFrame, dHashRaw, hammingDistance, pickLoopCandidates, exportSpriteSheet };

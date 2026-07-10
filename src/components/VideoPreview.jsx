@@ -19,12 +19,35 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const [similarityHeatmap, setSimilarityHeatmap] = useState(null) // [{pct, opacity}, ...]
   const [scoreRange, setScoreRange] = useState(null) // {min, max} 用于全局归一化
   const [isLoopPlaying, setIsLoopPlaying] = useState(false)
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
+  const wrapperRef = useRef(null)
   const tempCanvasRef = useRef(document.createElement('canvas'))
   const seekRef = useRef(false)  // 防止 seek 事件重入
   const playbackRef = useRef({ playing: false, rafId: null })
+
+  // ===== 监听预览容器尺寸变化，用于计算 canvas 的 contain 尺寸 =====
+  useEffect(() => {
+    const wrapper = wrapperRef.current
+    if (!wrapper || resultJobId || !videoFile) return
+
+    const updateSize = () => {
+      const rect = wrapper.getBoundingClientRect()
+      setContainerSize({ w: rect.width, h: rect.height })
+    }
+    updateSize()
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      const { width, height } = entry.contentRect
+      setContainerSize({ w: width, h: height })
+    })
+    observer.observe(wrapper)
+    return () => observer.disconnect()
+  }, [resultJobId, videoFile])
 
   // ===== 从当前视频时间截取一帧 =====
   const captureCurrentFrame = useCallback(() => {
@@ -189,6 +212,28 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
     }
   }, [frameImageData, keyingParams, layoutParams, previewTab])
 
+  // ===== Canvas CSS 尺寸自适应：按当前画布实际比例 contain，避免竖屏/合成画布被裁切 =====
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas || containerSize.w <= 0 || containerSize.h <= 0 || canvas.width <= 0 || canvas.height <= 0) return
+
+    const aspect = canvas.width / canvas.height
+    const containerAspect = containerSize.w / containerSize.h
+    let cssW
+    let cssH
+
+    if (aspect > containerAspect) {
+      cssW = containerSize.w
+      cssH = containerSize.w / aspect
+    } else {
+      cssH = containerSize.h
+      cssW = containerSize.h * aspect
+    }
+
+    canvas.style.width = `${Math.max(1, Math.round(cssW))}px`
+    canvas.style.height = `${Math.max(1, Math.round(cssH))}px`
+  }, [containerSize, frameImageData, keyingParams, layoutParams, previewTab])
+
   // ===== 处理完成后切换到播放器 =====
   if (resultJobId) {
     return (
@@ -244,7 +289,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       </div>
 
       {/* Canvas 预览 */}
-      <div className="frame-canvas-wrapper">
+      <div className="frame-canvas-wrapper" ref={wrapperRef}>
         {loading && <div className="frame-loading">截帧中...</div>}
         <canvas ref={canvasRef} className="preview-canvas" />
       </div>

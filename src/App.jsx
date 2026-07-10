@@ -66,20 +66,19 @@ export default function App() {
   const [videoInfo, setVideoInfo] = useState(null)
   const [resultJobId, setResultJobId] = useState(null)
 
+  // 全局拖放状态
+  const [dragOver, setDragOver] = useState(false)
+  const [droppedVideoFile, setDroppedVideoFile] = useState(null)
+
   // 视频帧范围
   const [frameRange, setFrameRange] = useState({ startFrame: 0, endFrame: 0 })
   const handleRangeChange = useCallback((range) => {
     setFrameRange(range)
   }, [])
 
-  // 切换模式时清空视频状态
+  // 切换模式时保留另一边状态，避免 Tab 来回切换导致预览丢失
   const switchMode = (mode) => {
     setMediaMode(mode)
-    if (mode === 'image') {
-      setVideoFile(null)
-      setVideoInfo(null)
-      setResultJobId(null)
-    }
   }
 
   const handleVideoUpload = useCallback((file, info) => {
@@ -139,10 +138,11 @@ export default function App() {
 
   useEffect(() => {
     renderPreview()
-  }, [renderPreview])
+  }, [renderPreview, mediaMode])
 
   // ===== 文件加载 =====
   const handleFileLoad = useCallback((file) => {
+    if (!file || !file.type.startsWith('image/')) return
     const img = new Image()
     img.onload = () => {
       const canvas = document.createElement('canvas')
@@ -156,6 +156,51 @@ export default function App() {
     }
     img.src = URL.createObjectURL(file)
   }, [])
+
+  // ===== 全局拖放事件（document 层拦截，防止浏览器直接打开文件）=====
+  useEffect(() => {
+    const isFileDrag = (event) => Array.from(event.dataTransfer?.types || []).includes('Files')
+
+    const onDragOver = (event) => {
+      if (!isFileDrag(event)) return
+      event.preventDefault()
+      setDragOver(true)
+    }
+
+    const onDragLeave = (event) => {
+      if (!isFileDrag(event)) return
+      event.preventDefault()
+      if (event.relatedTarget === null || !document.querySelector('.app')?.contains(event.relatedTarget)) {
+        setDragOver(false)
+      }
+    }
+
+    const onDrop = (event) => {
+      if (!isFileDrag(event)) return
+      event.preventDefault()
+      setDragOver(false)
+
+      const file = event.dataTransfer?.files?.[0]
+      if (!file) return
+
+      if (file.type.startsWith('image/')) {
+        switchMode('image')
+        handleFileLoad(file)
+      } else if (file.type.startsWith('video/')) {
+        switchMode('video')
+        setDroppedVideoFile(file)
+      }
+    }
+
+    document.addEventListener('dragover', onDragOver)
+    document.addEventListener('dragleave', onDragLeave)
+    document.addEventListener('drop', onDrop)
+    return () => {
+      document.removeEventListener('dragover', onDragOver)
+      document.removeEventListener('dragleave', onDragLeave)
+      document.removeEventListener('drop', onDrop)
+    }
+  }, [handleFileLoad])
 
   // ===== 导出 =====
   const handleExport = async (mode) => {
@@ -211,6 +256,7 @@ export default function App() {
               onVideoDone={handleVideoDone}
               range={frameRange}
               onRangeChange={handleRangeChange}
+              droppedFile={droppedVideoFile}
             />
           )}
           <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
@@ -277,6 +323,16 @@ export default function App() {
           )}
         </section>
       </main>
+
+      {dragOver && (
+        <div className="drop-overlay">
+          <div className="drop-overlay-content">
+            <span className="drop-overlay-icon">📁</span>
+            <p className="drop-overlay-text">放开鼠标以加载文件</p>
+            <p className="drop-overlay-hint">支持图片 PNG/JPG/WebP 或视频 MP4/MOV/WebM/AVI</p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

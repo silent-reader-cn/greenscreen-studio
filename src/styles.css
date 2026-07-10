@@ -539,6 +539,46 @@ body {
   border-color: #999;
 }
 
+/* 精灵图参数 */
+.sprite-params {
+  margin-bottom: 12px;
+}
+
+.sprite-param-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.sprite-param-row label {
+  font-size: 11px;
+  color: #888;
+  white-space: nowrap;
+}
+
+.sprite-param-row input {
+  width: 64px;
+  padding: 4px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #333;
+  outline: none;
+  text-align: center;
+}
+
+.sprite-param-row input:focus {
+  border-color: #888;
+}
+
+.sprite-hint {
+  font-size: 11px;
+  color: #aaa;
+  white-space: nowrap;
+}
+
 /* 帧范围输入 */
 .range-group {
   margin-top: 4px;
@@ -996,6 +1036,8 @@ body {
   align-items: center;
   gap: 12px;
   width: 100%;
+  height: 100%;
+  min-height: 0;
   max-height: 100%;
 }
 
@@ -1024,6 +1066,7 @@ body {
 
 .frame-canvas-wrapper {
   flex: 1;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1112,4 +1155,55 @@ body {
 .canvas-wrapper::-webkit-scrollbar-thumb {
   background: #ccc;
   border-radius: 3px;
+}
+
+/* ===== 全局拖放覆盖层 ===== */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.drop-overlay-content {
+  background: #fff;
+  border-radius: 16px;
+  padding: 48px 64px;
+  text-align: center;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  animation: scaleIn 0.2s ease-out;
+}
+
+.drop-overlay-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 16px;
+}
+
+.drop-overlay-text {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin-bottom: 8px;
+}
+
+.drop-overlay-hint {
+  font-size: 13px;
+  color: #888;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes scaleIn {
+  from { transform: scale(0.92); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
 }

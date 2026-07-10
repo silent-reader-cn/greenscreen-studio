@@ -6,9 +6,10 @@ const FMT_OPTIONS = [
   { value: 'mp4', label: 'MP4 (绿幕合成, H.264)', transparent: false },
 ]
 
-export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, onVideoDone, range, onRangeChange }) {
+export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, onVideoDone, range, onRangeChange, droppedFile }) {
   const [mode, setMode] = useState('transparent')      // 'transparent' | 'greenscreen'
   const [format, setFormat] = useState('webm')
+  const [exportMode, setExportMode] = useState('video') // 'video' | 'spritesheet'
   const [videoInfo, setVideoInfo] = useState(null)       // {jobId, width, height, fps, duration, hasAudio}
   const [uploading, setUploading] = useState(false)
   const [processing, setProcessing] = useState(false)
@@ -16,26 +17,44 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
   const [status, setStatus] = useState('')               // 'idle'|'uploaded'|'processing'|'done'|'error'
   const [errorMsg, setErrorMsg] = useState('')
   const [downloadUrl, setDownloadUrl] = useState('')
+  const [spriteSheetBlob, setSpriteSheetBlob] = useState(null)
+  const [spriteParams, setSpriteParams] = useState({
+    frameWidth: 128,
+    frameHeight: 128,
+    framesPerRow: 8,
+    maxFrames: 64,
+    sampleEvery: 1,
+  })
 
   const inputRef = useRef(null)
   const pollTimerRef = useRef(null)
   const fileRef = useRef(null)
 
-  // 格式选项根据 mode 过滤
   const availableFormats = FMT_OPTIONS.filter(f => mode === 'transparent' ? f.transparent : !f.transparent)
 
-  // mode 切换时自动调整 format
   useEffect(() => {
     if (mode === 'transparent' && format === 'mp4') setFormat('webm')
     if (mode === 'greenscreen' && (format === 'webm' || format === 'mov')) setFormat('mp4')
-  }, [mode])
+  }, [mode, format])
 
-  // 清理
   useEffect(() => {
     return () => {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current)
       if (downloadUrl) URL.revokeObjectURL(downloadUrl)
     }
+  }, [downloadUrl])
+
+  const resetForNewFile = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current)
+      pollTimerRef.current = null
+    }
+    setVideoInfo(null)
+    setStatus('')
+    setProgress({ current: 0, total: 0, percent: 0 })
+    setErrorMsg('')
+    setDownloadUrl('')
+    setSpriteSheetBlob(null)
   }, [])
 
   const handleFile = useCallback(async (file) => {
@@ -45,6 +64,7 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
     setStatus('idle')
     setVideoInfo(null)
     setDownloadUrl('')
+    setSpriteSheetBlob(null)
     fileRef.current = file
 
     const formData = new FormData()
@@ -56,7 +76,6 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
       const data = await resp.json()
       setVideoInfo(data)
       setStatus('uploaded')
-      // 通知 App：上传成功，传入 File 和视频信息，用于帧预览
       onVideoUpload?.(file, data)
     } catch (err) {
       setErrorMsg(err.message)
@@ -64,7 +83,14 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
     } finally {
       setUploading(false)
     }
-  }, [])
+  }, [onVideoUpload])
+
+  useEffect(() => {
+    if (droppedFile && droppedFile.type.startsWith('video/')) {
+      resetForNewFile()
+      handleFile(droppedFile)
+    }
+  }, [droppedFile, handleFile, resetForNewFile])
 
   const handleProcess = async () => {
     if (!videoInfo) return
@@ -73,15 +99,41 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
     setProgress({ current: 0, total: 0, percent: 0 })
     setErrorMsg('')
     setDownloadUrl('')
+    setSpriteSheetBlob(null)
+
+    if (exportMode === 'spritesheet') {
+      try {
+        const resp = await fetch('/api/video/export-spritesheet', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jobId: videoInfo.jobId,
+            params: { keying: keyingParams, layout: layoutParams },
+            spriteParams,
+          })
+        })
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}))
+          throw new Error(errData.error || '精灵图导出失败')
+        }
+        const blob = await resp.blob()
+        setSpriteSheetBlob(blob)
+        setProcessing(false)
+        setStatus('done')
+      } catch (err) {
+        setProcessing(false)
+        setStatus('error')
+        setErrorMsg(err.message)
+      }
+      return
+    }
 
     try {
-      // 发起处理
       const body = {
         jobId: videoInfo.jobId,
         params: { keying: keyingParams, layout: layoutParams, mode },
         format,
       }
-      // 如果指定了帧范围，传入 range
       const totalFrames = videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)
       if (range && (range.startFrame > 0 || range.endFrame < totalFrames)) {
         body.range = { startFrame: range.startFrame, endFrame: range.endFrame }
@@ -94,22 +146,18 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
       if (!resp.ok) throw new Error('启动处理失败')
       const { taskId } = await resp.json()
 
-      // 轮询进度
       pollTimerRef.current = setInterval(async () => {
         try {
           const pResp = await fetch(`/api/video/progress/${taskId}`)
           const pData = await pResp.json()
 
-          if (pData.progress) {
-            setProgress(pData.progress)
-          }
+          if (pData.progress) setProgress(pData.progress)
 
           if (pData.status === 'done') {
             clearInterval(pollTimerRef.current)
             pollTimerRef.current = null
             setProcessing(false)
             setStatus('done')
-            // 通知 App：处理完成，传入 jobId 用于预览播放
             onVideoDone?.(videoInfo.jobId, format)
           } else if (pData.status === 'error') {
             clearInterval(pollTimerRef.current)
@@ -129,6 +177,16 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
 
   const handleDownload = async () => {
     if (!videoInfo) return
+    if (exportMode === 'spritesheet' && status === 'done') {
+      if (!spriteSheetBlob) return
+      const url = URL.createObjectURL(spriteSheetBlob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `spritesheet_${spriteParams.frameWidth}x${spriteParams.frameHeight}_${Date.now()}.png`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+      return
+    }
     try {
       const resp = await fetch(`/api/video/download/${videoInfo.jobId}`)
       if (!resp.ok) throw new Error('下载失败')
@@ -145,14 +203,9 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
   }
 
   const handleReset = () => {
-    if (pollTimerRef.current) clearInterval(pollTimerRef.current)
-    setVideoInfo(null)
-    setStatus('')
-    setProgress({ current: 0, total: 0, percent: 0 })
-    setErrorMsg('')
-    setDownloadUrl('')
+    resetForNewFile()
     if (inputRef.current) inputRef.current.value = ''
-    onVideoUpload?.(null, null)  // 通知 App 清空预览
+    onVideoUpload?.(null, null)
   }
 
   const fmtTime = (s) => {
@@ -165,12 +218,11 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
     <div className="panel video-panel">
       <h3>🎬 视频抠像</h3>
 
-      {/* 上传区 */}
       <div
         className="video-drop-area"
         onClick={() => inputRef.current?.click()}
-        onDrop={(e) => { e.preventDefault(); handleFile(e.dataTransfer.files[0]) }}
-        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleFile(e.dataTransfer.files[0]) }}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
       >
         {uploading ? (
           <p className="uploading-text">上传中...</p>
@@ -186,6 +238,7 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
           <>
             <p>点击或拖拽视频到此处</p>
             <p className="hint">支持 MP4 / MOV / WebM / AVI</p>
+            <p className="hint" style={{ marginTop: 6, color: '#bbb' }}>也可拖到窗口任意位置自动切换到视频模式</p>
           </>
         )}
         <input
@@ -197,88 +250,123 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
         />
       </div>
 
-      {/* 模式 + 格式选择 */}
       {videoInfo && (
         <div className="video-options">
           <div className="opt-group">
-            <p className="opt-label">输出模式</p>
+            <p className="opt-label">导出类型</p>
             <div className="opt-buttons">
               <button
-                className={`opt-btn ${mode === 'transparent' ? 'active' : ''}`}
-                onClick={() => setMode('transparent')}
-              >透明背景</button>
+                className={`opt-btn ${exportMode === 'video' ? 'active' : ''}`}
+                onClick={() => setExportMode('video')}
+              >视频导出</button>
               <button
-                className={`opt-btn ${mode === 'greenscreen' ? 'active' : ''}`}
-                onClick={() => setMode('greenscreen')}
-              >绿幕合成</button>
+                className={`opt-btn ${exportMode === 'spritesheet' ? 'active' : ''}`}
+                onClick={() => setExportMode('spritesheet')}
+              >精灵图导出</button>
             </div>
           </div>
 
-          <div className="opt-group">
-            <p className="opt-label">输出格式</p>
-            <div className="opt-buttons">
-              {availableFormats.map(f => (
-                <button
-                  key={f.value}
-                  className={`opt-btn ${format === f.value ? 'active' : ''}`}
-                  onClick={() => setFormat(f.value)}
-                >{f.label}</button>
-              ))}
-            </div>
-          </div>
+          {exportMode === 'video' ? (
+            <>
+              <div className="opt-group">
+                <p className="opt-label">输出模式</p>
+                <div className="opt-buttons">
+                  <button
+                    className={`opt-btn ${mode === 'transparent' ? 'active' : ''}`}
+                    onClick={() => setMode('transparent')}
+                  >透明背景</button>
+                  <button
+                    className={`opt-btn ${mode === 'greenscreen' ? 'active' : ''}`}
+                    onClick={() => setMode('greenscreen')}
+                  >绿幕合成</button>
+                </div>
+              </div>
 
-          {/* 帧范围 */}
-          <div className="opt-group range-group">
-            <p className="opt-label">帧范围</p>
-            <div className="range-inputs">
-              <div className="range-field">
-                <label>起始</label>
-                <input
-                  type="number"
-                  className="range-num"
-                  min={0}
-                  max={range.endFrame}
-                  value={range.startFrame}
-                  onChange={(e) => {
-                    const v = Math.max(0, parseInt(e.target.value) || 0)
-                    onRangeChange({ ...range, startFrame: Math.min(v, range.endFrame) })
-                  }}
-                  disabled={processing}
-                />
+              <div className="opt-group">
+                <p className="opt-label">输出格式</p>
+                <div className="opt-buttons">
+                  {availableFormats.map(f => (
+                    <button
+                      key={f.value}
+                      className={`opt-btn ${format === f.value ? 'active' : ''}`}
+                      onClick={() => setFormat(f.value)}
+                    >{f.label}</button>
+                  ))}
+                </div>
               </div>
-              <span className="range-sep">→</span>
-              <div className="range-field">
-                <label>结束</label>
-                <input
-                  type="number"
-                  className="range-num"
-                  min={range.startFrame}
-                  value={range.endFrame}
-                  onChange={(e) => {
-                    const v = parseInt(e.target.value) || 0
-                    onRangeChange({ ...range, endFrame: Math.max(v, range.startFrame) })
-                  }}
-                  disabled={processing}
-                />
+
+              <div className="opt-group range-group">
+                <p className="opt-label">帧范围</p>
+                <div className="range-inputs">
+                  <div className="range-field">
+                    <label>起始</label>
+                    <input
+                      type="number"
+                      className="range-num"
+                      min={0}
+                      max={range.endFrame}
+                      value={range.startFrame}
+                      onChange={(e) => {
+                        const v = Math.max(0, parseInt(e.target.value) || 0)
+                        onRangeChange({ ...range, startFrame: Math.min(v, range.endFrame) })
+                      }}
+                      disabled={processing}
+                    />
+                  </div>
+                  <span className="range-sep">→</span>
+                  <div className="range-field">
+                    <label>结束</label>
+                    <input
+                      type="number"
+                      className="range-num"
+                      min={range.startFrame}
+                      value={range.endFrame}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value) || 0
+                        onRangeChange({ ...range, endFrame: Math.max(v, range.startFrame) })
+                      }}
+                      disabled={processing}
+                    />
+                  </div>
+                </div>
+                <div className="range-info">
+                  {range.endFrame - range.startFrame} 帧
+                  {range.startFrame > 0 || range.endFrame < (videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)) ? ' (局部)' : ' (全视频)'}
+                  <button
+                    className="btn-range-reset"
+                    onClick={() => {
+                      const total = videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)
+                      onRangeChange({ startFrame: 0, endFrame: total })
+                    }}
+                    disabled={processing}
+                  >全视频</button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="sprite-params">
+              <div className="sprite-param-row">
+                <label>帧宽度</label>
+                <input type="number" min="8" max="2048" value={spriteParams.frameWidth} onChange={e => setSpriteParams(p => ({ ...p, frameWidth: parseInt(e.target.value) || 128 }))} />
+                <label>帧高度</label>
+                <input type="number" min="8" max="2048" value={spriteParams.frameHeight} onChange={e => setSpriteParams(p => ({ ...p, frameHeight: parseInt(e.target.value) || 128 }))} />
+              </div>
+              <div className="sprite-param-row">
+                <label>每行帧数</label>
+                <input type="number" min="1" max="100" value={spriteParams.framesPerRow} onChange={e => setSpriteParams(p => ({ ...p, framesPerRow: parseInt(e.target.value) || 8 }))} />
+                <label>最大帧数</label>
+                <input type="number" min="1" max="10000" value={spriteParams.maxFrames} onChange={e => setSpriteParams(p => ({ ...p, maxFrames: parseInt(e.target.value) || 64 }))} />
+              </div>
+              <div className="sprite-param-row">
+                <label>采样间隔</label>
+                <input type="number" min="1" max="1000" value={spriteParams.sampleEvery} onChange={e => setSpriteParams(p => ({ ...p, sampleEvery: parseInt(e.target.value) || 1 }))} />
+                <span className="sprite-hint">每隔 N 帧取一帧</span>
               </div>
             </div>
-            <div className="range-info">
-              {range.endFrame - range.startFrame} 帧
-              {range.startFrame > 0 || range.endFrame < (videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)) ? ' (局部)' : ' (全视频)'}
-              <button
-                className="btn-range-reset"
-                onClick={() => {
-                  const total = videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)
-                  onRangeChange({ startFrame: 0, endFrame: total })
-                }}
-                disabled={processing}
-              >全视频</button>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
-      {/* 进度条 */}
       {processing && (
         <div className="progress-section">
           <div className="progress-bar-container">
@@ -290,35 +378,29 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
         </div>
       )}
 
-      {/* 错误提示 */}
-      {errorMsg && (
-        <div className="error-msg">❌ {errorMsg}</div>
-      )}
+      {errorMsg && <div className="error-msg">❌ {errorMsg}</div>}
 
-      {/* 完成提示 */}
-      {status === 'done' && (
+      {status === 'done' && exportMode === 'video' && (
         <div className="success-msg">✅ 处理完成！点击下方下载</div>
       )}
+      {status === 'done' && exportMode === 'spritesheet' && spriteSheetBlob && (
+        <div className="success-msg">✅ 精灵图导出完成！({spriteSheetBlob.size > 1024 ? `${(spriteSheetBlob.size / 1024).toFixed(1)}KB` : `${spriteSheetBlob.size}B`}) 点击下方下载</div>
+      )}
 
-      {/* 操作按钮 */}
       {videoInfo && (
         <div className="video-actions">
           {status === 'done' ? (
-            <button className="btn-video-download" onClick={handleDownload}>
-              ⬇ 下载视频 ({format.toUpperCase()})
-            </button>
+            exportMode === 'spritesheet' ? (
+              <button className="btn-video-download" onClick={handleDownload}>⬇ 下载精灵图 PNG</button>
+            ) : (
+              <button className="btn-video-download" onClick={handleDownload}>⬇ 下载视频 ({format.toUpperCase()})</button>
+            )
           ) : (
-            <button
-              className="btn-video-process"
-              onClick={handleProcess}
-              disabled={processing}
-            >
-              {processing ? '处理中...' : '🚀 开始处理'}
+            <button className="btn-video-process" onClick={handleProcess} disabled={processing}>
+              {processing ? '处理中...' : exportMode === 'spritesheet' ? '🖼️ 生成精灵图' : '🚀 开始处理'}
             </button>
           )}
-          <button className="btn-video-reset" onClick={handleReset} disabled={processing}>
-            重新选择
-          </button>
+          <button className="btn-video-reset" onClick={handleReset} disabled={processing}>重新选择</button>
         </div>
       )}
     </div>
