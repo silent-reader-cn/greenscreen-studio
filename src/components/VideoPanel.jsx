@@ -6,10 +6,47 @@ const FMT_OPTIONS = [
   { value: 'mp4', label: 'MP4 (绿幕合成, H.264)', transparent: false },
 ]
 
-export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, onVideoDone, range, onRangeChange, droppedFile }) {
-  const [mode, setMode] = useState('transparent')      // 'transparent' | 'greenscreen'
-  const [format, setFormat] = useState('webm')
-  const [exportMode, setExportMode] = useState('video') // 'video' | 'spritesheet'
+const DEFAULT_SPRITE_PARAMS = {
+  frameWidth: 128,
+  frameHeight: 128,
+  framesPerRow: 8,
+  maxFrames: 64,
+  sampleEvery: 1,
+}
+
+const DEFAULT_VIDEO_PARAMS = {
+  mode: 'transparent',
+  format: 'webm',
+  exportMode: 'video',
+  spriteParams: DEFAULT_SPRITE_PARAMS,
+}
+
+function normalizeVideoParams(videoParams = {}) {
+  const source = videoParams || {}
+  return {
+    ...DEFAULT_VIDEO_PARAMS,
+    ...source,
+    spriteParams: {
+      ...DEFAULT_SPRITE_PARAMS,
+      ...(source.spriteParams || {}),
+    },
+  }
+}
+
+export default function VideoPanel({
+  keyingParams,
+  layoutParams,
+  videoParams,
+  onVideoParamsChange,
+  onVideoUpload,
+  onVideoDone,
+  range,
+  onRangeChange,
+  droppedFile,
+}) {
+  const safeVideoParams = normalizeVideoParams(videoParams)
+  const { mode, format, exportMode, spriteParams } = safeVideoParams
+
   const [videoInfo, setVideoInfo] = useState(null)       // {jobId, width, height, fps, duration, hasAudio}
   const [uploading, setUploading] = useState(false)
   const [processing, setProcessing] = useState(false)
@@ -18,17 +55,43 @@ export default function VideoPanel({ keyingParams, layoutParams, onVideoUpload, 
   const [errorMsg, setErrorMsg] = useState('')
   const [downloadUrl, setDownloadUrl] = useState('')
   const [spriteSheetBlob, setSpriteSheetBlob] = useState(null)
-  const [spriteParams, setSpriteParams] = useState({
-    frameWidth: 128,
-    frameHeight: 128,
-    framesPerRow: 8,
-    maxFrames: 64,
-    sampleEvery: 1,
-  })
 
   const inputRef = useRef(null)
   const pollTimerRef = useRef(null)
   const fileRef = useRef(null)
+
+  const updateVideoParams = useCallback((patch) => {
+    const nextParams = {
+      ...safeVideoParams,
+      ...patch,
+    }
+    if (patch.spriteParams) {
+      nextParams.spriteParams = {
+        ...DEFAULT_SPRITE_PARAMS,
+        ...patch.spriteParams,
+      }
+    }
+    onVideoParamsChange?.(nextParams)
+  }, [onVideoParamsChange, safeVideoParams])
+
+  const setMode = useCallback((nextMode) => {
+    updateVideoParams({ mode: nextMode })
+  }, [updateVideoParams])
+
+  const setFormat = useCallback((nextFormat) => {
+    updateVideoParams({ format: nextFormat })
+  }, [updateVideoParams])
+
+  const setExportMode = useCallback((nextExportMode) => {
+    updateVideoParams({ exportMode: nextExportMode })
+  }, [updateVideoParams])
+
+  const setSpriteParams = useCallback((updater) => {
+    const nextSpriteParams = typeof updater === 'function'
+      ? updater(spriteParams)
+      : updater
+    updateVideoParams({ spriteParams: nextSpriteParams })
+  }, [spriteParams, updateVideoParams])
 
   const availableFormats = FMT_OPTIONS.filter(f => mode === 'transparent' ? f.transparent : !f.transparent)
 

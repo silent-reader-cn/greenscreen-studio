@@ -6,6 +6,7 @@ import LayoutPanel from './components/LayoutPanel.jsx'
 import PreviewCanvas from './components/PreviewCanvas.jsx'
 import VideoPanel from './components/VideoPanel.jsx'
 import VideoPreview from './components/VideoPreview.jsx'
+import ProfileSwitcher from './components/ProfileSwitcher.jsx'
 
 // ===== 默认参数 =====
 const DEFAULT_KEYING = {
@@ -25,8 +26,152 @@ const DEFAULT_LAYOUT = {
   autoCrop: true,
 }
 
+const DEFAULT_SPRITE_PARAMS = {
+  frameWidth: 128,
+  frameHeight: 128,
+  framesPerRow: 8,
+  maxFrames: 64,
+  sampleEvery: 1,
+}
+
+const DEFAULT_VIDEO_PARAMS = {
+  mode: 'transparent',
+  format: 'webm',
+  exportMode: 'video',
+  spriteParams: DEFAULT_SPRITE_PARAMS,
+}
+
+const DEFAULT_FRAME_RANGE = {
+  startFrame: 0,
+  endFrame: 0,
+}
+
 // ===== localStorage 持久化 =====
 const STORAGE_KEY = 'greenscreen-studio-params'
+const PROFILES_STORAGE_KEY = 'greenscreen-studio-profiles'
+
+const cloneArray = (value, fallback) => (
+  Array.isArray(value) && value.length === fallback.length ? [...value] : [...fallback]
+)
+
+function normalizeParams(params = {}) {
+  const source = params || {}
+  const keying = source.keying || {}
+  const layout = source.layout || {}
+  const video = source.video || {}
+  const spriteParams = video.spriteParams || {}
+  const frameRange = source.frameRange || {}
+
+  return {
+    keying: {
+      ...DEFAULT_KEYING,
+      ...keying,
+      keyColor: cloneArray(keying.keyColor, DEFAULT_KEYING.keyColor),
+    },
+    layout: {
+      ...DEFAULT_LAYOUT,
+      ...layout,
+      bgColor: cloneArray(layout.bgColor, DEFAULT_LAYOUT.bgColor),
+    },
+    video: {
+      ...DEFAULT_VIDEO_PARAMS,
+      ...video,
+      spriteParams: {
+        ...DEFAULT_SPRITE_PARAMS,
+        ...spriteParams,
+      },
+    },
+    frameRange: {
+      startFrame: Math.max(0, Number(frameRange.startFrame) || 0),
+      endFrame: Math.max(0, Number(frameRange.endFrame) || 0),
+    },
+  }
+}
+
+function createProfileId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  return `profile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function makeProfile(name, params, overrides = {}) {
+  const now = Date.now()
+  const normalized = normalizeParams(params)
+  return {
+    id: overrides.id || createProfileId(),
+    name: String(name || '').trim() || '未命名 Profile',
+    keying: normalized.keying,
+    layout: normalized.layout,
+    video: normalized.video,
+    frameRange: normalized.frameRange,
+    useCount: overrides.useCount ?? 0,
+    createdAt: overrides.createdAt || now,
+    updatedAt: overrides.updatedAt || now,
+    lastUsedAt: overrides.lastUsedAt || now,
+  }
+}
+
+function normalizeProfile(profile, index = 0) {
+  return makeProfile(profile?.name || `Profile ${index + 1}`, profile, {
+    id: profile?.id || createProfileId(),
+    useCount: Number(profile?.useCount) || 0,
+    createdAt: Number(profile?.createdAt) || Date.now(),
+    updatedAt: Number(profile?.updatedAt) || Date.now(),
+    lastUsedAt: Number(profile?.lastUsedAt) || 0,
+  })
+}
+
+function getProfileParams(profile) {
+  return normalizeParams({
+    keying: profile?.keying,
+    layout: profile?.layout,
+    video: profile?.video,
+    frameRange: profile?.frameRange,
+  })
+}
+
+function getVideoTotalFrames(info) {
+  if (!info) return 0
+  return info.frameCount || Math.round(info.fps * info.duration)
+}
+
+function resolveFrameRangeForVideo(range, info) {
+  const normalized = normalizeParams({ frameRange: range }).frameRange
+  const totalFrames = getVideoTotalFrames(info)
+  if (!totalFrames) return normalized
+
+  if (normalized.endFrame <= normalized.startFrame) {
+    return { startFrame: 0, endFrame: totalFrames }
+  }
+
+  const startFrame = Math.min(normalized.startFrame, totalFrames)
+  const endFrame = Math.min(Math.max(normalized.endFrame, startFrame), totalFrames)
+  return { startFrame, endFrame }
+}
+
+function sortProfilesByUsage(profiles) {
+  return [...profiles].sort((a, b) => (
+    (b.useCount || 0) - (a.useCount || 0) ||
+    (b.lastUsedAt || 0) - (a.lastUsedAt || 0) ||
+    (b.updatedAt || 0) - (a.updatedAt || 0) ||
+    (a.name || '').localeCompare(b.name || '', 'zh-Hans-CN')
+  ))
+}
+
+function getUniqueProfileName(baseName, profiles) {
+  const fallbackName = String(baseName || '').trim() || `Profile ${profiles.length + 1}`
+  const existing = new Set(profiles.map(profile => profile.name))
+  if (!existing.has(fallbackName)) return fallbackName
+
+  let index = 2
+  let nextName = `${fallbackName} ${index}`
+  while (existing.has(nextName)) {
+    index += 1
+    nextName = `${fallbackName} ${index}`
+  }
+  return nextName
+}
 
 function loadParams() {
   try {
@@ -42,6 +187,41 @@ function loadParams() {
   return { keying: DEFAULT_KEYING, layout: DEFAULT_LAYOUT }
 }
 
+function loadProfileState() {
+  try {
+    const saved = localStorage.getItem(PROFILES_STORAGE_KEY)
+    if (saved) {
+      const parsed = JSON.parse(saved)
+      const profiles = Array.isArray(parsed.profiles)
+        ? parsed.profiles.map(normalizeProfile).filter(profile => profile.id)
+        : []
+
+      if (profiles.length > 0) {
+        const activeProfileId = profiles.some(profile => profile.id === parsed.activeProfileId)
+          ? parsed.activeProfileId
+          : sortProfilesByUsage(profiles)[0].id
+        return { profiles, activeProfileId }
+      }
+    }
+  } catch (e) { /* ignore */ }
+
+  const legacyParams = loadParams()
+  const defaultProfile = makeProfile('默认', legacyParams, {
+    id: 'default',
+    useCount: 1,
+  })
+  return {
+    profiles: [defaultProfile],
+    activeProfileId: defaultProfile.id,
+  }
+}
+
+function saveProfileState(profiles, activeProfileId) {
+  try {
+    localStorage.setItem(PROFILES_STORAGE_KEY, JSON.stringify({ profiles, activeProfileId }))
+  } catch (e) { /* ignore */ }
+}
+
 function saveParams(keying, layout) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ keying, layout }))
@@ -49,14 +229,23 @@ function saveParams(keying, layout) {
 }
 
 export default function App() {
-  // ===== 从 localStorage 恢复参数 =====
-  const initial = loadParams()
+  // ===== 从 localStorage 恢复 profiles / 参数 =====
+  const initialProfileStateRef = useRef(null)
+  if (!initialProfileStateRef.current) {
+    initialProfileStateRef.current = loadProfileState()
+  }
+  const [profiles, setProfiles] = useState(() => initialProfileStateRef.current.profiles)
+  const [activeProfileId, setActiveProfileId] = useState(() => initialProfileStateRef.current.activeProfileId)
+  const initialActiveProfile = profiles.find(profile => profile.id === activeProfileId) || profiles[0]
+  const initialParams = getProfileParams(initialActiveProfile)
+
   const [imageData, setImageData] = useState(null)
   const [imageSize, setImageSize] = useState({ w: 0, h: 0 })
   const [tab, setTab] = useState('keying')
 
-  const [keyingParams, setKeyingParams] = useState(initial.keying)
-  const [layoutParams, setLayoutParams] = useState(initial.layout)
+  const [keyingParams, setKeyingParams] = useState(initialParams.keying)
+  const [layoutParams, setLayoutParams] = useState(initialParams.layout)
+  const [videoParams, setVideoParams] = useState(initialParams.video)
 
   const [exporting, setExporting] = useState(false)
   const [mediaMode, setMediaMode] = useState('image')  // 'image' | 'video'
@@ -71,7 +260,7 @@ export default function App() {
   const [droppedVideoFile, setDroppedVideoFile] = useState(null)
 
   // 视频帧范围
-  const [frameRange, setFrameRange] = useState({ startFrame: 0, endFrame: 0 })
+  const [frameRange, setFrameRange] = useState(initialParams.frameRange)
   const handleRangeChange = useCallback((range) => {
     setFrameRange(range)
   }, [])
@@ -80,6 +269,68 @@ export default function App() {
   const switchMode = (mode) => {
     setMediaMode(mode)
   }
+
+  const handleSelectProfile = useCallback((profileId) => {
+    const profile = profiles.find(item => item.id === profileId)
+    if (!profile) return
+
+    const nextParams = getProfileParams(profile)
+    const now = Date.now()
+    setActiveProfileId(profileId)
+    setKeyingParams(nextParams.keying)
+    setLayoutParams(nextParams.layout)
+    setVideoParams(nextParams.video)
+    setFrameRange(resolveFrameRangeForVideo(nextParams.frameRange, videoInfo))
+    setProfiles(prev => prev.map(item => (
+      item.id === profileId
+        ? {
+            ...item,
+            useCount: (item.useCount || 0) + 1,
+            lastUsedAt: now,
+          }
+        : item
+    )))
+  }, [profiles, videoInfo])
+
+  const handleCreateProfile = useCallback((name) => {
+    const profileName = getUniqueProfileName(name, profiles)
+    const newProfile = makeProfile(profileName, {
+      keying: keyingParams,
+      layout: layoutParams,
+      video: videoParams,
+      frameRange,
+    }, {
+      useCount: 1,
+    })
+
+    setProfiles(prev => [...prev, newProfile])
+    setActiveProfileId(newProfile.id)
+  }, [frameRange, keyingParams, layoutParams, profiles, videoParams])
+
+  const handleDeleteProfile = useCallback((profileId) => {
+    const profile = profiles.find(item => item.id === profileId)
+    if (!profile) return
+
+    if (profiles.length <= 1) {
+      alert('至少需要保留一个 profile')
+      return
+    }
+
+    if (!confirm(`删除 profile「${profile.name}」？`)) return
+
+    const remainingProfiles = profiles.filter(item => item.id !== profileId)
+    setProfiles(remainingProfiles)
+
+    if (profileId === activeProfileId) {
+      const nextProfile = sortProfilesByUsage(remainingProfiles)[0]
+      const nextParams = getProfileParams(nextProfile)
+      setActiveProfileId(nextProfile.id)
+      setKeyingParams(nextParams.keying)
+      setLayoutParams(nextParams.layout)
+      setVideoParams(nextParams.video)
+      setFrameRange(resolveFrameRangeForVideo(nextParams.frameRange, videoInfo))
+    }
+  }, [activeProfileId, profiles, videoInfo])
 
   const handleVideoUpload = useCallback((file, info) => {
     setVideoFile(file)
@@ -96,10 +347,30 @@ export default function App() {
     setResultJobId(jobId)
   }, [])
 
-  // ===== 参数变化时持久化 =====
+  // ===== 参数变化时持久化到当前 profile =====
   useEffect(() => {
+    const now = Date.now()
+    setProfiles(prev => prev.map(profile => (
+      profile.id === activeProfileId
+        ? {
+            ...profile,
+            keying: { ...keyingParams },
+            layout: { ...layoutParams },
+            video: {
+              ...videoParams,
+              spriteParams: { ...videoParams.spriteParams },
+            },
+            frameRange: { ...frameRange },
+            updatedAt: now,
+          }
+        : profile
+    )))
     saveParams(keyingParams, layoutParams)
-  }, [keyingParams, layoutParams])
+  }, [activeProfileId, frameRange, keyingParams, layoutParams, videoParams])
+
+  useEffect(() => {
+    saveProfileState(profiles, activeProfileId)
+  }, [activeProfileId, profiles])
 
   // ===== 实时预览 =====
   const previewRef = useRef(null)
@@ -240,8 +511,17 @@ export default function App() {
   return (
     <div className="app">
       <header className="header">
-        <h1>🎬 绿幕素材标准化工具</h1>
-        <p>抠像 · 等比缩放 · 居中重排 · 导出</p>
+        <div className="header-copy">
+          <h1>🎬 绿幕素材标准化工具</h1>
+          <p>抠像 · 等比缩放 · 居中重排 · 导出</p>
+        </div>
+        <ProfileSwitcher
+          profiles={profiles}
+          activeProfileId={activeProfileId}
+          onSelect={handleSelectProfile}
+          onCreate={handleCreateProfile}
+          onDelete={handleDeleteProfile}
+        />
       </header>
 
       <main className="main">
@@ -252,6 +532,8 @@ export default function App() {
             <VideoPanel
               keyingParams={keyingParams}
               layoutParams={layoutParams}
+              videoParams={videoParams}
+              onVideoParamsChange={setVideoParams}
               onVideoUpload={handleVideoUpload}
               onVideoDone={handleVideoDone}
               range={frameRange}
