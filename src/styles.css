@@ -331,37 +331,60 @@ body {
   border-bottom: 1px solid #eee;
 }
 
-/* ===== 上传区 ===== */
-.upload-zone .drop-area {
-  border: 2px dashed #c8c8c0;
+/* ===== 素材信息 ===== */
+.file-meta-panel {
+  background: #fff;
+}
+
+.file-meta-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.file-meta-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-meta-grid {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  gap: 6px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.file-meta-grid span {
+  color: #999;
+}
+
+.file-meta-grid strong {
+  color: #444;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.file-meta-empty {
+  padding: 10px 12px;
+  background: #fafaf8;
+  border: 1px dashed #d8d8d0;
   border-radius: 6px;
-  padding: 24px 16px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
-.upload-zone .drop-area:hover {
-  border-color: #999;
-  background: #f5f5f0;
-}
-
-.upload-zone .drop-area p {
+.file-meta-empty p {
   font-size: 13px;
   color: #555;
 }
 
-.upload-zone .hint {
+.file-meta-empty .hint {
   font-size: 11px;
   color: #aaa;
   margin-top: 4px;
-}
-
-.image-info {
-  margin-top: 10px;
-  font-size: 12px;
-  color: #666;
-  text-align: center;
 }
 
 /* ===== 滑块 ===== */
@@ -669,61 +692,18 @@ body {
   font-weight: 600;
 }
 
-/* ===== 视频面板 ===== */
-.video-panel .video-drop-area {
-  border: 2px dashed #c8c8c0;
-  border-radius: 6px;
-  padding: 20px 16px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s;
-  min-height: 80px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-}
-
-.video-panel .video-drop-area:hover {
-  border-color: #999;
-  background: #f5f5f0;
-}
-
-.video-panel .video-drop-area p {
-  font-size: 13px;
-  color: #555;
-}
-
-.video-panel .uploading-text {
-  color: #3366aa;
-  font-weight: 500;
-}
-
-.video-info-display {
-  width: 100%;
-}
-
-.video-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: #333;
-  margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.video-meta {
-  font-size: 11px;
-  color: #888;
-}
-
 .video-options {
-  margin-top: 12px;
+  margin-top: 0;
 }
 
 .opt-group {
   margin-bottom: 12px;
+}
+
+.video-options .opt-group:last-child,
+.video-options .range-group:last-child,
+.video-options .sprite-params:last-child {
+  margin-bottom: 0;
 }
 
 .opt-label {

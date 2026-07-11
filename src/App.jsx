@@ -1,6 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { applyKeying, composeToCanvas, autoCropKeyed } from './lib/keying.js'
-import UploadZone from './components/UploadZone.jsx'
 import KeyingPanel from './components/KeyingPanel.jsx'
 import LayoutPanel from './components/LayoutPanel.jsx'
 import PreviewCanvas from './components/PreviewCanvas.jsx'
@@ -150,6 +149,25 @@ function resolveFrameRangeForVideo(range, info) {
   return { startFrame, endFrame }
 }
 
+function formatBytes(bytes) {
+  if (!bytes) return '未知大小'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let value = bytes
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex += 1
+  }
+  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
+}
+
+function formatDuration(seconds) {
+  if (!seconds) return '0秒'
+  const minutes = Math.floor(seconds / 60)
+  const rest = (seconds % 60).toFixed(1)
+  return minutes > 0 ? `${minutes}分${rest}秒` : `${rest}秒`
+}
+
 function sortProfilesByUsage(profiles) {
   return [...profiles].sort((a, b) => (
     (b.useCount || 0) - (a.useCount || 0) ||
@@ -240,6 +258,7 @@ export default function App() {
   const initialParams = getProfileParams(initialActiveProfile)
 
   const [imageData, setImageData] = useState(null)
+  const [imageFile, setImageFile] = useState(null)
   const [imageSize, setImageSize] = useState({ w: 0, h: 0 })
   const [tab, setTab] = useState('keying')
 
@@ -342,6 +361,8 @@ export default function App() {
     if (info) {
       const totalFrames = info.frameCount || Math.round(info.fps * info.duration)
       setFrameRange({ startFrame: 0, endFrame: totalFrames })
+    } else {
+      setFrameRange({ ...DEFAULT_FRAME_RANGE })
     }
   }, [])
 
@@ -420,6 +441,7 @@ export default function App() {
   // ===== 文件加载 =====
   const handleFileLoad = useCallback((file) => {
     if (!file || !file.type.startsWith('image/')) return
+    setImageFile(file)
     const img = new Image()
     img.onload = () => {
       const canvas = document.createElement('canvas')
@@ -533,9 +555,14 @@ export default function App() {
       <main className="main">
         <aside className="sidebar">
           <div className="sidebar-scroll">
-            {mediaMode === 'image' ? (
-              <UploadZone onFileLoad={handleFileLoad} imageSize={imageSize} />
-            ) : (
+            <FileMetaPanel
+              mediaMode={mediaMode}
+              imageFile={imageFile}
+              imageSize={imageSize}
+              videoFile={videoFile}
+              videoInfo={videoInfo}
+            />
+            {mediaMode === 'video' && (
               <VideoPanel
                 keyingParams={keyingParams}
                 layoutParams={layoutParams}
@@ -558,7 +585,7 @@ export default function App() {
             {mediaMode === 'image' ? (
               <div className="dock-actions">
                 {!imageData && (
-                  <p className="dock-hint">上传图片后可导出当前参数下的结果</p>
+                  <p className="dock-hint">拖入图片后可导出当前参数下的结果</p>
                 )}
                 <button
                   className="dock-btn dock-btn-primary"
@@ -631,6 +658,51 @@ export default function App() {
             <p className="drop-overlay-text">放开鼠标以加载文件</p>
             <p className="drop-overlay-hint">支持图片 PNG/JPG/WebP 或视频 MP4/MOV/WebM/AVI</p>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function FileMetaPanel({ mediaMode, imageFile, imageSize, videoFile, videoInfo }) {
+  const isImage = mediaMode === 'image'
+  const file = isImage ? imageFile : videoFile
+  const loaded = isImage ? imageSize.w > 0 : !!videoInfo
+
+  return (
+    <div className="panel file-meta-panel">
+      <h3>📄 当前素材</h3>
+      {loaded && file ? (
+        <div className="file-meta-content">
+          <p className="file-meta-name" title={file.name}>{file.name}</p>
+          <div className="file-meta-grid">
+            <span>类型</span>
+            <strong>{isImage ? '图片' : '视频'}</strong>
+            <span>大小</span>
+            <strong>{formatBytes(file.size)}</strong>
+            {isImage ? (
+              <>
+                <span>尺寸</span>
+                <strong>{imageSize.w} × {imageSize.h}</strong>
+              </>
+            ) : (
+              <>
+                <span>尺寸</span>
+                <strong>{videoInfo.width} × {videoInfo.height}</strong>
+                <span>时长</span>
+                <strong>{formatDuration(videoInfo.duration)}</strong>
+                <span>帧率</span>
+                <strong>{videoInfo.fps} fps</strong>
+                <span>音轨</span>
+                <strong>{videoInfo.hasAudio ? '有' : '无'}</strong>
+              </>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="file-meta-empty">
+          <p>{isImage ? '暂无图片素材' : '暂无视频素材'}</p>
+          <p className="hint">把图片或视频拖到窗口任意位置即可载入</p>
         </div>
       )}
     </div>

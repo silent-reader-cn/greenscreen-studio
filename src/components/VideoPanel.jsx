@@ -58,9 +58,7 @@ export default function VideoPanel({
   const [downloadUrl, setDownloadUrl] = useState('')
   const [spriteSheetBlob, setSpriteSheetBlob] = useState(null)
 
-  const inputRef = useRef(null)
   const pollTimerRef = useRef(null)
-  const fileRef = useRef(null)
 
   const updateVideoParams = useCallback((patch) => {
     const nextParams = {
@@ -130,7 +128,6 @@ export default function VideoPanel({
     setVideoInfo(null)
     setDownloadUrl('')
     setSpriteSheetBlob(null)
-    fileRef.current = file
 
     const formData = new FormData()
     formData.append('video', file)
@@ -269,21 +266,14 @@ export default function VideoPanel({
 
   const handleReset = () => {
     resetForNewFile()
-    if (inputRef.current) inputRef.current.value = ''
     onVideoUpload?.(null, null)
-  }
-
-  const fmtTime = (s) => {
-    const m = Math.floor(s / 60)
-    const sec = (s % 60).toFixed(1)
-    return m > 0 ? `${m}分${sec}秒` : `${sec}秒`
   }
 
   const dockContent = (
     <div className="dock-actions">
       {!videoInfo && (
         <p className="dock-hint">
-          {uploading ? '视频上传中，完成后可开始处理' : '上传视频后可在这里处理或下载结果'}
+          {uploading ? '视频上传中，完成后可开始处理' : '拖入视频后可在这里处理或下载结果'}
         </p>
       )}
 
@@ -322,12 +312,12 @@ export default function VideoPanel({
               {processing ? '处理中...' : exportMode === 'spritesheet' ? '🖼️ 生成精灵图' : '🚀 开始处理'}
             </button>
           )}
-          <button className="dock-btn dock-btn-secondary" onClick={handleReset} disabled={processing}>重新选择</button>
+          <button className="dock-btn dock-btn-secondary" onClick={handleReset} disabled={processing}>🔁 重新选择</button>
         </>
       ) : (
         <>
           <button className="dock-btn dock-btn-primary" disabled>{uploading ? '上传中...' : '🚀 开始处理'}</button>
-          <button className="dock-btn dock-btn-secondary" disabled>重新选择</button>
+          <button className="dock-btn dock-btn-secondary" disabled>🔁 重新选择</button>
         </>
       )}
     </div>
@@ -335,42 +325,9 @@ export default function VideoPanel({
 
   return (
     <>
-      <div className="panel video-panel">
-        <h3>🎬 视频抠像</h3>
-
-        <div
-          className="video-drop-area"
-          onClick={() => inputRef.current?.click()}
-          onDrop={(e) => { e.preventDefault(); e.stopPropagation(); handleFile(e.dataTransfer.files[0]) }}
-          onDragOver={(e) => { e.preventDefault(); e.stopPropagation() }}
-        >
-          {uploading ? (
-            <p className="uploading-text">上传中...</p>
-          ) : videoInfo ? (
-            <div className="video-info-display">
-              <p className="video-name">{fileRef.current?.name || '视频文件'}</p>
-              <p className="video-meta">
-                {videoInfo.width}×{videoInfo.height} · {videoInfo.fps}fps · {fmtTime(videoInfo.duration)}
-                {videoInfo.hasAudio ? ' · 🔊有音轨' : ' · 🔇无音轨'}
-              </p>
-            </div>
-          ) : (
-            <>
-              <p>点击或拖拽视频到此处</p>
-              <p className="hint">支持 MP4 / MOV / WebM / AVI</p>
-              <p className="hint" style={{ marginTop: 6, color: '#bbb' }}>也可拖到窗口任意位置自动切换到视频模式</p>
-            </>
-          )}
-          <input
-            ref={inputRef}
-            type="file"
-            accept="video/*"
-            style={{ display: 'none' }}
-            onChange={(e) => handleFile(e.target.files[0])}
-          />
-        </div>
-
-        {videoInfo && (
+      {videoInfo && (
+        <div className="panel video-panel">
+          <h3>🎬 视频参数</h3>
           <div className="video-options">
             <div className="opt-group">
               <p className="opt-label">导出类型</p>
@@ -485,8 +442,8 @@ export default function VideoPanel({
               </div>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {dockTarget ? createPortal(dockContent, dockTarget) : null}
     </>

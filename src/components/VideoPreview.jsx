@@ -422,7 +422,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       <div className="video-preview-hint">
         <div className="placeholder-icon">🎬</div>
         <p>视频抠像参数与图片共用</p>
-        <p className="hint">调整左侧参数后，上传视频并开始处理</p>
+        <p className="hint">调整左侧参数后，拖入视频并开始处理</p>
         <p className="hint">上传后可在此选帧实时预览抠像效果</p>
       </div>
     )
