@@ -1426,6 +1426,135 @@ body {
   color: #888;
 }
 
+/* ===== 剪切板导入确认 ===== */
+.clipboard-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.clipboard-modal {
+  width: min(440px, 100%);
+  padding: 20px;
+  background: #fff;
+  border: 1px solid #e0e0d8;
+  border-radius: 8px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+  animation: scaleIn 0.18s ease-out;
+}
+
+.clipboard-modal-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.clipboard-modal-icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fafaf8;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  font-size: 20px;
+}
+
+.clipboard-modal h2 {
+  font-size: 17px;
+  line-height: 1.3;
+  color: #1a1a1a;
+  margin-bottom: 4px;
+}
+
+.clipboard-modal p {
+  font-size: 12px;
+  line-height: 1.6;
+  color: #777;
+}
+
+.clipboard-meta-grid {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px 12px;
+  padding: 12px;
+  background: #fafaf8;
+  border: 1px solid #eee;
+  border-radius: 6px;
+}
+
+.clipboard-meta-grid dt,
+.clipboard-meta-grid dd {
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.clipboard-meta-grid dt {
+  color: #999;
+}
+
+.clipboard-meta-grid dd {
+  color: #333;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clipboard-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.clipboard-btn {
+  min-width: 84px;
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s, background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.clipboard-btn.primary {
+  background: #1a1a1a;
+  border-color: #1a1a1a;
+  color: #fff;
+}
+
+.clipboard-btn.secondary {
+  background: #fff;
+  border-color: #ddd;
+  color: #555;
+}
+
+.clipboard-btn:hover {
+  opacity: 0.86;
+}
+
+.clipboard-btn.secondary:hover {
+  background: #f5f5f0;
+  border-color: #999;
+  color: #1a1a1a;
+  opacity: 1;
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }

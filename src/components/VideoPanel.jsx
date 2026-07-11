@@ -23,6 +23,11 @@ const DEFAULT_VIDEO_PARAMS = {
   spriteParams: DEFAULT_SPRITE_PARAMS,
 }
 
+function isVideoFile(file) {
+  const type = String(file?.type || '').toLowerCase()
+  return type.startsWith('video/') || /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(file?.name || '')
+}
+
 function normalizeVideoParams(videoParams = {}) {
   const source = videoParams || {}
   return {
@@ -125,7 +130,7 @@ export default function VideoPanel({
   }, [])
 
   const handleFile = useCallback(async (file) => {
-    if (!file || !file.type.startsWith('video/')) return
+    if (!isVideoFile(file)) return
     setUploading(true)
     setErrorMsg('')
     setStatus('idle')
@@ -152,7 +157,7 @@ export default function VideoPanel({
   }, [onVideoUpload])
 
   useEffect(() => {
-    if (droppedFile && droppedFile.type.startsWith('video/')) {
+    if (isVideoFile(droppedFile)) {
       resetForNewFile()
       handleFile(droppedFile)
     }
