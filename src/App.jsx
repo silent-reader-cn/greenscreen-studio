@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { applyKeying, composeToCanvas, autoCropKeyed } from './lib/keying.js'
 import KeyingPanel from './components/KeyingPanel.jsx'
 import LayoutPanel from './components/LayoutPanel.jsx'
@@ -274,6 +274,108 @@ function getBaseMediaMetadata(file, kind = getMediaKind(file)) {
   }
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function normalizeRegion(region, imageData) {
+  if (!region || !imageData) return null
+
+  const x = clamp(Math.floor(region.x), 0, imageData.width)
+  const y = clamp(Math.floor(region.y), 0, imageData.height)
+  const width = clamp(Math.ceil(region.width), 0, imageData.width - x)
+  const height = clamp(Math.ceil(region.height), 0, imageData.height - y)
+
+  if (width <= 0 || height <= 0) return null
+  return { x, y, width, height }
+}
+
+function makeRegionFromPoints(start, end, imageData) {
+  if (!start || !end || !imageData) return null
+
+  const x1 = clamp(Math.floor(Math.min(start.x, end.x)), 0, imageData.width)
+  const y1 = clamp(Math.floor(Math.min(start.y, end.y)), 0, imageData.height)
+  const x2 = clamp(Math.ceil(Math.max(start.x, end.x)), 0, imageData.width)
+  const y2 = clamp(Math.ceil(Math.max(start.y, end.y)), 0, imageData.height)
+
+  return normalizeRegion({
+    x: x1,
+    y: y1,
+    width: x2 - x1,
+    height: y2 - y1,
+  }, imageData)
+}
+
+function cropImageData(imageData, region) {
+  const normalized = normalizeRegion(region, imageData)
+  if (!normalized) return imageData
+  if (
+    normalized.x === 0 &&
+    normalized.y === 0 &&
+    normalized.width === imageData.width &&
+    normalized.height === imageData.height
+  ) {
+    return imageData
+  }
+
+  const { x: cropX, y: cropY, width: cropW, height: cropH } = normalized
+  const cropped = new Uint8ClampedArray(cropW * cropH * 4)
+
+  for (let y = 0; y < cropH; y++) {
+    const srcRow = ((cropY + y) * imageData.width + cropX) * 4
+    const dstRow = y * cropW * 4
+    cropped.set(imageData.data.subarray(srcRow, srcRow + cropW * 4), dstRow)
+  }
+
+  return { data: cropped, width: cropW, height: cropH }
+}
+
+function putImageDataLike(ctx, imageData, x = 0, y = 0) {
+  const canvasImageData = ctx.createImageData(imageData.width, imageData.height)
+  canvasImageData.data.set(imageData.data)
+  ctx.putImageData(canvasImageData, x, y)
+}
+
+function getRegionOverlayStyle(region, imageData) {
+  const normalized = normalizeRegion(region, imageData)
+  if (!normalized || !imageData) return null
+
+  return {
+    left: `${(normalized.x / imageData.width) * 100}%`,
+    top: `${(normalized.y / imageData.height) * 100}%`,
+    width: `${(normalized.width / imageData.width) * 100}%`,
+    height: `${(normalized.height / imageData.height) * 100}%`,
+  }
+}
+
+function getContainSize(contentSize, containerSize) {
+  if (
+    !contentSize ||
+    !containerSize ||
+    contentSize.w <= 0 ||
+    contentSize.h <= 0 ||
+    containerSize.w <= 0 ||
+    containerSize.h <= 0
+  ) {
+    return null
+  }
+
+  const aspect = contentSize.w / contentSize.h
+  const containerAspect = containerSize.w / containerSize.h
+
+  if (aspect > containerAspect) {
+    return {
+      w: Math.max(1, Math.round(containerSize.w)),
+      h: Math.max(1, Math.round(containerSize.w / aspect)),
+    }
+  }
+
+  return {
+    w: Math.max(1, Math.round(containerSize.h * aspect)),
+    h: Math.max(1, Math.round(containerSize.h)),
+  }
+}
+
 function readImageIntrinsicMetadata(file) {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file)
@@ -426,6 +528,10 @@ export default function App() {
   const [imageData, setImageData] = useState(null)
   const [imageFile, setImageFile] = useState(null)
   const [imageSize, setImageSize] = useState({ w: 0, h: 0 })
+  const [imageRegion, setImageRegion] = useState(null)
+  const [regionSelectionMode, setRegionSelectionMode] = useState(false)
+  const [regionDraft, setRegionDraft] = useState(null)
+  const [imagePreviewContainerSize, setImagePreviewContainerSize] = useState({ w: 0, h: 0 })
   const [previewMode, setPreviewMode] = useState('keying')
 
   const [keyingParams, setKeyingParams] = useState(initialParams.keying)
@@ -454,9 +560,39 @@ export default function App() {
     setFrameRange(range)
   }, [])
 
+  const processingImageData = useMemo(
+    () => cropImageData(imageData, imageRegion),
+    [imageData, imageRegion]
+  )
+  const processingImageSize = processingImageData
+    ? { w: processingImageData.width, h: processingImageData.height }
+    : imageSize
+  const canSelectImageRegion = Boolean(
+    imageData &&
+    mediaMode === 'image' &&
+    previewMode === 'keying' &&
+    regionSelectionMode
+  )
+  const imagePreviewContentSize = processingImageData
+    ? previewMode === 'composite'
+      ? { w: layoutParams.canvasWidth, h: layoutParams.canvasHeight }
+      : { w: processingImageData.width, h: processingImageData.height }
+    : null
+  const imagePreviewDisplaySize = getContainSize(imagePreviewContentSize, imagePreviewContainerSize)
+  const imagePreviewStageStyle = imagePreviewDisplaySize
+    ? {
+        width: `${imagePreviewDisplaySize.w}px`,
+        height: `${imagePreviewDisplaySize.h}px`,
+      }
+    : undefined
+
   // 切换模式时保留另一边状态，避免 Tab 来回切换导致预览丢失
   const switchMode = useCallback((mode) => {
     setMediaMode(mode)
+    if (mode !== 'image') {
+      setRegionSelectionMode(false)
+      setRegionDraft(null)
+    }
   }, [])
 
   const openClipboardImportPrompt = useCallback((file) => {
@@ -599,16 +735,132 @@ export default function App() {
   }, [activeProfileId, profiles])
 
   // ===== 实时预览 =====
+  const imagePreviewWrapperRef = useRef(null)
   const previewRef = useRef(null)
   const tempCanvasRef = useRef(document.createElement('canvas'))
+  const regionDragRef = useRef(null)
+
+  useEffect(() => {
+    if (mediaMode !== 'image' || !imageData) return undefined
+
+    const wrapper = imagePreviewWrapperRef.current
+    if (!wrapper) return undefined
+
+    const updateSize = () => {
+      const style = window.getComputedStyle(wrapper)
+      const paddingX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+      const paddingY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+      const w = Math.max(0, wrapper.clientWidth - paddingX)
+      const h = Math.max(0, wrapper.clientHeight - paddingY)
+      setImagePreviewContainerSize(prev => (
+        prev.w === w && prev.h === h ? prev : { w, h }
+      ))
+    }
+
+    updateSize()
+    const observer = new ResizeObserver(updateSize)
+    observer.observe(wrapper)
+    return () => observer.disconnect()
+  }, [imageData, mediaMode])
+
+  const getCanvasPoint = useCallback((event) => {
+    const canvas = previewRef.current
+    if (!canvas) return null
+
+    const rect = canvas.getBoundingClientRect()
+    if (!rect.width || !rect.height) return null
+
+    return {
+      x: clamp((event.clientX - rect.left) * (canvas.width / rect.width), 0, canvas.width),
+      y: clamp((event.clientY - rect.top) * (canvas.height / rect.height), 0, canvas.height),
+    }
+  }, [])
+
+  const beginImageRegionSelection = useCallback(() => {
+    if (!imageData) return
+
+    setMediaMode('image')
+    setPreviewMode('keying')
+    setImageRegion(null)
+    setRegionDraft(null)
+    setRegionSelectionMode(true)
+
+    window.requestAnimationFrame(() => {
+      previewRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    })
+  }, [imageData])
+
+  const handleRegionPointerDown = useCallback((event) => {
+    if (!canSelectImageRegion) return
+
+    const point = getCanvasPoint(event)
+    if (!point) return
+
+    event.preventDefault()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    regionDragRef.current = {
+      origin: point,
+      pointerId: event.pointerId,
+    }
+    setRegionDraft({ x: point.x, y: point.y, width: 0, height: 0 })
+  }, [canSelectImageRegion, getCanvasPoint])
+
+  const handleRegionPointerMove = useCallback((event) => {
+    if (!canSelectImageRegion || !regionDragRef.current) return
+
+    const point = getCanvasPoint(event)
+    if (!point) return
+
+    event.preventDefault()
+    setRegionDraft(makeRegionFromPoints(regionDragRef.current.origin, point, imageData))
+  }, [canSelectImageRegion, getCanvasPoint, imageData])
+
+  const handleRegionPointerUp = useCallback((event) => {
+    if (!canSelectImageRegion || !regionDragRef.current) return
+
+    const point = getCanvasPoint(event)
+    const drag = regionDragRef.current
+    regionDragRef.current = null
+    if (event.currentTarget.hasPointerCapture?.(drag.pointerId)) {
+      event.currentTarget.releasePointerCapture(drag.pointerId)
+    }
+
+    if (!point) {
+      setRegionDraft(null)
+      return
+    }
+
+    event.preventDefault()
+    const nextRegion = makeRegionFromPoints(drag.origin, point, imageData)
+    setRegionDraft(null)
+
+    if (!nextRegion || nextRegion.width < 4 || nextRegion.height < 4) return
+
+    setImageRegion(nextRegion)
+    setRegionSelectionMode(false)
+  }, [canSelectImageRegion, getCanvasPoint, imageData])
+
+  const handleRegionPointerCancel = useCallback((event) => {
+    if (regionDragRef.current?.pointerId === event.pointerId) {
+      regionDragRef.current = null
+      setRegionDraft(null)
+    }
+  }, [])
+
+  const resetImageRegion = useCallback(() => {
+    regionDragRef.current = null
+    setImageRegion(null)
+    setRegionDraft(null)
+    setRegionSelectionMode(false)
+  }, [])
 
   const renderPreview = useCallback(() => {
-    if (!imageData) return
+    if (!processingImageData) return
     const canvas = previewRef.current
     if (!canvas) return
 
     // 抠像
-    let keyed = applyKeying(imageData, keyingParams)
+    let keyed = applyKeying(processingImageData, keyingParams)
 
     if (previewMode === 'keying') {
       // 抠像预览：显示抠像结果（棋盘格背景）
@@ -631,7 +883,7 @@ export default function App() {
       const ctx = canvas.getContext('2d')
       composeToCanvas(ctx, keyed, layoutParams, tempCanvasRef.current, keyingParams.keyColor)
     }
-  }, [imageData, keyingParams, layoutParams, previewMode])
+  }, [processingImageData, keyingParams, layoutParams, previewMode])
 
   useEffect(() => {
     renderPreview()
@@ -645,6 +897,9 @@ export default function App() {
     const sourceFile = normalizeMediaFile(file, kind)
     if (!sourceFile) return
     setImageFile(sourceFile)
+    setImageRegion(null)
+    setRegionSelectionMode(false)
+    setRegionDraft(null)
     const img = new Image()
     const url = URL.createObjectURL(sourceFile)
     img.onload = () => {
@@ -769,15 +1024,15 @@ export default function App() {
 
   // ===== 导出 =====
   const handleExport = async (mode) => {
-    if (!imageData) return
+    if (!processingImageData) return
     setExporting(true)
     try {
       const formData = new FormData()
-      // 从 imageData 重建图片文件
+      // 从当前处理输入重建图片文件
       const canvas = document.createElement('canvas')
-      canvas.width = imageData.width
-      canvas.height = imageData.height
-      canvas.getContext('2d').putImageData(imageData, 0, 0)
+      canvas.width = processingImageData.width
+      canvas.height = processingImageData.height
+      putImageDataLike(canvas.getContext('2d'), processingImageData)
       const blob = await new Promise(res => canvas.toBlob(res, 'image/png'))
       formData.append('image', blob, 'source.png')
       formData.append('params', JSON.stringify({
@@ -825,6 +1080,10 @@ export default function App() {
               mediaMode={mediaMode}
               imageFile={imageFile}
               imageSize={imageSize}
+              imageRegion={imageRegion}
+              regionSelectionMode={regionSelectionMode}
+              onSelectImageRegion={beginImageRegionSelection}
+              onResetImageRegion={resetImageRegion}
               videoFile={videoFile}
               videoInfo={videoInfo}
             />
@@ -843,7 +1102,7 @@ export default function App() {
               />
             )}
             <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
-            <LayoutPanel params={layoutParams} onChange={setLayoutParams} imageSize={imageSize} />
+            <LayoutPanel params={layoutParams} onChange={setLayoutParams} imageSize={processingImageSize} />
           </div>
 
           <div className="sidebar-dock">
@@ -856,12 +1115,12 @@ export default function App() {
                 <button
                   className="dock-btn dock-btn-primary"
                   onClick={() => handleExport('greenscreen')}
-                  disabled={!imageData || exporting}
+                  disabled={!processingImageData || exporting}
                 >{exporting ? '导出中...' : '💾 导出绿幕合成图'}</button>
                 <button
                   className="dock-btn dock-btn-secondary"
                   onClick={() => handleExport('transparent')}
-                  disabled={!imageData || exporting}
+                  disabled={!processingImageData || exporting}
                 >{exporting ? '导出中...' : '💾 导出透明 PNG'}</button>
               </div>
             ) : (
@@ -891,10 +1150,28 @@ export default function App() {
               onClick={() => setPreviewMode('composite')}
             >合成预览</button>
           </div>
-          <div className="canvas-wrapper">
+          <div className="canvas-wrapper" ref={imagePreviewWrapperRef}>
             {mediaMode === 'image' ? (
               imageData ? (
-                <canvas ref={previewRef} className="preview-canvas" />
+                <div
+                  className={`preview-stage ${canSelectImageRegion ? 'selecting' : ''}`}
+                  style={imagePreviewStageStyle}
+                >
+                  <canvas
+                    ref={previewRef}
+                    className="preview-canvas"
+                    onPointerDown={handleRegionPointerDown}
+                    onPointerMove={handleRegionPointerMove}
+                    onPointerUp={handleRegionPointerUp}
+                    onPointerCancel={handleRegionPointerCancel}
+                  />
+                  {canSelectImageRegion && regionDraft && (
+                    <div
+                      className="region-selection-box"
+                      style={getRegionOverlayStyle(regionDraft, processingImageData)}
+                    />
+                  )}
+                </div>
               ) : (
                 <PreviewCanvas />
               )
@@ -1001,7 +1278,17 @@ function ClipboardImportDialog({ importItem, onCancel, onConfirm }) {
   )
 }
 
-function FileMetaPanel({ mediaMode, imageFile, imageSize, videoFile, videoInfo }) {
+function FileMetaPanel({
+  mediaMode,
+  imageFile,
+  imageSize,
+  imageRegion,
+  regionSelectionMode,
+  onSelectImageRegion,
+  onResetImageRegion,
+  videoFile,
+  videoInfo,
+}) {
   const isImage = mediaMode === 'image'
   const file = isImage ? imageFile : videoFile
   const loaded = isImage ? imageSize.w > 0 : !!videoInfo
@@ -1042,6 +1329,37 @@ function FileMetaPanel({ mediaMode, imageFile, imageSize, videoFile, videoInfo }
               </>
             )}
           </div>
+          {isImage && (
+            <div className="file-region-tools">
+              <div className="file-region-status">
+                <span>处理区域</span>
+                <strong>
+                  {imageRegion
+                    ? `${imageRegion.width} × ${imageRegion.height} @ ${imageRegion.x}, ${imageRegion.y}`
+                    : '整张图片'}
+                </strong>
+              </div>
+              <div className="file-region-actions">
+                <button
+                  type="button"
+                  className="file-region-btn secondary"
+                  onClick={onResetImageRegion}
+                  disabled={!imageRegion && !regionSelectionMode}
+                >
+                  复位
+                </button>
+                <button
+                  type="button"
+                  className="file-region-btn"
+                  onClick={onSelectImageRegion}
+                >
+                  {regionSelectionMode
+                    ? '重新框选处理区域'
+                    : imageRegion ? '重新设定处理区域' : '设定处理区域'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="file-meta-empty">

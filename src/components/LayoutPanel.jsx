@@ -68,7 +68,7 @@ export default function LayoutPanel({ params, onChange, imageSize }) {
 
       {imageSize.w > 0 && (
         <div className="info-box">
-          <p>原图: {imageSize.w}×{imageSize.h}</p>
+          <p>输入: {imageSize.w}×{imageSize.h}</p>
           <p>画布: {params.canvasWidth}×{params.canvasHeight}</p>
           <p>人物框: {params.personWidth}×{params.personHeight}</p>
           <p className="calc-result">

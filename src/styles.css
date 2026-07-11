@@ -423,6 +423,74 @@ body {
   min-width: 0;
 }
 
+.file-region-tools {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+
+.file-region-status {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.file-region-status span {
+  color: #999;
+}
+
+.file-region-status strong {
+  color: #444;
+  font-weight: 600;
+  min-width: 0;
+}
+
+.file-region-actions {
+  display: grid;
+  grid-template-columns: minmax(64px, 0.45fr) 1fr;
+  gap: 8px;
+}
+
+.file-region-btn {
+  width: 100%;
+  padding: 8px 10px;
+  background: #1a1a1a;
+  border: 1px solid #1a1a1a;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.file-region-btn:hover {
+  background: #333;
+  border-color: #333;
+}
+
+.file-region-btn.secondary {
+  background: #fff;
+  border-color: #d8d8d0;
+  color: #555;
+}
+
+.file-region-btn.secondary:hover {
+  background: #f5f5f0;
+  border-color: #aaa;
+}
+
+.file-region-btn:disabled,
+.file-region-btn:disabled:hover {
+  background: #f5f5f0;
+  border-color: #e5e5dd;
+  color: #aaa;
+  cursor: not-allowed;
+}
+
 .file-meta-empty {
   padding: 10px 12px;
   background: #fafaf8;
@@ -691,7 +759,23 @@ body {
   min-height: 0;
 }
 
+.preview-stage {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  max-width: 100%;
+  max-height: 100%;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.preview-stage.selecting .preview-canvas {
+  cursor: crosshair;
+}
+
 .preview-canvas {
+  display: block;
+  box-sizing: border-box;
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
@@ -699,6 +783,24 @@ body {
   border: 1px solid #e0e0d8;
   border-radius: 4px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+.preview-stage .preview-canvas {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+}
+
+.region-selection-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid #ffffff;
+  background: rgba(26, 26, 26, 0.14);
+  box-shadow:
+    0 0 0 1px rgba(26, 26, 26, 0.8),
+    0 0 0 9999px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
 }
 
 .empty-preview {
