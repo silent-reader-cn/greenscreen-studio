@@ -260,7 +260,7 @@ export default function App() {
   const [imageData, setImageData] = useState(null)
   const [imageFile, setImageFile] = useState(null)
   const [imageSize, setImageSize] = useState({ w: 0, h: 0 })
-  const [tab, setTab] = useState('keying')
+  const [previewMode, setPreviewMode] = useState('keying')
 
   const [keyingParams, setKeyingParams] = useState(initialParams.keying)
   const [layoutParams, setLayoutParams] = useState(initialParams.layout)
@@ -411,7 +411,7 @@ export default function App() {
     // 抠像
     let keyed = applyKeying(imageData, keyingParams)
 
-    if (tab === 'keying') {
+    if (previewMode === 'keying') {
       // 抠像预览：显示抠像结果（棋盘格背景）
       canvas.width = keyed.width
       canvas.height = keyed.height
@@ -432,7 +432,7 @@ export default function App() {
       const ctx = canvas.getContext('2d')
       composeToCanvas(ctx, keyed, layoutParams, tempCanvasRef.current)
     }
-  }, [imageData, keyingParams, layoutParams, tab])
+  }, [imageData, keyingParams, layoutParams, previewMode])
 
   useEffect(() => {
     renderPreview()
@@ -616,18 +616,14 @@ export default function App() {
                 onClick={() => switchMode('video')}
               >🎬 视频</button>
             </div>
-            {mediaMode === 'image' && (
-              <>
-                <button
-                  className={`tab ${tab === 'keying' ? 'active' : ''}`}
-                  onClick={() => setTab('keying')}
-                >抠像预览</button>
-                <button
-                  className={`tab ${tab === 'composite' ? 'active' : ''}`}
-                  onClick={() => setTab('composite')}
-                >合成预览</button>
-              </>
-            )}
+            <button
+              className={`tab ${previewMode === 'keying' ? 'active' : ''}`}
+              onClick={() => setPreviewMode('keying')}
+            >抠像预览</button>
+            <button
+              className={`tab ${previewMode === 'composite' ? 'active' : ''}`}
+              onClick={() => setPreviewMode('composite')}
+            >合成预览</button>
           </div>
           <div className="canvas-wrapper">
             {mediaMode === 'image' ? (
@@ -642,6 +638,7 @@ export default function App() {
                 videoInfo={videoInfo}
                 keyingParams={keyingParams}
                 layoutParams={layoutParams}
+                previewMode={previewMode}
                 resultJobId={resultJobId}
                 range={frameRange}
                 onRangeChange={handleRangeChange}

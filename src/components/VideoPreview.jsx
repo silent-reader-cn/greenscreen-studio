@@ -11,11 +11,10 @@ const AUTO_LOOP_DETECT_KEY = 'greenscreen-studio-auto-loop-detect'
  *   2. 已上传未处理 → 时间轴选帧 + 实时抠像预览（滑块拖动即时生效）
  *   3. 处理完成 → <video> 播放器
  */
-export default function VideoPreview({ videoFile, videoInfo, keyingParams, layoutParams, resultJobId, range, onRangeChange }) {
+export default function VideoPreview({ videoFile, videoInfo, keyingParams, layoutParams, previewMode = 'keying', resultJobId, range, onRangeChange }) {
   const [frameTime, setFrameTime] = useState(0)        // 当前选中的时间点（秒）
   const [frameImageData, setFrameImageData] = useState(null)  // 当前帧的 ImageData
   const [loading, setLoading] = useState(false)
-  const [previewTab, setPreviewTab] = useState('keying')  // 'keying' | 'composite'
   const [detecting, setDetecting] = useState(false)
   const [loopCandidates, setLoopCandidates] = useState(null) // [{frame, score}, ...]
   const [similarityHeatmap, setSimilarityHeatmap] = useState(null) // [{pct, opacity}, ...]
@@ -296,7 +295,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
 
     let keyed = applyKeying(frameImageData, keyingParams)
 
-    if (previewTab === 'keying') {
+    if (previewMode === 'keying') {
       // 抠像预览：棋盘格背景
       canvas.width = keyed.width
       canvas.height = keyed.height
@@ -315,7 +314,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       const ctx = canvas.getContext('2d')
       composeToCanvas(ctx, keyed, layoutParams, tempCanvasRef.current)
     }
-  }, [frameImageData, keyingParams, layoutParams, previewTab])
+  }, [frameImageData, keyingParams, layoutParams, previewMode])
 
   // ===== Canvas CSS 尺寸自适应：按当前画布实际比例 contain，避免竖屏/合成画布被裁切 =====
   useEffect(() => {
@@ -337,7 +336,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
 
     canvas.style.width = `${Math.max(1, Math.round(cssW))}px`
     canvas.style.height = `${Math.max(1, Math.round(cssH))}px`
-  }, [containerSize, frameImageData, keyingParams, layoutParams, previewTab])
+  }, [containerSize, frameImageData, keyingParams, layoutParams, previewMode])
 
   // ===== 帧选择器拖拽：按可见轨道计算，保证 0% / 100% 能落到两端 =====
   const timeFromTimelineX = useCallback((clientX) => {
@@ -439,18 +438,6 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
         preload="auto"
         muted
       />
-
-      {/* 预览 Tab */}
-      <div className="preview-tabs">
-        <button
-          className={`mini-tab ${previewTab === 'keying' ? 'active' : ''}`}
-          onClick={() => setPreviewTab('keying')}
-        >抠像预览</button>
-        <button
-          className={`mini-tab ${previewTab === 'composite' ? 'active' : ''}`}
-          onClick={() => setPreviewTab('composite')}
-        >合成预览</button>
-      </div>
 
       {/* Canvas 预览 */}
       <div className="frame-canvas-wrapper" ref={wrapperRef}>
