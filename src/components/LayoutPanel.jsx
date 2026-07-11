@@ -66,22 +66,6 @@ export default function LayoutPanel({ params, onChange, imageSize }) {
         <p className="toggle-hint">裁掉绿幕区域，缩放基准为人物本身</p>
       </div>
 
-      <div className="color-row">
-        <label>绿幕底色</label>
-        <input
-          type="color"
-          value={`#${params.bgColor.map(c => c.toString(16).padStart(2, '0')).join('')}`}
-          onChange={(e) => {
-            const hex = e.target.value
-            update('bgColor', [
-              parseInt(hex.slice(1, 3), 16),
-              parseInt(hex.slice(3, 5), 16),
-              parseInt(hex.slice(5, 7), 16),
-            ])
-          }}
-        />
-      </div>
-
       {imageSize.w > 0 && (
         <div className="info-box">
           <p>原图: {imageSize.w}×{imageSize.h}</p>

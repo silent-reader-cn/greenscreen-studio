@@ -338,7 +338,7 @@ function processFrame(srcBuffer, srcW, srcH, keying, layout, mode) {
     const canvas = createCanvas(canvasWidth, canvasHeight);
     const ctx = canvas.getContext('2d');
     const tempCanvas = createCanvas(keyed.width, keyed.height);
-    composeToCanvas(ctx, keyed, layout, tempCanvas);
+    composeToCanvas(ctx, keyed, layout, tempCanvas, keying?.keyColor);
 
     const outImageData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
     return Buffer.from(outImageData.data);

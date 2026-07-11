@@ -197,14 +197,16 @@ export function autoCropKeyed(keyedData, threshold = 10) {
  * @param {Object} layout - 布局参数
  *   canvasWidth, canvasHeight: 目标画布尺寸
  *   personWidth, personHeight: 人物目标框尺寸
- *   bgColor: [r, g, b] 绿幕底色
+ *   bgColor: [r, g, b] 兜底绿幕底色
  * @param {Object} sourceCanvas - 临时 canvas，用于持有 keyedImageData
+ * @param {number[]} backgroundColor - 合成底色，通常使用键控色 keyColor
  */
-export function composeToCanvas(ctx, keyedImageData, layout, tempCanvas) {
+export function composeToCanvas(ctx, keyedImageData, layout, tempCanvas, backgroundColor) {
   const { canvasWidth, canvasHeight, personWidth, personHeight, bgColor } = layout;
+  const fillColor = backgroundColor || bgColor || [0, 255, 0];
 
   // 1. 填充绿幕底色
-  ctx.fillStyle = `rgb(${bgColor[0]}, ${bgColor[1]}, ${bgColor[2]})`;
+  ctx.fillStyle = `rgb(${fillColor[0]}, ${fillColor[1]}, ${fillColor[2]})`;
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
   // 2. 将 keyedImageData 放到临时 canvas 上

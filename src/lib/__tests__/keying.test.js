@@ -373,6 +373,21 @@ describe('composeToCanvas', () => {
     expect(ctx.fillStyle).toBe('rgb(0, 255, 0)')
   })
 
+  it('传入背景色时优先使用该颜色作为合成底色', () => {
+    const ctx = createMockContext()
+    const keyedImg = createSolidImage(10, 10, 100, 100, 100, 255)
+    const layout = {
+      canvasWidth: 100,
+      canvasHeight: 100,
+      personWidth: 80,
+      personHeight: 80,
+      bgColor: [0, 255, 0],
+    }
+    composeToCanvas(ctx, keyedImg, layout, createMockTempCanvas(), [14, 210, 42])
+
+    expect(ctx.fillStyle).toBe('rgb(14, 210, 42)')
+  })
+
   it('等比缩放并居中绘制人物', () => {
     const ctx = createMockContext()
     const keyedImg = createSolidImage(20, 10, 100, 100, 100, 255) // 2:1

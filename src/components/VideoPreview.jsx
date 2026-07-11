@@ -312,7 +312,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       canvas.width = layoutParams.canvasWidth
       canvas.height = layoutParams.canvasHeight
       const ctx = canvas.getContext('2d')
-      composeToCanvas(ctx, keyed, layoutParams, tempCanvasRef.current)
+      composeToCanvas(ctx, keyed, layoutParams, tempCanvasRef.current, keyingParams.keyColor)
     }
   }, [frameImageData, keyingParams, layoutParams, previewMode])
 

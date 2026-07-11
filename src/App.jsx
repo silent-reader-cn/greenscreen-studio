@@ -431,7 +431,7 @@ export default function App() {
       canvas.width = canvasWidth
       canvas.height = canvasHeight
       const ctx = canvas.getContext('2d')
-      composeToCanvas(ctx, keyed, layoutParams, tempCanvasRef.current)
+      composeToCanvas(ctx, keyed, layoutParams, tempCanvasRef.current, keyingParams.keyColor)
     }
   }, [imageData, keyingParams, layoutParams, previewMode])
 

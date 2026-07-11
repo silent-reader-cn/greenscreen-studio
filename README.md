@@ -63,8 +63,8 @@
 3. **设置布局**
    - `canvasWidth/Height`: 输出画布尺寸
    - `personWidth/Height`: 人物在画布中的目标尺寸
-   - `bgColor`: 绿幕合成背景色
    - `autoCrop`: 是否自动裁剪透明区域
+   - 绿幕合成背景色使用抠像参数中的 `keyColor`
 4. **导出** — 点击"导出"，支持绿幕合成图 / 透明 PNG 两模式
 
 ### 视频模式
@@ -205,4 +205,3 @@ greenscreen-studio/
 ## 许可
 
 MIT —— 随便用，随便改。
-

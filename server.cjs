@@ -102,7 +102,7 @@ app.post('/api/export', upload.single('image'), async (req, res) => {
 
     // 5. 合成（抠像人物 → 绿幕画布）
     const tempCanvas = createCanvas(100, 100); // 临时画布（composeToCanvas 会 resize）
-    const result = composeToCanvas(outCtx, keyedData, params.layout, tempCanvas);
+    const result = composeToCanvas(outCtx, keyedData, params.layout, tempCanvas, params.keying?.keyColor);
 
     // 6. 根据 mode 决定输出
     const mode = params.mode || 'greenscreen'; // 'greenscreen' | 'transparent'
