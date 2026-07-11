@@ -1,4 +1,5 @@
 import React from 'react'
+import CollapsiblePanel from './CollapsiblePanel.jsx'
 
 const Slider = ({ label, value, min, max, step, unit, onChange }) => (
   <div className="slider-row">
@@ -19,11 +20,10 @@ const Slider = ({ label, value, min, max, step, unit, onChange }) => (
 
 export default function KeyingPanel({ params, onChange }) {
   const update = (key, val) => onChange({ ...params, [key]: val })
+  const summary = `容差 ${params.tolerance} · 羽化 ${params.feather}`
 
   return (
-    <div className="panel">
-      <h3>🎨 抠像参数</h3>
-
+    <CollapsiblePanel title="🎨 抠像参数" summary={summary}>
       <div className="color-row">
         <label>键控色</label>
         <input
@@ -74,6 +74,6 @@ export default function KeyingPanel({ params, onChange }) {
           edgeShrink: 0,
         })}
       >重置抠像参数</button>
-    </div>
+    </CollapsiblePanel>
   )
 }

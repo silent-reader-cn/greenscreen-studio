@@ -1,4 +1,5 @@
 import React from 'react'
+import CollapsiblePanel from './CollapsiblePanel.jsx'
 
 const NumberInput = ({ label, value, onChange, min = 1, max = 9999 }) => (
   <div className="input-row">
@@ -15,11 +16,10 @@ const NumberInput = ({ label, value, onChange, min = 1, max = 9999 }) => (
 
 export default function LayoutPanel({ params, onChange, imageSize }) {
   const update = (key, val) => onChange({ ...params, [key]: val })
+  const summary = `${params.canvasWidth}×${params.canvasHeight}`
 
   return (
-    <div className="panel">
-      <h3>📐 布局参数</h3>
-
+    <CollapsiblePanel title="📐 布局参数" summary={summary}>
       <div className="layout-group">
         <p className="group-label">画布尺寸</p>
         <div className="dual-input">
@@ -110,6 +110,6 @@ export default function LayoutPanel({ params, onChange, imageSize }) {
           1000×1000
         </button>
       </div>
-    </div>
+    </CollapsiblePanel>
   )
 }

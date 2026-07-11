@@ -6,6 +6,7 @@ import PreviewCanvas from './components/PreviewCanvas.jsx'
 import VideoPanel from './components/VideoPanel.jsx'
 import VideoPreview from './components/VideoPreview.jsx'
 import ProfileSwitcher from './components/ProfileSwitcher.jsx'
+import CollapsiblePanel from './components/CollapsiblePanel.jsx'
 
 // ===== 默认参数 =====
 const DEFAULT_KEYING = {
@@ -668,10 +669,17 @@ function FileMetaPanel({ mediaMode, imageFile, imageSize, videoFile, videoInfo }
   const isImage = mediaMode === 'image'
   const file = isImage ? imageFile : videoFile
   const loaded = isImage ? imageSize.w > 0 : !!videoInfo
+  const summary = loaded
+    ? (isImage ? `${imageSize.w}×${imageSize.h}` : `${videoInfo.width}×${videoInfo.height}`)
+    : '未载入'
 
   return (
-    <div className="panel file-meta-panel">
-      <h3>📄 当前素材</h3>
+    <CollapsiblePanel
+      title="📄 当前素材"
+      summary={summary}
+      defaultCollapsed
+      className="file-meta-panel"
+    >
       {loaded && file ? (
         <div className="file-meta-content">
           <p className="file-meta-name" title={file.name}>{file.name}</p>
@@ -705,7 +713,7 @@ function FileMetaPanel({ mediaMode, imageFile, imageSize, videoFile, videoInfo }
           <p className="hint">把图片或视频拖到窗口任意位置即可载入</p>
         </div>
       )}
-    </div>
+    </CollapsiblePanel>
   )
 }
 

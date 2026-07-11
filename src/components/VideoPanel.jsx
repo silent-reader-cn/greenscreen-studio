@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import CollapsiblePanel from './CollapsiblePanel.jsx'
 
 const FMT_OPTIONS = [
   { value: 'webm', label: 'WebM (透明, VP9)', transparent: true },
@@ -48,6 +49,9 @@ export default function VideoPanel({
 }) {
   const safeVideoParams = normalizeVideoParams(videoParams)
   const { mode, format, exportMode, spriteParams } = safeVideoParams
+  const summary = exportMode === 'spritesheet'
+    ? `${spriteParams.frameWidth}×${spriteParams.frameHeight} 精灵图`
+    : `${format.toUpperCase()} · ${mode === 'transparent' ? '透明' : '绿幕'}`
 
   const [videoInfo, setVideoInfo] = useState(null)       // {jobId, width, height, fps, duration, hasAudio}
   const [uploading, setUploading] = useState(false)
@@ -326,8 +330,7 @@ export default function VideoPanel({
   return (
     <>
       {videoInfo && (
-        <div className="panel video-panel">
-          <h3>🎬 视频参数</h3>
+        <CollapsiblePanel title="🎬 视频参数" summary={summary} className="video-panel">
           <div className="video-options">
             <div className="opt-group">
               <p className="opt-label">导出类型</p>
@@ -442,7 +445,7 @@ export default function VideoPanel({
               </div>
             )}
           </div>
-        </div>
+        </CollapsiblePanel>
       )}
 
       {dockTarget ? createPortal(dockContent, dockTarget) : null}

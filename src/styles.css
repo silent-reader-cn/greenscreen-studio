@@ -319,16 +319,70 @@ body {
   background: #fafaf8;
   border: 1px solid #e8e8e0;
   border-radius: 8px;
-  padding: 16px;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
-.panel h3 {
+.panel-toggle {
+  width: 100%;
+  padding: 13px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+}
+
+.panel-toggle:hover {
+  background: rgba(0, 0, 0, 0.025);
+}
+
+.collapsible-panel.collapsed .panel-toggle {
+  border-bottom-color: transparent;
+}
+
+.panel-title {
+  flex: 1;
+  min-width: 0;
   font-size: 14px;
   font-weight: 600;
   color: #333;
-  margin-bottom: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #eee;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-summary {
+  max-width: 120px;
+  padding: 3px 8px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 999px;
+  color: #777;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-meta-panel .panel-summary {
+  color: #333;
+}
+
+.panel-caret {
+  flex: 0 0 auto;
+  color: #aaa;
+  font-size: 12px;
+}
+
+.panel-body {
+  padding: 16px;
 }
 
 /* ===== 素材信息 ===== */
