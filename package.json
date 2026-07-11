@@ -1,6 +1,6 @@
 {
   "name": "greenscreen-studio",
-  "version": "1.0.0",
+  "version": "2.0.1",
   "description": "绿幕人物素材标准化工具 — 抠像 + 等比缩放 + 居中重排 + 导出",
   "main": "electron/main.cjs",
   "author": "柚子",
