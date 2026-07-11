@@ -48,11 +48,12 @@ body {
 
 /* ===== Profiles ===== */
 .profile-switcher {
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
 }
 
@@ -69,6 +70,7 @@ body {
   align-items: center;
   gap: 6px;
   min-width: 0;
+  flex: 0 1 auto;
 }
 
 .profile-chip {
@@ -152,6 +154,17 @@ body {
   transition: all 0.2s;
 }
 
+.profile-more-btn {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-add {
+  flex: 0 0 auto;
+}
+
 .profile-more-btn:hover,
 .profile-more-btn.active,
 .profile-add:hover {
@@ -197,6 +210,34 @@ body {
 
 .profile-dropdown .profile-chip-delete {
   height: 30px;
+}
+
+.profile-context-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 120px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid #e0e0d8;
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14);
+}
+
+.profile-context-menu button {
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #333;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  text-align: left;
+}
+
+.profile-context-menu button:hover {
+  background: #f5f5f0;
 }
 
 /* ===== 主区域 ===== */

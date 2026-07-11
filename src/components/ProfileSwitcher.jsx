@@ -9,34 +9,99 @@ function sortProfilesByUsage(profiles) {
   ))
 }
 
+function estimateTextWidth(text) {
+  return Array.from(String(text || '')).reduce((total, char) => (
+    total + (char.charCodeAt(0) > 255 ? 13 : 7)
+  ), 0)
+}
+
+function estimateProfileChipWidth(profile, canDelete) {
+  const textWidth = Math.min(104, Math.max(36, estimateTextWidth(profile.name)))
+  return Math.min(150, textWidth + 23 + (canDelete ? 22 : 0) + 2)
+}
+
+function getQuickProfileCount(profiles, containerWidth, canDelete) {
+  if (profiles.length <= 0) return 0
+  if (containerWidth <= 0) return Math.min(3, profiles.length)
+
+  const labelWidth = 58
+  const addWidth = 70
+  const outerGap = 8
+  const quickGap = 6
+  const moreWidth = 104
+
+  for (let count = profiles.length; count >= 1; count--) {
+    const chipWidth = profiles
+      .slice(0, count)
+      .reduce((total, profile) => total + estimateProfileChipWidth(profile, canDelete), 0)
+    const chipGaps = Math.max(0, count - 1) * quickGap
+    const hasMore = count < profiles.length
+    const groupCount = 3 + (hasMore ? 1 : 0)
+    const totalWidth = labelWidth + addWidth + chipWidth + chipGaps +
+      (hasMore ? moreWidth : 0) + Math.max(0, groupCount - 1) * outerGap
+
+    if (totalWidth <= containerWidth) return count
+  }
+
+  return 1
+}
+
 export default function ProfileSwitcher({
   profiles,
   activeProfileId,
   onSelect,
   onCreate,
+  onRename,
   onDelete,
 }) {
   const [open, setOpen] = useState(false)
+  const [contextMenu, setContextMenu] = useState(null)
+  const [switcherWidth, setSwitcherWidth] = useState(0)
+  const switcherRef = useRef(null)
   const dropdownRef = useRef(null)
+  const contextMenuRef = useRef(null)
 
   const orderedProfiles = useMemo(() => sortProfilesByUsage(profiles), [profiles])
-  const quickProfiles = orderedProfiles.slice(0, 3)
+  const canDelete = profiles.length > 1
+  const quickProfileCount = useMemo(
+    () => getQuickProfileCount(orderedProfiles, switcherWidth, canDelete),
+    [canDelete, orderedProfiles, switcherWidth]
+  )
+  const quickProfiles = orderedProfiles.slice(0, quickProfileCount)
   const quickProfileIds = new Set(quickProfiles.map(profile => profile.id))
   const dropdownProfiles = orderedProfiles.filter(profile => !quickProfileIds.has(profile.id))
   const activeDropdownProfile = dropdownProfiles.find(profile => profile.id === activeProfileId)
-  const canDelete = profiles.length > 1
 
   useEffect(() => {
-    if (!open) return
+    const switcher = switcherRef.current
+    if (!switcher) return undefined
+
+    const updateWidth = () => {
+      const width = switcher.getBoundingClientRect().width
+      setSwitcherWidth(prev => (prev === width ? prev : width))
+    }
+
+    updateWidth()
+    const observer = new ResizeObserver(updateWidth)
+    observer.observe(switcher)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    if (!open && !contextMenu) return
 
     const handlePointerDown = (event) => {
-      if (!dropdownRef.current?.contains(event.target)) {
+      if (open && !dropdownRef.current?.contains(event.target)) {
         setOpen(false)
+      }
+      if (contextMenu && !contextMenuRef.current?.contains(event.target)) {
+        setContextMenu(null)
       }
     }
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
         setOpen(false)
+        setContextMenu(null)
       }
     }
 
@@ -46,7 +111,7 @@ export default function ProfileSwitcher({
       document.removeEventListener('pointerdown', handlePointerDown)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [open])
+  }, [contextMenu, open])
 
   const handleCreate = () => {
     const defaultName = `Profile ${profiles.length + 1}`
@@ -55,11 +120,31 @@ export default function ProfileSwitcher({
     onCreate(name)
   }
 
+  const handleRename = (profile) => {
+    const name = prompt('重命名 profile', profile.name)
+    if (name === null) return
+    const nextName = String(name || '').trim()
+    if (!nextName || nextName === profile.name) return
+    onRename(profile.id, nextName)
+  }
+
+  const handleProfileContextMenu = (event, profile) => {
+    event.preventDefault()
+    event.stopPropagation()
+    setOpen(false)
+    setContextMenu({
+      profileId: profile.id,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 132)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 44)),
+    })
+  }
+
   const renderProfileButton = (profile, compact = false) => (
     <div
       key={profile.id}
       className={`profile-chip ${profile.id === activeProfileId ? 'active' : ''} ${compact ? 'compact' : ''}`}
       title={`使用 ${profile.useCount || 0} 次`}
+      onContextMenu={(event) => handleProfileContextMenu(event, profile)}
     >
       <button
         type="button"
@@ -87,8 +172,12 @@ export default function ProfileSwitcher({
     </div>
   )
 
+  const contextProfile = contextMenu
+    ? profiles.find(profile => profile.id === contextMenu.profileId)
+    : null
+
   return (
-    <div className="profile-switcher" aria-label="Profiles">
+    <div className="profile-switcher" aria-label="Profiles" ref={switcherRef}>
       <span className="profile-label">Profiles</span>
 
       <div className="profile-quick-list">
@@ -117,6 +206,25 @@ export default function ProfileSwitcher({
       <button type="button" className="profile-add" onClick={handleCreate}>
         ＋ 新建
       </button>
+
+      {contextMenu && contextProfile && (
+        <div
+          ref={contextMenuRef}
+          className="profile-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onPointerDown={event => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setContextMenu(null)
+              handleRename(contextProfile)
+            }}
+          >
+            重命名
+          </button>
+        </div>
+      )}
     </div>
   )
 }

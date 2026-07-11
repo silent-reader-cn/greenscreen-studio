@@ -663,6 +663,30 @@ export default function App() {
     setActiveProfileId(newProfile.id)
   }, [frameRange, keyingParams, layoutParams, profiles, videoParams])
 
+  const handleRenameProfile = useCallback((profileId, name) => {
+    const nextName = String(name || '').trim()
+    if (!nextName) return
+
+    setProfiles(prev => {
+      const targetProfile = prev.find(item => item.id === profileId)
+      if (!targetProfile) return prev
+
+      const existingProfiles = prev.filter(item => item.id !== profileId)
+      const uniqueName = getUniqueProfileName(nextName, existingProfiles)
+      const now = Date.now()
+
+      return prev.map(item => (
+        item.id === profileId
+          ? {
+              ...item,
+              name: uniqueName,
+              updatedAt: now,
+            }
+          : item
+      ))
+    })
+  }, [])
+
   const handleDeleteProfile = useCallback((profileId) => {
     const profile = profiles.find(item => item.id === profileId)
     if (!profile) return
@@ -1069,6 +1093,7 @@ export default function App() {
           activeProfileId={activeProfileId}
           onSelect={handleSelectProfile}
           onCreate={handleCreateProfile}
+          onRename={handleRenameProfile}
           onDelete={handleDeleteProfile}
         />
       </header>
