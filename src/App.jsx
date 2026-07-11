@@ -249,6 +249,8 @@ export default function App() {
 
   const [exporting, setExporting] = useState(false)
   const [mediaMode, setMediaMode] = useState('image')  // 'image' | 'video'
+  const [videoDockTarget, setVideoDockTarget] = useState(null)
+  const videoDockRef = useRef(null)
 
   // 视频预览状态
   const [videoFile, setVideoFile] = useState(null)
@@ -346,6 +348,10 @@ export default function App() {
   const handleVideoDone = useCallback((jobId) => {
     setResultJobId(jobId)
   }, [])
+
+  useEffect(() => {
+    setVideoDockTarget(videoDockRef.current)
+  }, [mediaMode])
 
   // ===== 参数变化时持久化到当前 profile =====
   useEffect(() => {
@@ -526,23 +532,49 @@ export default function App() {
 
       <main className="main">
         <aside className="sidebar">
-          {mediaMode === 'image' ? (
-            <UploadZone onFileLoad={handleFileLoad} imageSize={imageSize} />
-          ) : (
-            <VideoPanel
-              keyingParams={keyingParams}
-              layoutParams={layoutParams}
-              videoParams={videoParams}
-              onVideoParamsChange={setVideoParams}
-              onVideoUpload={handleVideoUpload}
-              onVideoDone={handleVideoDone}
-              range={frameRange}
-              onRangeChange={handleRangeChange}
-              droppedFile={droppedVideoFile}
-            />
-          )}
-          <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
-          <LayoutPanel params={layoutParams} onChange={setLayoutParams} imageSize={imageSize} />
+          <div className="sidebar-scroll">
+            {mediaMode === 'image' ? (
+              <UploadZone onFileLoad={handleFileLoad} imageSize={imageSize} />
+            ) : (
+              <VideoPanel
+                keyingParams={keyingParams}
+                layoutParams={layoutParams}
+                videoParams={videoParams}
+                onVideoParamsChange={setVideoParams}
+                onVideoUpload={handleVideoUpload}
+                onVideoDone={handleVideoDone}
+                range={frameRange}
+                onRangeChange={handleRangeChange}
+                droppedFile={droppedVideoFile}
+                dockTarget={videoDockTarget}
+              />
+            )}
+            <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
+            <LayoutPanel params={layoutParams} onChange={setLayoutParams} imageSize={imageSize} />
+          </div>
+
+          <div className="sidebar-dock">
+            <p className="dock-label">导出操作</p>
+            {mediaMode === 'image' ? (
+              <div className="dock-actions">
+                {!imageData && (
+                  <p className="dock-hint">上传图片后可导出当前参数下的结果</p>
+                )}
+                <button
+                  className="dock-btn dock-btn-primary"
+                  onClick={() => handleExport('greenscreen')}
+                  disabled={!imageData || exporting}
+                >{exporting ? '导出中...' : '💾 导出绿幕合成图'}</button>
+                <button
+                  className="dock-btn dock-btn-secondary"
+                  onClick={() => handleExport('transparent')}
+                  disabled={!imageData || exporting}
+                >{exporting ? '导出中...' : '💾 导出透明 PNG'}</button>
+              </div>
+            ) : (
+              <div ref={videoDockRef} className="dock-portal-target" />
+            )}
+          </div>
         </aside>
 
         <section className="preview-area">
@@ -589,20 +621,6 @@ export default function App() {
               />
             )}
           </div>
-          {mediaMode === 'image' && imageData && (
-            <div className="export-bar">
-              <button
-                className="btn-export"
-                onClick={() => handleExport('greenscreen')}
-                disabled={exporting}
-              >{exporting ? '导出中...' : '💾 导出绿幕合成图'}</button>
-              <button
-                className="btn-export btn-secondary"
-                onClick={() => handleExport('transparent')}
-                disabled={exporting}
-              >{exporting ? '导出中...' : '💾 导出透明PNG'}</button>
-            </div>
-          )}
         </section>
       </main>
 
