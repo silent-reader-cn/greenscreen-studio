@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { applyKeying, composeToCanvas, autoCropKeyed } from '../lib/keying.js'
 
 const AUTO_LOOP_DETECT_KEY = 'greenscreen-studio-auto-loop-detect'
@@ -34,6 +34,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const rangeRef = useRef(range)
   const detectRequestRef = useRef(0)
   const lastAutoDetectKeyRef = useRef('')
+  const autoDetectTimerRef = useRef(null)
   const playbackRef = useRef({ playing: false, rafId: null })
 
   const duration = videoInfo?.duration || videoRef.current?.duration || 0
@@ -43,6 +44,15 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const startPct = duration > 0 ? clamp((startFrame / fps / duration) * 100, 0, 100) : 0
   const endPct = duration > 0 ? clamp((endFrame / fps / duration) * 100, 0, 100) : 0
   const currentPct = duration > 0 ? clamp((frameTime / duration) * 100, 0, 100) : 0
+  const loopDetectionParams = useMemo(() => ({
+    keying: keyingParams,
+    layout: layoutParams,
+    mode: 'greenscreen',
+  }), [keyingParams, layoutParams])
+  const loopDetectionSignature = useMemo(
+    () => JSON.stringify(loopDetectionParams),
+    [loopDetectionParams]
+  )
 
   useEffect(() => {
     rangeRef.current = range
@@ -189,7 +199,11 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       const resp = await fetch('/api/video/find-loop-end', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jobId: videoInfo.jobId, startFrame: targetStartFrame })
+        body: JSON.stringify({
+          jobId: videoInfo.jobId,
+          startFrame: targetStartFrame,
+          params: loopDetectionParams,
+        })
       })
       if (!resp.ok) throw new Error('检测失败')
       const data = await resp.json()
@@ -238,16 +252,39 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
         setDetecting(false)
       }
     }
-  }, [onRangeChange, seekToFrame, stopLoopPreview, videoInfo])
+  }, [loopDetectionParams, onRangeChange, seekToFrame, stopLoopPreview, videoInfo])
+
+  useEffect(() => {
+    if (!videoInfo?.jobId) return
+    detectRequestRef.current += 1
+    setDetecting(false)
+    setLoopCandidates(null)
+    setSimilarityHeatmap(null)
+    setScoreRange(null)
+  }, [loopDetectionSignature, videoInfo?.jobId])
 
   useEffect(() => {
     if (!autoLoopDetect || !videoInfo?.jobId || loadedVideoJobId !== videoInfo.jobId) return
-    const key = `${videoInfo.jobId}:${startFrame}`
+    const key = `${videoInfo.jobId}:${startFrame}:${loopDetectionSignature}`
     if (lastAutoDetectKeyRef.current === key) return
 
-    lastAutoDetectKeyRef.current = key
-    detectLoopEnd(startFrame, { seekToCandidate: false })
-  }, [autoLoopDetect, detectLoopEnd, loadedVideoJobId, startFrame, videoInfo?.jobId])
+    if (autoDetectTimerRef.current) {
+      clearTimeout(autoDetectTimerRef.current)
+    }
+
+    autoDetectTimerRef.current = setTimeout(() => {
+      if (lastAutoDetectKeyRef.current === key) return
+      lastAutoDetectKeyRef.current = key
+      detectLoopEnd(startFrame, { seekToCandidate: false })
+    }, 450)
+
+    return () => {
+      if (autoDetectTimerRef.current) {
+        clearTimeout(autoDetectTimerRef.current)
+        autoDetectTimerRef.current = null
+      }
+    }
+  }, [autoLoopDetect, detectLoopEnd, loadedVideoJobId, loopDetectionSignature, startFrame, videoInfo?.jobId])
 
   // ===== 视频加载 =====
   useEffect(() => {
@@ -282,6 +319,12 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   }, [seekToFrame, stopLoopPreview, videoFile, videoInfo?.jobId])
 
   useEffect(() => () => stopLoopPreview(), [stopLoopPreview])
+
+  useEffect(() => () => {
+    if (autoDetectTimerRef.current) {
+      clearTimeout(autoDetectTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (resultJobId) stopLoopPreview()

@@ -530,7 +530,11 @@ async function exportSpriteSheet(inputPath, params, spriteParams, onProgress) {
 }
 
 /**
- * 从视频中找与起始帧相似的循环终点帧候选列表
+ * 从视频中找与起始帧相似的循环终点帧候选列表。
+ *
+ * 如果 options.params / options.previewParams 中包含 keying + layout，则先按合成预览
+ * 处理每帧（键控、自动裁剪、缩放到输出画布、填充键控色背景），再计算 dHash。
+ * 没有处理参数时保留旧行为：直接比较原始视频缩略帧。
  *
  * 使用 dHash (Difference Hash) 算法：
  *   1. 提取帧缩略图到 (hashSize+1) × hashSize 大小（默认 9×8）
@@ -552,9 +556,202 @@ async function exportSpriteSheet(inputPath, params, spriteParams, onProgress) {
  * @param {number} [options.hashSize=16] - dHash 尺寸（默认 16 → 17×16 缩略 → 256-bit）
  * @param {number} [options.minSpacing=12] - 候选帧之间最小帧间距
  * @param {number} [options.maxCandidates=5] - 最多返回多少个候选
+ * @param {Object} [options.params] - { keying, layout, mode? }，用于按合成预览处理帧
  * @returns {Promise<{candidates: Array<{frame:number,score:number}>, scores: Array<{frame:number,score:number,displayOnly?:boolean}>}>}
  */
 function findLoopEndFrame(inputPath, startFrame, fps, totalFrames, options = {}) {
+  const previewParams = getLoopPreviewParams(options);
+  if (previewParams) {
+    return findLoopEndFrameProcessed(inputPath, startFrame, fps, totalFrames, options, previewParams);
+  }
+  return findLoopEndFrameRaw(inputPath, startFrame, fps, totalFrames, options);
+}
+
+function getLoopPreviewParams(options = {}) {
+  const params = options.params || options.previewParams || null;
+  if (!params || !params.keying || !params.layout) return null;
+  return {
+    keying: params.keying,
+    layout: params.layout,
+    mode: params.mode || 'greenscreen',
+  };
+}
+
+async function findLoopEndFrameProcessed(inputPath, startFrame, fps, totalFrames, options = {}, previewParams) {
+  await loadAlgorithms();
+
+  const {
+    maxSearch = 300,
+    step = 2,
+    hashSize = 16,
+    minSpacing = 12,
+    maxCandidates = 5
+  } = options;
+
+  const endSearch = Math.min(startFrame + maxSearch, totalFrames);
+  const scanStartFrame = startFrame + 1;
+  const searchCount = Math.max(0, endSearch - scanStartFrame);
+  const scaleW = hashSize + 1;
+  const scaleH = hashSize;
+
+  if (searchCount <= 0) {
+    return {
+      candidates: [],
+      scores: [],
+      message: '搜索范围过小'
+    };
+  }
+
+  let srcW = Number(options.sourceWidth || options.width || options.srcW || 0);
+  let srcH = Number(options.sourceHeight || options.height || options.srcH || 0);
+  if (!srcW || !srcH) {
+    const info = await probeVideo(inputPath);
+    srcW = info.width;
+    srcH = info.height;
+  }
+
+  const frameBytes = srcW * srcH * 4;
+  const hashProcessedFrame = createProcessedFrameHasher(previewParams, scaleW, scaleH);
+
+  const startBuf = await extractRawFrame(inputPath, startFrame, fps, frameBytes);
+  const referenceHash = hashProcessedFrame(startBuf, srcW, srcH);
+  const scores = [{ frame: startFrame, score: 0, displayOnly: true }];
+
+  const scanned = await scanRawFrames(inputPath, scanStartFrame, fps, searchCount, frameBytes, (frameBuf, i) => {
+    const candidateHash = hashProcessedFrame(frameBuf, srcW, srcH);
+    const score = hammingDistance(referenceHash, candidateHash);
+    const frameNum = scanStartFrame + i;
+    scores.push({
+      frame: frameNum,
+      score,
+      ...(frameNum < startFrame + step ? { displayOnly: true } : {}),
+    });
+  });
+
+  const candidateScores = scores.filter(s => !s.displayOnly);
+  const lastFrameIdx = totalFrames - 1;
+  const lastScanned = scanned > 0 ? scanStartFrame + scanned - 1 : startFrame;
+  const needTail = lastScanned < lastFrameIdx && lastFrameIdx > startFrame;
+  const searchEndFrame = totalFrames - 1;
+
+  if (needTail) {
+    try {
+      const tailBuf = await extractRawFrame(inputPath, lastFrameIdx, fps, frameBytes);
+      const tailHash = hashProcessedFrame(tailBuf, srcW, srcH);
+      const tailScore = hammingDistance(referenceHash, tailHash);
+      const tailEntry = { frame: lastFrameIdx, score: tailScore };
+      scores.push(tailEntry);
+      candidateScores.push(tailEntry);
+      console.log(`  📌 补提尾帧 #${lastFrameIdx} score=${tailScore}`);
+    } catch (e) {
+      // 尾帧提取失败不影响主结果
+    }
+  }
+
+  const candidates = pickLoopCandidates(candidateScores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
+  return { candidates, scores };
+}
+
+function createProcessedFrameHasher(previewParams, scaleW, scaleH) {
+  const { keying, layout, mode } = previewParams;
+  const { canvasWidth, canvasHeight } = layout;
+  const processedCanvas = createCanvas(canvasWidth, canvasHeight);
+  const processedCtx = processedCanvas.getContext('2d');
+  const hashCanvas = createCanvas(scaleW, scaleH);
+  const hashCtx = hashCanvas.getContext('2d');
+
+  return (srcBuffer, srcW, srcH) => {
+    const processedFrame = processFrame(srcBuffer, srcW, srcH, keying, layout, mode);
+    const imageData = processedCtx.createImageData(canvasWidth, canvasHeight);
+    imageData.data.set(processedFrame);
+    processedCtx.putImageData(imageData, 0, 0);
+
+    hashCtx.clearRect(0, 0, scaleW, scaleH);
+    hashCtx.drawImage(processedCanvas, 0, 0, scaleW, scaleH);
+    const hashData = hashCtx.getImageData(0, 0, scaleW, scaleH);
+    return dHashRaw(hashData.data, scaleW, scaleH);
+  };
+}
+
+function extractRawFrame(inputPath, frameNum, fps, frameBytes) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-ss', String(frameNum / fps),
+      '-i', inputPath,
+      '-f', 'rawvideo',
+      '-pix_fmt', 'rgba',
+      '-frames:v', '1',
+      '-'
+    ];
+    const proc = spawn(FFMPEG, args);
+    let buf = Buffer.alloc(0);
+    let err = '';
+
+    proc.stdout.on('data', d => { buf = Buffer.concat([buf, d]); });
+    proc.stderr.on('data', d => { err += d.toString(); });
+    proc.on('close', code => {
+      if (code !== 0 || buf.length < frameBytes) {
+        return reject(new Error(`提取帧失败: ${err.slice(0, 200)}`));
+      }
+      resolve(buf.subarray(0, frameBytes));
+    });
+    proc.on('error', reject);
+  });
+}
+
+function scanRawFrames(inputPath, startFrame, fps, frameCount, frameBytes, onFrame) {
+  return new Promise((resolve, reject) => {
+    const args = [
+      '-ss', String(startFrame / fps),
+      '-i', inputPath,
+      '-f', 'rawvideo',
+      '-pix_fmt', 'rgba',
+      '-frames:v', String(frameCount),
+      '-'
+    ];
+    const proc = spawn(FFMPEG, args);
+    const frameBuf = Buffer.alloc(frameBytes);
+    let bytesBuffered = 0;
+    let frameIndex = 0;
+    let pipelineError = null;
+    let err = '';
+
+    proc.stdout.on('data', chunk => {
+      if (pipelineError) return;
+
+      let offset = 0;
+      while (offset < chunk.length) {
+        const remaining = frameBytes - bytesBuffered;
+        const toCopy = Math.min(remaining, chunk.length - offset);
+        chunk.copy(frameBuf, bytesBuffered, offset, offset + toCopy);
+        bytesBuffered += toCopy;
+        offset += toCopy;
+
+        if (bytesBuffered === frameBytes) {
+          try {
+            onFrame(frameBuf, frameIndex);
+          } catch (e) {
+            pipelineError = e;
+            return;
+          }
+          bytesBuffered = 0;
+          frameIndex++;
+        }
+      }
+    });
+    proc.stderr.on('data', d => { err += d.toString(); });
+    proc.on('close', code => {
+      if (pipelineError) return reject(pipelineError);
+      if (code !== 0 && frameIndex === 0) {
+        return reject(new Error(`扫描帧失败: ${err.slice(0, 200)}`));
+      }
+      resolve(frameIndex);
+    });
+    proc.on('error', reject);
+  });
+}
+
+function findLoopEndFrameRaw(inputPath, startFrame, fps, totalFrames, options = {}) {
   const {
     maxSearch = 300,
     step = 2,

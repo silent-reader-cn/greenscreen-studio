@@ -292,11 +292,11 @@ app.get('/api/video/download/:jobId', (req, res) => {
 /**
  * POST /api/video/find-loop-end
  * 自动检测与起始帧最相似的循环终点帧
- * body: { jobId, startFrame, options?: { maxSearch?, step?, thumbSize? } }
+ * body: { jobId, startFrame, params?: { keying, layout, mode? }, options?: { maxSearch?, step?, hashSize? } }
  */
 app.post('/api/video/find-loop-end', express.json({ limit: '1mb' }), async (req, res) => {
   try {
-    const { jobId, startFrame, options } = req.body;
+    const { jobId, startFrame, params, options } = req.body;
     const job = videoJobs.get(jobId);
     if (!job) return res.status(404).json({ error: 'job not found' });
 
@@ -315,7 +315,12 @@ app.post('/api/video/find-loop-end', express.json({ limit: '1mb' }), async (req,
       startFrame,
       fps,
       totalFrames,
-      options || {}
+      {
+        ...(options || {}),
+        params,
+        sourceWidth: info.width,
+        sourceHeight: info.height,
+      }
     );
 
     const top = result.candidates[0] || null;
