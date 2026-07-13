@@ -7,6 +7,7 @@ import VideoPanel from './components/VideoPanel.jsx'
 import VideoPreview from './components/VideoPreview.jsx'
 import ProfileSwitcher from './components/ProfileSwitcher.jsx'
 import CollapsiblePanel from './components/CollapsiblePanel.jsx'
+import { formatBytes as formatLocalizedBytes, formatDateTime, formatDuration as formatLocalizedDuration, t, uiLanguage } from './i18n.js'
 
 // ===== 默认参数 =====
 const DEFAULT_KEYING = {
@@ -98,9 +99,10 @@ function createProfileId() {
 function makeProfile(name, params, overrides = {}) {
   const now = Date.now()
   const normalized = normalizeParams(params)
+  const rawName = String(name || '').trim()
   return {
     id: overrides.id || createProfileId(),
-    name: String(name || '').trim() || '未命名 Profile',
+    name: localizeBuiltInProfileName(overrides.id, rawName || t('profile.untitled')),
     keying: normalized.keying,
     layout: normalized.layout,
     video: normalized.video,
@@ -113,8 +115,9 @@ function makeProfile(name, params, overrides = {}) {
 }
 
 function normalizeProfile(profile, index = 0) {
+  const id = profile?.id || createProfileId()
   return makeProfile(profile?.name || `Profile ${index + 1}`, profile, {
-    id: profile?.id || createProfileId(),
+    id,
     useCount: Number(profile?.useCount) || 0,
     createdAt: Number(profile?.createdAt) || Date.now(),
     updatedAt: Number(profile?.updatedAt) || Date.now(),
@@ -151,22 +154,11 @@ function resolveFrameRangeForVideo(range, info) {
 }
 
 function formatBytes(bytes) {
-  if (!bytes) return '未知大小'
-  const units = ['B', 'KB', 'MB', 'GB']
-  let value = bytes
-  let unitIndex = 0
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024
-    unitIndex += 1
-  }
-  return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`
+  return formatLocalizedBytes(bytes)
 }
 
 function formatDuration(seconds) {
-  if (!seconds) return '0秒'
-  const minutes = Math.floor(seconds / 60)
-  const rest = (seconds % 60).toFixed(1)
-  return minutes > 0 ? `${minutes}分${rest}秒` : `${rest}秒`
+  return formatLocalizedDuration(seconds)
 }
 
 const IMAGE_MIME_BY_EXT = {
@@ -248,6 +240,13 @@ function normalizeMediaFile(file, knownKind = getMediaKind(file)) {
   })
 }
 
+function localizeBuiltInProfileName(id, name) {
+  if (id === 'default' && ['默认', 'Default'].includes(name)) {
+    return t('profile.defaultName')
+  }
+  return name
+}
+
 function getClipboardMediaFile(clipboardData) {
   const files = Array.from(clipboardData?.files || [])
   const file = files.find(item => getMediaKind(item))
@@ -268,7 +267,7 @@ function getBaseMediaMetadata(file, kind = getMediaKind(file)) {
   return {
     kind,
     name: file?.name || createClipboardFileName(kind, file?.type),
-    mimeType: file?.type || '未知',
+    mimeType: file?.type || t('common.unknown'),
     size: file?.size || 0,
     lastModified: file?.lastModified || 0,
   }
@@ -441,7 +440,7 @@ function sortProfilesByUsage(profiles) {
     (b.useCount || 0) - (a.useCount || 0) ||
     (b.lastUsedAt || 0) - (a.lastUsedAt || 0) ||
     (b.updatedAt || 0) - (a.updatedAt || 0) ||
-    (a.name || '').localeCompare(b.name || '', 'zh-Hans-CN')
+    (a.name || '').localeCompare(b.name || '', uiLanguage === 'zh' ? 'zh-Hans-CN' : 'en-US')
   ))
 }
 
@@ -492,7 +491,7 @@ function loadProfileState() {
   } catch (e) { /* ignore */ }
 
   const legacyParams = loadParams()
-  const defaultProfile = makeProfile('默认', legacyParams, {
+  const defaultProfile = makeProfile(t('profile.defaultName'), legacyParams, {
     id: 'default',
     useCount: 1,
   })
@@ -692,11 +691,11 @@ export default function App() {
     if (!profile) return
 
     if (profiles.length <= 1) {
-      alert('至少需要保留一个 profile')
+      alert(t('profile.keepOne'))
       return
     }
 
-    if (!confirm(`删除 profile「${profile.name}」？`)) return
+    if (!confirm(t('profile.deleteConfirm', { name: profile.name }))) return
 
     const remainingProfiles = profiles.filter(item => item.id !== profileId)
     setProfiles(remainingProfiles)
@@ -1066,7 +1065,7 @@ export default function App() {
       }))
 
       const resp = await fetch('/api/export', { method: 'POST', body: formData })
-      if (!resp.ok) throw new Error('导出失败')
+      if (!resp.ok) throw new Error(t('app.exportFailed'))
       const resultBlob = await resp.blob()
       const url = URL.createObjectURL(resultBlob)
       const a = document.createElement('a')
@@ -1075,7 +1074,7 @@ export default function App() {
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
-      alert('导出失败: ' + err.message)
+      alert(`${t('app.exportFailed')}: ${err.message}`)
     } finally {
       setExporting(false)
     }
@@ -1085,8 +1084,8 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-copy">
-          <h1>🎬 绿幕素材标准化工具</h1>
-          <p>抠像 · 等比缩放 · 居中重排 · 导出</p>
+          <h1>🎬 {t('app.title')}</h1>
+          <p>{t('app.tagline')}</p>
         </div>
         <ProfileSwitcher
           profiles={profiles}
@@ -1131,22 +1130,22 @@ export default function App() {
           </div>
 
           <div className="sidebar-dock">
-            <p className="dock-label">导出操作</p>
+            <p className="dock-label">{t('app.exportActions')}</p>
             {mediaMode === 'image' ? (
               <div className="dock-actions">
                 {!imageData && (
-                  <p className="dock-hint">拖入或粘贴图片后可导出当前参数下的结果</p>
+                  <p className="dock-hint">{t('app.imageExportHint')}</p>
                 )}
                 <button
                   className="dock-btn dock-btn-primary"
                   onClick={() => handleExport('greenscreen')}
                   disabled={!processingImageData || exporting}
-                >{exporting ? '导出中...' : '💾 导出绿幕合成图'}</button>
+                >{exporting ? t('app.exporting') : `💾 ${t('app.exportGreenscreen')}`}</button>
                 <button
                   className="dock-btn dock-btn-secondary"
                   onClick={() => handleExport('transparent')}
                   disabled={!processingImageData || exporting}
-                >{exporting ? '导出中...' : '💾 导出透明 PNG'}</button>
+                >{exporting ? t('app.exporting') : `💾 ${t('app.exportTransparent')}`}</button>
               </div>
             ) : (
               <div ref={videoDockRef} className="dock-portal-target" />
@@ -1160,20 +1159,20 @@ export default function App() {
               <button
                 className={`mode-btn ${mediaMode === 'image' ? 'active' : ''}`}
                 onClick={() => switchMode('image')}
-              >🖼️ 图片</button>
+              >🖼️ {t('app.image')}</button>
               <button
                 className={`mode-btn ${mediaMode === 'video' ? 'active' : ''}`}
                 onClick={() => switchMode('video')}
-              >🎬 视频</button>
+              >🎬 {t('app.video')}</button>
             </div>
             <button
               className={`tab ${previewMode === 'keying' ? 'active' : ''}`}
               onClick={() => setPreviewMode('keying')}
-            >抠像预览</button>
+            >{t('app.keyingPreview')}</button>
             <button
               className={`tab ${previewMode === 'composite' ? 'active' : ''}`}
               onClick={() => setPreviewMode('composite')}
-            >合成预览</button>
+            >{t('app.compositePreview')}</button>
           </div>
           <div className="canvas-wrapper" ref={imagePreviewWrapperRef}>
             {mediaMode === 'image' ? (
@@ -1220,8 +1219,8 @@ export default function App() {
         <div className="drop-overlay">
           <div className="drop-overlay-content">
             <span className="drop-overlay-icon">📁</span>
-            <p className="drop-overlay-text">放开鼠标以加载文件</p>
-            <p className="drop-overlay-hint">支持图片 PNG/JPG/WebP 或视频 MP4/MOV/WebM/AVI</p>
+            <p className="drop-overlay-text">{t('app.dropText')}</p>
+            <p className="drop-overlay-hint">{t('app.dropHint')}</p>
           </div>
         </div>
       )}
@@ -1239,22 +1238,16 @@ export default function App() {
 function ClipboardImportDialog({ importItem, onCancel, onConfirm }) {
   const { metadata, loading } = importItem
   const isImage = metadata.kind === 'image'
-  const kindLabel = isImage ? '图片' : '视频'
+  const kindLabel = isImage ? t('app.image') : t('app.video')
   const dimensionLabel = metadata.width && metadata.height
     ? `${metadata.width} × ${metadata.height}`
-    : loading ? '读取中...' : '未知'
+    : loading ? t('common.loading') : t('common.unknown')
   const durationLabel = metadata.duration
     ? formatDuration(metadata.duration)
-    : loading ? '读取中...' : '未知'
+    : loading ? t('common.loading') : t('common.unknown')
   const dateLabel = metadata.lastModified
-    ? new Intl.DateTimeFormat('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(new Date(metadata.lastModified))
-    : '未知'
+    ? formatDateTime(metadata.lastModified)
+    : t('common.unknown')
 
   return (
     <div className="clipboard-modal-backdrop" onClick={onCancel}>
@@ -1268,35 +1261,35 @@ function ClipboardImportDialog({ importItem, onCancel, onConfirm }) {
         <div className="clipboard-modal-header">
           <span className="clipboard-modal-icon" aria-hidden="true">{isImage ? '🖼️' : '🎬'}</span>
           <div>
-            <h2 id="clipboard-import-title">从剪切板导入素材？</h2>
-            <p>检测到剪切板包含{kindLabel}内容，确认后会替换当前{kindLabel}素材。</p>
+            <h2 id="clipboard-import-title">{t('clipboard.title')}</h2>
+            <p>{t('clipboard.body', { kind: kindLabel })}</p>
           </div>
         </div>
 
         <dl className="clipboard-meta-grid">
-          <dt>内容类型</dt>
+          <dt>{t('clipboard.type')}</dt>
           <dd>{kindLabel}</dd>
-          <dt>文件名</dt>
+          <dt>{t('clipboard.fileName')}</dt>
           <dd title={metadata.name}>{metadata.name}</dd>
           <dt>MIME</dt>
           <dd>{metadata.mimeType}</dd>
-          <dt>大小</dt>
+          <dt>{t('clipboard.size')}</dt>
           <dd>{formatBytes(metadata.size)}</dd>
-          <dt>尺寸</dt>
+          <dt>{t('clipboard.dimensions')}</dt>
           <dd>{dimensionLabel}</dd>
           {!isImage && (
             <>
-              <dt>时长</dt>
+              <dt>{t('clipboard.duration')}</dt>
               <dd>{durationLabel}</dd>
             </>
           )}
-          <dt>修改时间</dt>
+          <dt>{t('clipboard.modified')}</dt>
           <dd>{dateLabel}</dd>
         </dl>
 
         <div className="clipboard-modal-actions">
-          <button type="button" className="clipboard-btn secondary" onClick={onCancel}>取消</button>
-          <button type="button" className="clipboard-btn primary" onClick={onConfirm}>导入</button>
+          <button type="button" className="clipboard-btn secondary" onClick={onCancel}>{t('common.cancel')}</button>
+          <button type="button" className="clipboard-btn primary" onClick={onConfirm}>{t('common.import')}</button>
         </div>
       </div>
     </div>
@@ -1319,11 +1312,11 @@ function FileMetaPanel({
   const loaded = isImage ? imageSize.w > 0 : !!videoInfo
   const summary = loaded
     ? (isImage ? `${imageSize.w}×${imageSize.h}` : `${videoInfo.width}×${videoInfo.height}`)
-    : '未载入'
+    : t('file.notLoaded')
 
   return (
     <CollapsiblePanel
-      title="📄 当前素材"
+      title={`📄 ${t('file.title')}`}
       summary={summary}
       defaultCollapsed
       className="file-meta-panel"
@@ -1332,36 +1325,36 @@ function FileMetaPanel({
         <div className="file-meta-content">
           <p className="file-meta-name" title={file.name}>{file.name}</p>
           <div className="file-meta-grid">
-            <span>类型</span>
-            <strong>{isImage ? '图片' : '视频'}</strong>
-            <span>大小</span>
+            <span>{t('file.type')}</span>
+            <strong>{isImage ? t('app.image') : t('app.video')}</strong>
+            <span>{t('file.size')}</span>
             <strong>{formatBytes(file.size)}</strong>
             {isImage ? (
               <>
-                <span>尺寸</span>
+                <span>{t('file.dimensions')}</span>
                 <strong>{imageSize.w} × {imageSize.h}</strong>
               </>
             ) : (
               <>
-                <span>尺寸</span>
+                <span>{t('file.dimensions')}</span>
                 <strong>{videoInfo.width} × {videoInfo.height}</strong>
-                <span>时长</span>
+                <span>{t('file.duration')}</span>
                 <strong>{formatDuration(videoInfo.duration)}</strong>
-                <span>帧率</span>
+                <span>{t('file.fps')}</span>
                 <strong>{videoInfo.fps} fps</strong>
-                <span>音轨</span>
-                <strong>{videoInfo.hasAudio ? '有' : '无'}</strong>
+                <span>{t('file.audio')}</span>
+                <strong>{videoInfo.hasAudio ? t('common.yes') : t('common.no')}</strong>
               </>
             )}
           </div>
           {isImage && (
             <div className="file-region-tools">
               <div className="file-region-status">
-                <span>处理区域</span>
+                <span>{t('file.processingRegion')}</span>
                 <strong>
                   {imageRegion
                     ? `${imageRegion.width} × ${imageRegion.height} @ ${imageRegion.x}, ${imageRegion.y}`
-                    : '整张图片'}
+                    : t('file.fullImage')}
                 </strong>
               </div>
               <div className="file-region-actions">
@@ -1371,7 +1364,7 @@ function FileMetaPanel({
                   onClick={onResetImageRegion}
                   disabled={!imageRegion && !regionSelectionMode}
                 >
-                  复位
+                  {t('file.resetRegion')}
                 </button>
                 <button
                   type="button"
@@ -1379,8 +1372,8 @@ function FileMetaPanel({
                   onClick={onSelectImageRegion}
                 >
                   {regionSelectionMode
-                    ? '重新框选处理区域'
-                    : imageRegion ? '重新设定处理区域' : '设定处理区域'}
+                    ? t('file.reselectRegion')
+                    : imageRegion ? t('file.resetSelectedRegion') : t('file.selectRegion')}
                 </button>
               </div>
             </div>
@@ -1388,8 +1381,8 @@ function FileMetaPanel({
         </div>
       ) : (
         <div className="file-meta-empty">
-          <p>{isImage ? '暂无图片素材' : '暂无视频素材'}</p>
-          <p className="hint">把图片或视频拖到窗口任意位置，或直接粘贴即可载入</p>
+          <p>{isImage ? t('file.noImage') : t('file.noVideo')}</p>
+          <p className="hint">{t('file.emptyHint')}</p>
         </div>
       )}
     </CollapsiblePanel>

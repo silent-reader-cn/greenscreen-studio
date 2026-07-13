@@ -1,5 +1,6 @@
 import React from 'react'
 import CollapsiblePanel from './CollapsiblePanel.jsx'
+import { t } from '../i18n.js'
 
 const Slider = ({ label, value, min, max, step, unit, onChange }) => (
   <div className="slider-row">
@@ -20,12 +21,12 @@ const Slider = ({ label, value, min, max, step, unit, onChange }) => (
 
 export default function KeyingPanel({ params, onChange }) {
   const update = (key, val) => onChange({ ...params, [key]: val })
-  const summary = `容差 ${params.tolerance} · 羽化 ${params.feather}`
+  const summary = t('keying.summary', { tolerance: params.tolerance, feather: params.feather })
 
   return (
-    <CollapsiblePanel title="🎨 抠像参数" summary={summary}>
+    <CollapsiblePanel title={`🎨 ${t('keying.title')}`} summary={summary}>
       <div className="color-row">
-        <label>键控色</label>
+        <label>{t('keying.keyColor')}</label>
         <input
           type="color"
           value={`#${params.keyColor.map(c => c.toString(16).padStart(2, '0')).join('')}`}
@@ -40,25 +41,25 @@ export default function KeyingPanel({ params, onChange }) {
       </div>
 
       <Slider
-        label="色容差"
+        label={t('keying.tolerance')}
         value={params.tolerance}
         min={0} max={100} step={1} unit=""
         onChange={(v) => update('tolerance', v)}
       />
       <Slider
-        label="去绿溢"
+        label={t('keying.spillSuppression')}
         value={params.spillSuppression}
         min={0} max={100} step={1} unit=""
         onChange={(v) => update('spillSuppression', v)}
       />
       <Slider
-        label="边缘羽化"
+        label={t('keying.feather')}
         value={params.feather}
         min={0} max={100} step={1} unit=""
         onChange={(v) => update('feather', v)}
       />
       <Slider
-        label="边缘收缩"
+        label={t('keying.edgeShrink')}
         value={params.edgeShrink}
         min={0} max={50} step={1} unit="px"
         onChange={(v) => update('edgeShrink', v)}
@@ -73,7 +74,7 @@ export default function KeyingPanel({ params, onChange }) {
           feather: 15,
           edgeShrink: 0,
         })}
-      >重置抠像参数</button>
+      >{t('keying.reset')}</button>
     </CollapsiblePanel>
   )
 }

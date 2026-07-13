@@ -1,11 +1,12 @@
 import React from 'react'
+import { t } from '../i18n.js'
 
 export default function PreviewCanvas() {
   return (
     <div className="empty-preview">
       <div className="placeholder-icon">🖼️</div>
-      <p>拖入或粘贴图片后在此预览</p>
-      <p className="hint">支持抠像预览和合成预览两种模式</p>
+      <p>{t('preview.emptyImage')}</p>
+      <p className="hint">{t('preview.emptyImageHint')}</p>
     </div>
   )
 }

@@ -28,9 +28,7 @@ It is useful for:
 
 ## Screenshots
 
-![Greenscreen Studio image workflow](docs/images/screenshot-main.png)
-
-![Greenscreen Studio video workflow](docs/images/screenshot-video.png)
+![Greenscreen Studio English UI](docs/images/screenshot-main-en.png)
 
 ## Features
 

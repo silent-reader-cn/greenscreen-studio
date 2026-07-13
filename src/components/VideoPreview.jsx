@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { applyKeying, composeToCanvas, autoCropKeyed } from '../lib/keying.js'
+import { t } from '../i18n.js'
 
 const AUTO_LOOP_DETECT_KEY = 'greenscreen-studio-auto-loop-detect'
 
@@ -205,7 +206,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
           params: loopDetectionParams,
         })
       })
-      if (!resp.ok) throw new Error('检测失败')
+      if (!resp.ok) throw new Error(t('preview.detectFailed'))
       const data = await resp.json()
       if (requestId !== detectRequestRef.current) return
 
@@ -453,7 +454,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
           autoPlay
           loop
         />
-        <p className="player-hint">处理完成，点击播放预览效果</p>
+        <p className="player-hint">{t('preview.processedHint')}</p>
       </div>
     )
   }
@@ -463,9 +464,9 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
     return (
       <div className="video-preview-hint">
         <div className="placeholder-icon">🎬</div>
-        <p>视频抠像参数与图片共用</p>
-        <p className="hint">调整左侧参数后，拖入视频并开始处理</p>
-        <p className="hint">上传后可在此选帧实时预览抠像效果</p>
+        <p>{t('preview.emptyVideoTitle')}</p>
+        <p className="hint">{t('preview.emptyVideoHintA')}</p>
+        <p className="hint">{t('preview.emptyVideoHintB')}</p>
       </div>
     )
   }
@@ -484,7 +485,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
 
       {/* Canvas 预览 */}
       <div className="frame-canvas-wrapper" ref={wrapperRef}>
-        {loading && <div className="frame-loading">截帧中...</div>}
+        {loading && <div className="frame-loading">{t('preview.loadingFrame')}</div>}
         <canvas ref={canvasRef} className="preview-canvas" />
       </div>
 
@@ -512,14 +513,14 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
               <>
                 <div className="timeline-marker marker-start"
                   style={{ left: `${startPct}%` }}
-                  title={`起点: 第 ${range.startFrame} 帧`}
+                  title={t('preview.markerStart', { frame: range.startFrame })}
                 >
                   <span className="marker-label">{range.startFrame}</span>
                   <span className="marker-dot" />
                 </div>
                 <div className="timeline-marker marker-end"
                   style={{ left: `${endPct}%` }}
-                  title={`终点: 第 ${range.endFrame} 帧`}
+                  title={t('preview.markerEnd', { frame: range.endFrame })}
                 >
                   <span className="marker-label">{range.endFrame}</span>
                   <span className="marker-dot" />
@@ -531,7 +532,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
               style={{ left: `${currentPct}%` }}
               role="slider"
               tabIndex={duration > 0 ? 0 : -1}
-              aria-label="当前预览帧"
+              aria-label={t('preview.currentFrame')}
               aria-valuemin={0}
               aria-valuemax={duration}
               aria-valuenow={frameTime}
@@ -563,8 +564,8 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
           <button
             className={`btn-mark btn-play-loop ${isLoopPlaying ? 'active' : ''}`}
             onClick={toggleLoopPreview}
-            title="播放当前帧范围，循环预览区间效果"
-          >{isLoopPlaying ? '暂停区间' : '播放区间'}</button>
+            title={t('preview.loopPreviewTitle')}
+          >{isLoopPlaying ? t('preview.pauseRange') : t('preview.playRange')}</button>
           <button
             className="btn-mark"
             onClick={() => {
@@ -573,9 +574,9 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
               const frame = Math.round(frameTime * fps)
               onRangeChange({ ...range, startFrame: Math.min(frame, range.endFrame) })
             }}
-          >↑ 标记起点</button>
+          >{t('preview.markStart')}</button>
           <span className="mark-range-info">
-            {range.startFrame} ~ {range.endFrame} 帧
+            {range.startFrame} ~ {range.endFrame} {t('common.frames')}
           </span>
           <button
             className="btn-mark"
@@ -585,7 +586,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
               const frame = Math.round(frameTime * fps)
               onRangeChange({ ...range, endFrame: Math.max(frame, range.startFrame + 1) })
             }}
-          >↓ 标记终点</button>
+          >{t('preview.markEnd')}</button>
           <button
             className="btn-mark btn-loop"
             onClick={() => detectLoopEnd(range.startFrame)}
@@ -598,9 +599,9 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
               onClick={(event) => event.stopPropagation()}
               onChange={(event) => setAutoLoopDetect(event.target.checked)}
               disabled={detecting}
-              aria-label="自动触发循环检测"
+              aria-label={t('preview.autoLoopAria')}
             />
-            <span>{detecting ? '检测中...' : '自动循环'}</span>
+            <span>{detecting ? t('preview.detecting') : t('preview.autoLoop')}</span>
           </button>
         </div>
       )}
@@ -608,7 +609,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       {/* 候选帧列表 */}
       {loopCandidates && loopCandidates.length > 0 && (
         <div className="loop-candidates">
-          <span className="candidates-label">循环候选</span>
+          <span className="candidates-label">{t('preview.loopCandidates')}</span>
           <div className="candidates-list">
             {loopCandidates.length > 0 && (() => {
               // 用全局 scores 的 min/max 归一化到 0%-100%
@@ -644,7 +645,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
                       event.preventDefault()
                       selectStartFrame()
                     }}
-                    title={`第 ${c.frame} 帧 · 相似度 ${similarity}%`}
+                    title={t('preview.candidateTitle', { frame: c.frame, similarity })}
                   >
                     <span className="chip-frame">{c.frame}f</span>
                     <span className="chip-time">{formatTime(c.frame / fps)}</span>

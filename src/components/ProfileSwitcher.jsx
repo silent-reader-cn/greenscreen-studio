@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { t, uiLanguage } from '../i18n.js'
 
 function sortProfilesByUsage(profiles) {
   return [...profiles].sort((a, b) => (
     (b.useCount || 0) - (a.useCount || 0) ||
     (b.lastUsedAt || 0) - (a.lastUsedAt || 0) ||
     (b.updatedAt || 0) - (a.updatedAt || 0) ||
-    (a.name || '').localeCompare(b.name || '', 'zh-Hans-CN')
+    (a.name || '').localeCompare(b.name || '', uiLanguage === 'zh' ? 'zh-Hans-CN' : 'en-US')
   ))
 }
 
@@ -115,13 +116,13 @@ export default function ProfileSwitcher({
 
   const handleCreate = () => {
     const defaultName = `Profile ${profiles.length + 1}`
-    const name = prompt('新建 profile 名称', defaultName)
+    const name = prompt(t('profile.createPrompt'), defaultName)
     if (name === null) return
     onCreate(name)
   }
 
   const handleRename = (profile) => {
-    const name = prompt('重命名 profile', profile.name)
+    const name = prompt(t('profile.renamePrompt'), profile.name)
     if (name === null) return
     const nextName = String(name || '').trim()
     if (!nextName || nextName === profile.name) return
@@ -143,7 +144,7 @@ export default function ProfileSwitcher({
     <div
       key={profile.id}
       className={`profile-chip ${profile.id === activeProfileId ? 'active' : ''} ${compact ? 'compact' : ''}`}
-      title={`使用 ${profile.useCount || 0} 次`}
+      title={t('profile.useCount', { count: profile.useCount || 0 })}
       onContextMenu={(event) => handleProfileContextMenu(event, profile)}
     >
       <button
@@ -160,7 +161,7 @@ export default function ProfileSwitcher({
         <button
           type="button"
           className="profile-chip-delete"
-          aria-label={`删除 profile ${profile.name}`}
+          aria-label={t('profile.deleteLabel', { name: profile.name })}
           onClick={(event) => {
             event.stopPropagation()
             onDelete(profile.id)
@@ -177,8 +178,8 @@ export default function ProfileSwitcher({
     : null
 
   return (
-    <div className="profile-switcher" aria-label="Profiles" ref={switcherRef}>
-      <span className="profile-label">Profiles</span>
+    <div className="profile-switcher" aria-label={t('profile.label')} ref={switcherRef}>
+      <span className="profile-label">{t('profile.label')}</span>
 
       <div className="profile-quick-list">
         {quickProfiles.map(profile => renderProfileButton(profile))}
@@ -191,12 +192,12 @@ export default function ProfileSwitcher({
             className={`profile-more-btn ${activeDropdownProfile ? 'active' : ''}`}
             onClick={() => setOpen(prev => !prev)}
           >
-            更多{activeDropdownProfile ? ` · ${activeDropdownProfile.name}` : ''} ▾
+            {t('profile.more')}{activeDropdownProfile ? ` · ${activeDropdownProfile.name}` : ''} ▾
           </button>
 
           {open && (
             <div className="profile-dropdown">
-              <p className="profile-dropdown-title">其他 Profiles</p>
+              <p className="profile-dropdown-title">{t('profile.otherProfiles')}</p>
               {dropdownProfiles.map(profile => renderProfileButton(profile, true))}
             </div>
           )}
@@ -204,7 +205,7 @@ export default function ProfileSwitcher({
       )}
 
       <button type="button" className="profile-add" onClick={handleCreate}>
-        ＋ 新建
+        {t('profile.add')}
       </button>
 
       {contextMenu && contextProfile && (
@@ -221,7 +222,7 @@ export default function ProfileSwitcher({
               handleRename(contextProfile)
             }}
           >
-            重命名
+            {t('profile.rename')}
           </button>
         </div>
       )}

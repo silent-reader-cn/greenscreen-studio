@@ -1,11 +1,12 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import CollapsiblePanel from './CollapsiblePanel.jsx'
+import { formatBytes, t } from '../i18n.js'
 
 const FMT_OPTIONS = [
-  { value: 'webm', label: 'WebM (透明, VP9)', transparent: true },
-  { value: 'mov', label: 'MOV (透明, ProRes 4444)', transparent: true },
-  { value: 'mp4', label: 'MP4 (绿幕合成, H.264)', transparent: false },
+  { value: 'webm', labelKey: 'videoPanel.transparentWebm', transparent: true },
+  { value: 'mov', labelKey: 'videoPanel.transparentMov', transparent: true },
+  { value: 'mp4', labelKey: 'videoPanel.greenscreenMp4', transparent: false },
 ]
 
 const DEFAULT_SPRITE_PARAMS = {
@@ -55,8 +56,11 @@ export default function VideoPanel({
   const safeVideoParams = normalizeVideoParams(videoParams)
   const { mode, format, exportMode, spriteParams } = safeVideoParams
   const summary = exportMode === 'spritesheet'
-    ? `${spriteParams.frameWidth}×${spriteParams.frameHeight} 精灵图`
-    : `${format.toUpperCase()} · ${mode === 'transparent' ? '透明' : '绿幕'}`
+    ? t('videoPanel.spriteSummary', { width: spriteParams.frameWidth, height: spriteParams.frameHeight })
+    : t('videoPanel.videoSummary', {
+        format: format.toUpperCase(),
+        mode: mode === 'transparent' ? t('videoPanel.transparent') : t('videoPanel.greenscreen'),
+      })
 
   const [videoInfo, setVideoInfo] = useState(null)       // {jobId, width, height, fps, duration, hasAudio}
   const [uploading, setUploading] = useState(false)
@@ -143,7 +147,7 @@ export default function VideoPanel({
 
     try {
       const resp = await fetch('/api/video/upload', { method: 'POST', body: formData })
-      if (!resp.ok) throw new Error('上传失败')
+      if (!resp.ok) throw new Error(t('videoPanel.uploadFailed'))
       const data = await resp.json()
       setVideoInfo(data)
       setStatus('uploaded')
@@ -185,7 +189,7 @@ export default function VideoPanel({
         })
         if (!resp.ok) {
           const errData = await resp.json().catch(() => ({}))
-          throw new Error(errData.error || '精灵图导出失败')
+          throw new Error(errData.error || t('videoPanel.spriteExportFailed'))
         }
         const blob = await resp.blob()
         setSpriteSheetBlob(blob)
@@ -214,7 +218,7 @@ export default function VideoPanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       })
-      if (!resp.ok) throw new Error('启动处理失败')
+      if (!resp.ok) throw new Error(t('videoPanel.startFailed'))
       const { taskId } = await resp.json()
 
       pollTimerRef.current = setInterval(async () => {
@@ -235,7 +239,7 @@ export default function VideoPanel({
             pollTimerRef.current = null
             setProcessing(false)
             setStatus('error')
-            setErrorMsg(pData.error || '处理失败')
+            setErrorMsg(pData.error || t('videoPanel.processingFailed'))
           }
         } catch (e) { /* ignore poll errors */ }
       }, 1000)
@@ -260,7 +264,7 @@ export default function VideoPanel({
     }
     try {
       const resp = await fetch(`/api/video/download/${videoInfo.jobId}`)
-      if (!resp.ok) throw new Error('下载失败')
+      if (!resp.ok) throw new Error(t('videoPanel.downloadFailed'))
       const blob = await resp.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -282,7 +286,7 @@ export default function VideoPanel({
     <div className="dock-actions">
       {!videoInfo && (
         <p className="dock-hint">
-          {uploading ? '视频上传中，完成后可开始处理' : '拖入视频后可在这里处理或下载结果'}
+          {uploading ? t('videoPanel.uploadingHint') : t('videoPanel.emptyHint')}
         </p>
       )}
 
@@ -292,7 +296,7 @@ export default function VideoPanel({
             <div className="progress-bar" style={{ width: `${progress.percent}%` }} />
           </div>
           <p className="progress-text">
-            {progress.percent}% ({progress.current}/{progress.total || '...'}帧)
+            {t('videoPanel.progress', { percent: progress.percent, current: progress.current, total: progress.total || '...' })}
           </p>
         </div>
       )}
@@ -300,11 +304,11 @@ export default function VideoPanel({
       {videoInfo && errorMsg && <div className="dock-message error-msg">❌ {errorMsg}</div>}
 
       {videoInfo && status === 'done' && exportMode === 'video' && (
-        <div className="dock-message success-msg">✅ 处理完成，可下载视频</div>
+        <div className="dock-message success-msg">✅ {t('videoPanel.videoDone')}</div>
       )}
       {videoInfo && status === 'done' && exportMode === 'spritesheet' && spriteSheetBlob && (
         <div className="dock-message success-msg">
-          ✅ 精灵图完成（{spriteSheetBlob.size > 1024 ? `${(spriteSheetBlob.size / 1024).toFixed(1)}KB` : `${spriteSheetBlob.size}B`}）
+          ✅ {t('videoPanel.spriteDone', { size: formatBytes(spriteSheetBlob.size) })}
         </div>
       )}
 
@@ -312,21 +316,21 @@ export default function VideoPanel({
         <>
           {status === 'done' ? (
             exportMode === 'spritesheet' ? (
-              <button className="dock-btn dock-btn-primary" onClick={handleDownload}>⬇ 下载精灵图 PNG</button>
+              <button className="dock-btn dock-btn-primary" onClick={handleDownload}>⬇ {t('videoPanel.downloadSprite')}</button>
             ) : (
-              <button className="dock-btn dock-btn-primary" onClick={handleDownload}>⬇ 下载视频 ({format.toUpperCase()})</button>
+              <button className="dock-btn dock-btn-primary" onClick={handleDownload}>⬇ {t('videoPanel.downloadVideo', { format: format.toUpperCase() })}</button>
             )
           ) : (
             <button className="dock-btn dock-btn-primary" onClick={handleProcess} disabled={processing}>
-              {processing ? '处理中...' : exportMode === 'spritesheet' ? '🖼️ 生成精灵图' : '🚀 开始处理'}
+              {processing ? t('videoPanel.processing') : exportMode === 'spritesheet' ? `🖼️ ${t('videoPanel.generateSprite')}` : `🚀 ${t('videoPanel.start')}`}
             </button>
           )}
-          <button className="dock-btn dock-btn-secondary" onClick={handleReset} disabled={processing}>🔁 重新选择</button>
+          <button className="dock-btn dock-btn-secondary" onClick={handleReset} disabled={processing}>🔁 {t('videoPanel.chooseAgain')}</button>
         </>
       ) : (
         <>
-          <button className="dock-btn dock-btn-primary" disabled>{uploading ? '上传中...' : '🚀 开始处理'}</button>
-          <button className="dock-btn dock-btn-secondary" disabled>🔁 重新选择</button>
+          <button className="dock-btn dock-btn-primary" disabled>{uploading ? t('videoPanel.uploading') : `🚀 ${t('videoPanel.start')}`}</button>
+          <button className="dock-btn dock-btn-secondary" disabled>🔁 {t('videoPanel.chooseAgain')}</button>
         </>
       )}
     </div>
@@ -335,56 +339,56 @@ export default function VideoPanel({
   return (
     <>
       {videoInfo && (
-        <CollapsiblePanel title="🎬 视频参数" summary={summary} className="video-panel">
+        <CollapsiblePanel title={`🎬 ${t('videoPanel.title')}`} summary={summary} className="video-panel">
           <div className="video-options">
             <div className="opt-group">
-              <p className="opt-label">导出类型</p>
+              <p className="opt-label">{t('videoPanel.exportType')}</p>
               <div className="opt-buttons">
                 <button
                   className={`opt-btn ${exportMode === 'video' ? 'active' : ''}`}
                   onClick={() => setExportMode('video')}
-                >视频导出</button>
+                >{t('videoPanel.videoExport')}</button>
                 <button
                   className={`opt-btn ${exportMode === 'spritesheet' ? 'active' : ''}`}
                   onClick={() => setExportMode('spritesheet')}
-                >精灵图导出</button>
+                >{t('videoPanel.spriteExport')}</button>
               </div>
             </div>
 
             {exportMode === 'video' ? (
               <>
                 <div className="opt-group">
-                  <p className="opt-label">输出模式</p>
+                  <p className="opt-label">{t('videoPanel.outputMode')}</p>
                   <div className="opt-buttons">
                     <button
                       className={`opt-btn ${mode === 'transparent' ? 'active' : ''}`}
                       onClick={() => setMode('transparent')}
-                    >透明背景</button>
+                    >{t('videoPanel.transparentBg')}</button>
                     <button
                       className={`opt-btn ${mode === 'greenscreen' ? 'active' : ''}`}
                       onClick={() => setMode('greenscreen')}
-                    >绿幕合成</button>
+                    >{t('videoPanel.greenscreenComposite')}</button>
                   </div>
                 </div>
 
                 <div className="opt-group">
-                  <p className="opt-label">输出格式</p>
+                  <p className="opt-label">{t('videoPanel.outputFormat')}</p>
                   <div className="opt-buttons">
                     {availableFormats.map(f => (
                       <button
                         key={f.value}
                         className={`opt-btn ${format === f.value ? 'active' : ''}`}
                         onClick={() => setFormat(f.value)}
-                      >{f.label}</button>
+                      >{t(f.labelKey)}</button>
                     ))}
                   </div>
                 </div>
 
                 <div className="opt-group range-group">
-                  <p className="opt-label">帧范围</p>
+                  <p className="opt-label">{t('videoPanel.frameRange')}</p>
                   <div className="range-inputs">
                     <div className="range-field">
-                      <label>起始</label>
+                      <label>{t('videoPanel.startFrame')}</label>
                       <input
                         type="number"
                         className="range-num"
@@ -400,7 +404,7 @@ export default function VideoPanel({
                     </div>
                     <span className="range-sep">→</span>
                     <div className="range-field">
-                      <label>结束</label>
+                      <label>{t('videoPanel.endFrame')}</label>
                       <input
                         type="number"
                         className="range-num"
@@ -415,8 +419,8 @@ export default function VideoPanel({
                     </div>
                   </div>
                   <div className="range-info">
-                    {range.endFrame - range.startFrame} 帧
-                    {range.startFrame > 0 || range.endFrame < (videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)) ? ' (局部)' : ' (全视频)'}
+                    {range.endFrame - range.startFrame} {t('common.frames')}
+                    {range.startFrame > 0 || range.endFrame < (videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)) ? ` (${t('common.partial')})` : ` (${t('common.allVideo')})`}
                     <button
                       className="btn-range-reset"
                       onClick={() => {
@@ -424,28 +428,28 @@ export default function VideoPanel({
                         onRangeChange({ startFrame: 0, endFrame: total })
                       }}
                       disabled={processing}
-                    >全视频</button>
+                    >{t('videoPanel.wholeVideo')}</button>
                   </div>
                 </div>
               </>
             ) : (
               <div className="sprite-params">
                 <div className="sprite-param-row">
-                  <label>帧宽度</label>
+                  <label>{t('videoPanel.frameWidth')}</label>
                   <input type="number" min="8" max="2048" value={spriteParams.frameWidth} onChange={e => setSpriteParams(p => ({ ...p, frameWidth: parseInt(e.target.value) || 128 }))} />
-                  <label>帧高度</label>
+                  <label>{t('videoPanel.frameHeight')}</label>
                   <input type="number" min="8" max="2048" value={spriteParams.frameHeight} onChange={e => setSpriteParams(p => ({ ...p, frameHeight: parseInt(e.target.value) || 128 }))} />
                 </div>
                 <div className="sprite-param-row">
-                  <label>每行帧数</label>
+                  <label>{t('videoPanel.framesPerRow')}</label>
                   <input type="number" min="1" max="100" value={spriteParams.framesPerRow} onChange={e => setSpriteParams(p => ({ ...p, framesPerRow: parseInt(e.target.value) || 8 }))} />
-                  <label>最大帧数</label>
+                  <label>{t('videoPanel.maxFrames')}</label>
                   <input type="number" min="1" max="10000" value={spriteParams.maxFrames} onChange={e => setSpriteParams(p => ({ ...p, maxFrames: parseInt(e.target.value) || 64 }))} />
                 </div>
                 <div className="sprite-param-row">
-                  <label>采样间隔</label>
+                  <label>{t('videoPanel.sampleEvery')}</label>
                   <input type="number" min="1" max="1000" value={spriteParams.sampleEvery} onChange={e => setSpriteParams(p => ({ ...p, sampleEvery: parseInt(e.target.value) || 1 }))} />
-                  <span className="sprite-hint">每隔 N 帧取一帧</span>
+                  <span className="sprite-hint">{t('videoPanel.sampleHint')}</span>
                 </div>
               </div>
             )}
