@@ -297,4 +297,55 @@ describe('pickLoopCandidates', () => {
     // frame 1 紧邻 startFrame=0，应被跳过
     expect(result.some(r => r.frame === 1)).toBe(false)
   })
+
+  it('严格排除 earlyFrameExclusion 窗口内的候选', () => {
+    const scores = [
+      { frame: 12, score: 1 },
+      { frame: 24, score: 2 },
+      { frame: 60, score: 5 },
+    ]
+    const result = pickLoopCandidates(scores, {
+      minSpacing: 12,
+      earlyFrameExclusion: 30,
+      maxCandidates: 5,
+      startFrame: 0,
+      endFrame: 100,
+    })
+    expect(result.some(r => r.frame < 30)).toBe(false)
+    expect(result[0].frame).toBe(60)
+  })
+})
+
+describe('selectSpriteFrames', () => {
+  let selectSpriteFrames
+
+  beforeEach(async () => {
+    vi.resetModules()
+    const mod = await import('../../videoProcessor.cjs')
+    selectSpriteFrames = mod.selectSpriteFrames
+  })
+
+  it('normalizes exact frame lists into deterministic ascending order', () => {
+    const selection = selectSpriteFrames({
+      frames: [19, 0, 12, 12, 6],
+      range: { startFrame: 0, endFrame: 20 },
+    }, 40)
+
+    expect(selection.mode).toBe('frames')
+    expect(selection.frames).toEqual([0, 6, 12, 19])
+    expect(selection.ordering).toBe('ascending_source_frame')
+    expect(selection.warnings).toContain('Duplicate frame indexes were removed from the explicit frame list.')
+  })
+
+  it('samples a bounded range and applies maxFrames over that range', () => {
+    const selection = selectSpriteFrames({
+      range: { startFrame: 5, endFrame: 20 },
+      sampleEvery: 4,
+      maxFrames: 3,
+    }, 40)
+
+    expect(selection.mode).toBe('sample')
+    expect(selection.frames).toEqual([5, 9, 13])
+    expect(selection.range).toEqual({ startFrame: 5, endFrame: 20 })
+  })
 })

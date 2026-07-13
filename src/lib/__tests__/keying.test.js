@@ -5,7 +5,7 @@
  * 算法涉及逐像素计算，使用小尺寸合成图验证边界条件。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { applyKeying, autoCropKeyed, composeToCanvas } from '../keying.js'
+import { applyKeying, autoCropKeyed, cleanupKeyed, composeToCanvas, computePlacement } from '../keying.js'
 
 // ===== 测试工具函数 =====
 
@@ -318,6 +318,44 @@ describe('autoCropKeyed', () => {
   })
 })
 
+// ===== cleanupKeyed 测试 =====
+
+describe('cleanupKeyed', () => {
+  it('移除浅绿色跟踪点并保留主体像素', () => {
+    const img = createSolidImage(4, 4, 0, 0, 0, 0)
+    // 主体像素
+    img.data[(1 * 4 + 1) * 4] = 200
+    img.data[(1 * 4 + 1) * 4 + 1] = 50
+    img.data[(1 * 4 + 1) * 4 + 2] = 50
+    img.data[(1 * 4 + 1) * 4 + 3] = 255
+    // 浅绿色标记点
+    img.data[(2 * 4 + 2) * 4] = 150
+    img.data[(2 * 4 + 2) * 4 + 1] = 230
+    img.data[(2 * 4 + 2) * 4 + 2] = 150
+    img.data[(2 * 4 + 2) * 4 + 3] = 255
+
+    const result = cleanupKeyed(img, { removePaleGreenMarkers: true })
+
+    expect(result.stats.paleGreenPixelsRemoved).toBe(1)
+    expect(result.imageData.data[(2 * 4 + 2) * 4 + 3]).toBe(0)
+    expect(result.imageData.data[(1 * 4 + 1) * 4 + 3]).toBe(255)
+  })
+
+  it('可保留最大前景组件并移除小组件', () => {
+    const img = createSolidImage(5, 5, 100, 100, 100, 0)
+    for (const [x, y] of [[1, 1], [1, 2], [2, 1], [2, 2], [4, 4]]) {
+      img.data[(y * 5 + x) * 4 + 3] = 255
+    }
+
+    const result = cleanupKeyed(img, { keepLargestComponent: true })
+
+    expect(result.stats.componentsFound).toBe(2)
+    expect(result.stats.componentsRemoved).toBe(1)
+    expect(result.imageData.data[(4 * 5 + 4) * 4 + 3]).toBe(0)
+    expect(result.imageData.data[(1 * 5 + 1) * 4 + 3]).toBe(255)
+  })
+})
+
 // ===== composeToCanvas 测试 =====
 
 describe('composeToCanvas', () => {
@@ -413,5 +451,21 @@ describe('composeToCanvas', () => {
     // drawImage 签名: (tempCanvas, offsetX, offsetY, scaledW, scaledH)
     // mock 只存了 [dx, dy, dw, dh]
     expect(drawCalls[0]).toEqual([30, 30, 40, 20])
+  })
+
+  it('feet anchor 将脚底对齐到安全区底部', () => {
+    const placement = computePlacement(40, 80, {
+      canvasWidth: 256,
+      canvasHeight: 256,
+      personWidth: 160,
+      personHeight: 160,
+      anchor: 'feet',
+    })
+
+    expect(placement.safeArea).toEqual({ x: 48, y: 48, width: 160, height: 160 })
+    expect(placement.scaledW).toBe(80)
+    expect(placement.scaledH).toBe(160)
+    expect(placement.offsetX).toBe(88)
+    expect(placement.offsetY).toBe(48)
   })
 })

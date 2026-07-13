@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import fs from 'node:fs/promises';
 import { existsSync, statSync } from 'node:fs';
 import os from 'node:os';
@@ -32,6 +30,16 @@ const DEFAULT_LAYOUT = Object.freeze({
   personWidth: 760,
   personHeight: 940,
   autoCrop: true,
+  anchor: 'center',
+  anchorOffset: { x: 0, y: 0 },
+});
+
+const DEFAULT_CLEANUP = Object.freeze({
+  removePaleGreenMarkers: false,
+  removeSmallComponents: false,
+  keepLargestComponent: false,
+  minComponentPixels: 64,
+  alphaThreshold: 10,
 });
 
 const PRESETS = Object.freeze({
@@ -110,6 +118,57 @@ Use this MCP when an agent has local image or video file paths and needs the Gre
 ## Looping clips and sprites
 
 Use \`find_loop_end\` after \`probe_video\` to identify similar end-frame candidates, then pass the selected \`range\` into \`process_video\` or \`export_spritesheet\`.
+
+For animation clips that need exact poses, pass \`spriteParams.frames\` instead of sampling:
+
+\`\`\`json
+{
+  "spriteParams": {
+    "frameWidth": 256,
+    "frameHeight": 256,
+    "framesPerRow": 6,
+    "frames": [0, 6, 12, 19, 25, 31]
+  }
+}
+\`\`\`
+
+\`range\` is end-exclusive. When \`frames\` is omitted, \`range\`, \`sampleEvery\`, and \`maxFrames\` select frames deterministically from the bounded range.
+
+## Godot character animation
+
+Use \`export_godot_spriteframes\` for Godot-ready 2D character resources. It writes:
+
+- atlas PNG
+- Godot 4 \`.tres\` SpriteFrames resource
+- metadata JSON with frame regions, source video frame indexes, crop/placement, cleanup stats, and warnings
+
+Recommended 2D character settings:
+
+\`\`\`json
+{
+  "params": {
+    "mode": "transparent",
+    "layout": {
+      "anchor": "feet"
+    },
+    "cleanup": {
+      "removePaleGreenMarkers": true,
+      "keepLargestComponent": true,
+      "removeSmallComponents": true,
+      "minComponentPixels": 48
+    }
+  },
+  "godot": {
+    "frameWidth": 256,
+    "frameHeight": 256,
+    "safeAreaWidth": 160,
+    "safeAreaHeight": 160,
+    "fps": 12
+  }
+}
+\`\`\`
+
+For eight-direction sets from five source videos, provide source directions such as \`down\`, \`down_right\`, \`right\`, \`up_right\`, and \`up\`, then mirror \`left\`, \`down_left\`, and \`up_left\` from the corresponding right-facing directions.
 `;
 
 const PARAM_SCHEMA_RESOURCE = Object.freeze({
@@ -134,8 +193,26 @@ const PARAM_SCHEMA_RESOURCE = Object.freeze({
         personHeight: { type: 'integer', minimum: 1 },
         autoCrop: { type: 'boolean' },
         bgColor: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'integer', minimum: 0, maximum: 255 } },
+        anchor: { enum: ['center', 'bottom_center', 'feet'] },
+        anchorOffset: {
+          type: 'object',
+          properties: {
+            x: { type: 'integer' },
+            y: { type: 'integer' },
+          },
+        },
       },
       required: ['canvasWidth', 'canvasHeight', 'personWidth', 'personHeight'],
+    },
+    cleanup: {
+      type: 'object',
+      properties: {
+        removePaleGreenMarkers: { type: 'boolean' },
+        removeSmallComponents: { type: 'boolean' },
+        keepLargestComponent: { type: 'boolean' },
+        minComponentPixels: { type: 'integer', minimum: 1 },
+        alphaThreshold: { type: 'integer', minimum: 0, maximum: 255 },
+      },
     },
     mode: { enum: ['greenscreen', 'transparent'] },
   },
@@ -165,11 +242,30 @@ const layoutSchema = z.object({
   personHeight: z.number().int().positive().optional(),
   autoCrop: z.boolean().optional(),
   bgColor: colorSchema.optional(),
+  anchor: z.enum(['center', 'bottom_center', 'feet']).optional(),
+  anchorOffset: z.object({
+    x: z.number().int().optional(),
+    y: z.number().int().optional(),
+  }).optional(),
+});
+
+const cleanupSchema = z.object({
+  removePaleGreenMarkers: z.boolean().optional(),
+  removePaleGreen: z.boolean().optional(),
+  removeSmallComponents: z.boolean().optional(),
+  keepLargestComponent: z.boolean().optional(),
+  minComponentPixels: z.number().int().positive().optional(),
+  alphaThreshold: z.number().int().min(0).max(255).optional(),
+  paleGreenMinGreen: z.number().int().min(0).max(255).optional(),
+  paleGreenMinRedBlue: z.number().int().min(0).max(255).optional(),
+  paleGreenDominance: z.number().int().min(0).max(255).optional(),
+  paleGreenMaxRedBlueDelta: z.number().int().min(0).max(255).optional(),
 });
 
 const processingParamsSchema = z.object({
   keying: keyingSchema.optional(),
   layout: layoutSchema.optional(),
+  cleanup: cleanupSchema.optional(),
   mode: z.enum(['greenscreen', 'transparent']).optional(),
 });
 
@@ -183,7 +279,10 @@ const loopOptionsSchema = z.object({
   step: z.number().int().positive().optional(),
   hashSize: z.number().int().min(4).max(32).optional(),
   minSpacing: z.number().int().positive().optional(),
+  earlyFrameExclusion: z.number().int().min(0).optional(),
   maxCandidates: z.number().int().min(1).max(20).optional(),
+  motionWeight: z.number().min(0).max(2).optional(),
+  suspiciousCloseThreshold: z.number().int().min(0).optional(),
 });
 
 const spriteParamsSchema = z.object({
@@ -192,6 +291,45 @@ const spriteParamsSchema = z.object({
   framesPerRow: z.number().int().min(1),
   maxFrames: z.number().int().positive().optional(),
   sampleEvery: z.number().int().positive().optional(),
+  frames: z.array(z.number().int().min(0)).optional(),
+  range: rangeSchema.optional(),
+});
+
+const animationClipSchema = z.object({
+  inputPath: z.string().optional(),
+  frames: z.array(z.number().int().min(0)).optional(),
+  range: rangeSchema.optional(),
+  maxFrames: z.number().int().positive().optional(),
+  sampleEvery: z.number().int().positive().optional(),
+});
+
+const godotAnimationSchema = animationClipSchema.extend({
+  name: z.string().min(1),
+  fps: z.number().positive().optional(),
+  loop: z.boolean().optional(),
+  flipH: z.boolean().optional(),
+  mirrorOf: z.string().optional(),
+});
+
+const godotAnimationGroupSchema = z.object({
+  name: z.string().min(1),
+  fps: z.number().positive().optional(),
+  loop: z.boolean().optional(),
+  directions: z.record(z.string(), animationClipSchema),
+  mirror: z.record(z.string(), z.string()).optional(),
+});
+
+const godotSpriteFramesSchema = z.object({
+  frameWidth: z.number().int().min(8),
+  frameHeight: z.number().int().min(8),
+  safeAreaWidth: z.number().int().positive().optional(),
+  safeAreaHeight: z.number().int().positive().optional(),
+  framesPerRow: z.number().int().min(1).optional(),
+  fps: z.number().positive().optional(),
+  atlasResourcePath: z.string().optional(),
+  godotProjectRoot: z.string().optional(),
+  animations: z.array(godotAnimationSchema).optional(),
+  animationGroups: z.array(godotAnimationGroupSchema).optional(),
 });
 
 export function installMcpSafeConsole() {
@@ -220,6 +358,7 @@ export function getCapabilities(projectRoot = DEFAULT_PROJECT_ROOT) {
       'process_video',
       'find_loop_end',
       'export_spritesheet',
+      'export_godot_spriteframes',
     ],
     resources: [
       'greenscreen://presets/default',
@@ -241,6 +380,11 @@ export function normalizeProcessingParams(input = {}) {
     ...DEFAULT_LAYOUT,
     ...(input.layout || {}),
   };
+  const cleanup = {
+    ...DEFAULT_CLEANUP,
+    ...(input.cleanup || {}),
+  };
+  const anchorOffset = layout.anchorOffset || DEFAULT_LAYOUT.anchorOffset;
 
   return {
     keying: {
@@ -256,7 +400,23 @@ export function normalizeProcessingParams(input = {}) {
       personWidth: positiveInt(layout.personWidth, DEFAULT_LAYOUT.personWidth),
       personHeight: positiveInt(layout.personHeight, DEFAULT_LAYOUT.personHeight),
       autoCrop: layout.autoCrop !== false,
+      anchor: ['center', 'bottom_center', 'feet'].includes(layout.anchor) ? layout.anchor : DEFAULT_LAYOUT.anchor,
+      anchorOffset: {
+        x: Number.isFinite(Number(anchorOffset.x)) ? Math.round(Number(anchorOffset.x)) : 0,
+        y: Number.isFinite(Number(anchorOffset.y)) ? Math.round(Number(anchorOffset.y)) : 0,
+      },
       ...(layout.bgColor ? { bgColor: normalizeColor(layout.bgColor, DEFAULT_KEYING.keyColor) } : {}),
+    },
+    cleanup: {
+      removePaleGreenMarkers: cleanup.removePaleGreenMarkers === true || cleanup.removePaleGreen === true,
+      removeSmallComponents: cleanup.removeSmallComponents === true,
+      keepLargestComponent: cleanup.keepLargestComponent === true,
+      minComponentPixels: positiveInt(cleanup.minComponentPixels, DEFAULT_CLEANUP.minComponentPixels),
+      alphaThreshold: clampNumber(cleanup.alphaThreshold, 0, 255, DEFAULT_CLEANUP.alphaThreshold),
+      ...(cleanup.paleGreenMinGreen != null ? { paleGreenMinGreen: clampNumber(cleanup.paleGreenMinGreen, 0, 255, 140) } : {}),
+      ...(cleanup.paleGreenMinRedBlue != null ? { paleGreenMinRedBlue: clampNumber(cleanup.paleGreenMinRedBlue, 0, 255, 70) } : {}),
+      ...(cleanup.paleGreenDominance != null ? { paleGreenDominance: clampNumber(cleanup.paleGreenDominance, 0, 255, 20) } : {}),
+      ...(cleanup.paleGreenMaxRedBlueDelta != null ? { paleGreenMaxRedBlueDelta: clampNumber(cleanup.paleGreenMaxRedBlueDelta, 0, 255, 90) } : {}),
     },
     mode: input.mode === 'transparent' ? 'transparent' : 'greenscreen',
   };
@@ -305,7 +465,7 @@ export async function exportImageFile(args, options = {}) {
     overwrite: args.overwrite === true,
   });
 
-  const { applyKeying, composeToCanvas, autoCropKeyed } = await loadKeying(options.projectRoot);
+  const { applyKeying, composeToCanvas, autoCropKeyedWithBounds, cleanupKeyed, drawKeyedToCanvas } = await loadKeying(options.projectRoot);
   const inputBuffer = await fs.readFile(inputPath);
   const image = new Image();
   image.src = inputBuffer;
@@ -315,8 +475,21 @@ export async function exportImageFile(args, options = {}) {
   srcCtx.drawImage(image, 0, 0);
 
   let keyedData = applyKeying(srcCtx.getImageData(0, 0, image.width, image.height), params.keying);
+  const cleanupResult = cleanupKeyed(keyedData, params.cleanup);
+  keyedData = cleanupResult.imageData;
+  let crop = {
+    applied: false,
+    x: 0,
+    y: 0,
+    width: keyedData.width,
+    height: keyedData.height,
+    sourceWidth: keyedData.width,
+    sourceHeight: keyedData.height,
+  };
   if (params.layout.autoCrop !== false) {
-    keyedData = autoCropKeyed(keyedData);
+    const cropResult = autoCropKeyedWithBounds(keyedData);
+    keyedData = cropResult.imageData;
+    crop = cropResult.crop;
   }
 
   const { canvasWidth, canvasHeight } = params.layout;
@@ -326,10 +499,17 @@ export async function exportImageFile(args, options = {}) {
 
   let placement;
   if (params.mode === 'transparent') {
-    placement = drawTransparent(outCtx, keyedData, params.layout, tempCanvas);
+    placement = drawKeyedToCanvas(outCtx, keyedData, params.layout, tempCanvas);
   } else {
     placement = composeToCanvas(outCtx, keyedData, params.layout, tempCanvas, params.keying.keyColor);
   }
+  const warnings = buildExportWarnings({
+    keyed: keyedData,
+    placement,
+    cleanup: cleanupResult.stats,
+    canvasWidth,
+    canvasHeight,
+  });
 
   const outputBuffer = outCanvas.toBuffer('image/png');
   await fs.writeFile(outputPath, outputBuffer);
@@ -351,7 +531,10 @@ export async function exportImageFile(args, options = {}) {
       width: keyedData.width,
       height: keyedData.height,
     },
+    crop,
     placement,
+    cleanup: cleanupResult.stats,
+    warnings,
     params,
   };
 }
@@ -450,6 +633,7 @@ export async function findLoopEndForVideo(args, options = {}) {
     candidates: result.candidates,
     scores: result.scores,
     bestCandidate: result.candidates[0] || null,
+    warnings: result.warnings || [],
     options: args.options || {},
     params: normalizedParams,
   };
@@ -483,11 +667,117 @@ export async function exportSpriteSheetFile(args, options = {}) {
     frameCount: result.frameCount,
     sheetWidth: result.sheetWidth,
     sheetHeight: result.sheetHeight,
+    atlasDimensions: result.atlasDimensions,
     cols: result.cols,
     rows: result.rows,
+    frames: result.frames,
+    selection: result.selection,
+    cleanup: result.cleanup,
+    warnings: result.warnings || [],
     outputSize: stat.size,
     params,
     spriteParams,
+  };
+}
+
+export async function exportGodotSpriteFramesFile(args, options = {}) {
+  const godot = args.godot || {};
+  const frameWidth = positiveInt(godot.frameWidth, 256);
+  const frameHeight = positiveInt(godot.frameHeight, 256);
+  const safeAreaWidth = positiveInt(godot.safeAreaWidth, frameWidth);
+  const safeAreaHeight = positiveInt(godot.safeAreaHeight, frameHeight);
+  const framesPerRow = positiveInt(godot.framesPerRow, 8);
+  const outputPath = await resolveOutputPath(args.outputPath, {
+    baseDir: options.baseDir,
+    defaultExt: 'tres',
+    defaultPrefix: 'greenscreen_spriteframes',
+    overwrite: args.overwrite === true,
+  });
+  const atlasPath = await resolveOutputPath(args.atlasPath || siblingPath(outputPath, '_atlas', 'png'), {
+    baseDir: options.baseDir,
+    defaultExt: 'png',
+    defaultPrefix: 'greenscreen_spriteframes_atlas',
+    overwrite: args.overwrite === true,
+  });
+  const metadataPath = await resolveOutputPath(args.metadataPath || siblingPath(outputPath, '_metadata', 'json'), {
+    baseDir: options.baseDir,
+    defaultExt: 'json',
+    defaultPrefix: 'greenscreen_spriteframes_metadata',
+    overwrite: args.overwrite === true,
+  });
+
+  const baseParams = normalizeProcessingParams({
+    mode: 'transparent',
+    ...(args.params || {}),
+  });
+  const params = {
+    ...baseParams,
+    layout: {
+      ...baseParams.layout,
+      canvasWidth: frameWidth,
+      canvasHeight: frameHeight,
+      personWidth: safeAreaWidth,
+      personHeight: safeAreaHeight,
+    },
+  };
+
+  const { exportGodotSpriteFrames, probeVideo, selectSpriteFrames } = loadVideoProcessor(options.projectRoot);
+  const buildResult = await buildGodotFrameJobs(godot, {
+    baseDir: options.baseDir,
+    probeVideo,
+    selectSpriteFrames,
+  });
+  const atlasResourcePath = godot.atlasResourcePath || godotResourcePathForAtlas(atlasPath, godot.godotProjectRoot);
+  const result = await exportGodotSpriteFrames(
+    buildResult.frameJobs,
+    params,
+    { frameWidth, frameHeight, framesPerRow },
+    {
+      fps: godot.fps || 12,
+      atlasResourcePath,
+      animations: buildResult.animations,
+    }
+  );
+  const statTargets = [];
+
+  await fs.writeFile(atlasPath, result.buffer);
+  statTargets.push(atlasPath);
+  await fs.writeFile(outputPath, result.tres, 'utf8');
+  statTargets.push(outputPath);
+
+  const metadata = {
+    outputPath,
+    atlasPath,
+    metadataPath,
+    atlasResourcePath,
+    frameCount: result.frameCount,
+    atlasDimensions: result.atlasDimensions,
+    cols: result.cols,
+    rows: result.rows,
+    animations: result.animations,
+    frames: result.frames,
+    keyingLayoutParams: params,
+    spriteParams: { frameWidth, frameHeight, safeAreaWidth, safeAreaHeight, framesPerRow },
+    cleanup: result.cleanup,
+    selections: buildResult.selections,
+    warnings: [...buildResult.warnings, ...(result.warnings || [])],
+  };
+  await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
+  statTargets.push(metadataPath);
+
+  const stats = Object.fromEntries(await Promise.all(statTargets.map(async (target) => {
+    const stat = await fs.stat(target);
+    return [target, stat.size];
+  })));
+
+  return {
+    ...metadata,
+    outputUri: pathToFileURL(outputPath).href,
+    atlasUri: pathToFileURL(atlasPath).href,
+    metadataUri: pathToFileURL(metadataPath).href,
+    outputSize: stats[outputPath],
+    atlasSize: stats[atlasPath],
+    metadataSize: stats[metadataPath],
   };
 }
 
@@ -525,6 +815,7 @@ export function createGreenscreenMcpServer(options = {}) {
       defaultParams: z.object({
         keying: keyingSchema,
         layout: layoutSchema,
+        cleanup: cleanupSchema,
         mode: z.enum(['greenscreen', 'transparent']),
       }),
       presets: z.record(z.string(), z.unknown()),
@@ -547,6 +838,7 @@ export function createGreenscreenMcpServer(options = {}) {
       params: z.object({
         keying: keyingSchema,
         layout: layoutSchema,
+        cleanup: cleanupSchema,
         mode: z.enum(['greenscreen', 'transparent']),
       }),
     },
@@ -665,6 +957,25 @@ export function createGreenscreenMcpServer(options = {}) {
     },
   }, async (args) => toolResult(await exportSpriteSheetFile(args, context), { filePath: true }));
 
+  server.registerTool('export_godot_spriteframes', {
+    title: 'Export Godot SpriteFrames',
+    description: 'Export a Godot-ready atlas PNG, SpriteFrames .tres resource, and metadata JSON from exact video frame clips, direction groups, and mirrored directions.',
+    inputSchema: {
+      outputPath: z.string().optional().describe('SpriteFrames .tres output path. If omitted, a temp file is created.'),
+      atlasPath: z.string().optional().describe('Atlas PNG output path. Defaults to a sibling *_atlas.png file.'),
+      metadataPath: z.string().optional().describe('Metadata JSON output path. Defaults to a sibling *_metadata.json file.'),
+      params: processingParamsSchema.optional().describe('Keying/layout/cleanup parameters. The Godot frame size overrides layout canvas dimensions.'),
+      godot: godotSpriteFramesSchema.describe('Godot atlas, animation, direction, and mirroring options.'),
+      overwrite: z.boolean().optional().describe('Allow replacing output files when they already exist. Defaults to false.'),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  }, async (args) => toolResult(await exportGodotSpriteFramesFile(args, context), { filePath: true }));
+
   registerResources(server);
   registerPrompts(server);
 
@@ -757,6 +1068,174 @@ function toolResult(payload, options = {}) {
   };
 }
 
+async function buildGodotFrameJobs(godot, { baseDir, probeVideo, selectSpriteFrames }) {
+  const frameJobs = [];
+  const animations = [];
+  const selections = [];
+  const warnings = [];
+  const jobsByAnimation = new Map();
+  const usedAnimationNames = new Set();
+
+  const addClip = async ({ name, clip, fps, loop, flipH = false }) => {
+    if (usedAnimationNames.has(name)) {
+      throw new Error(`Duplicate Godot animation name: ${name}`);
+    }
+    if (!clip.inputPath) {
+      throw new Error(`inputPath is required for Godot animation ${name}`);
+    }
+    const inputPath = resolveLocalPath(clip.inputPath, { baseDir, mustExist: true, label: `${name}.inputPath` });
+    assertFile(inputPath, `${name}.inputPath`);
+    const info = await probeVideo(inputPath);
+    const totalFrames = info.frameCount || Math.round(info.fps * info.duration);
+    const selection = selectSpriteFrames({
+      frames: clip.frames,
+      range: clip.range,
+      maxFrames: clip.maxFrames,
+      sampleEvery: clip.sampleEvery,
+    }, totalFrames);
+    const jobs = selection.frames.map((sourceFrameIndex, animationFrameIndex) => ({
+      atlasIndex: frameJobs.length + animationFrameIndex,
+      animationName: name,
+      animationFrameIndex,
+      inputPath,
+      sourceFrameIndex,
+      flipH,
+    }));
+    frameJobs.push(...jobs);
+    animations.push({ name, fps, loop });
+    selections.push({
+      animationName: name,
+      inputPath,
+      selection,
+      mirroredFrom: null,
+      flipH,
+    });
+    jobsByAnimation.set(name, jobs);
+    usedAnimationNames.add(name);
+  };
+
+  const addMirror = ({ name, mirrorOf, fps, loop }) => {
+    if (usedAnimationNames.has(name)) {
+      throw new Error(`Duplicate Godot animation name: ${name}`);
+    }
+    const sourceJobs = jobsByAnimation.get(mirrorOf);
+    if (!sourceJobs || sourceJobs.length === 0) {
+      warnings.push(`Mirror animation ${name} skipped because source animation ${mirrorOf} was not found.`);
+      return;
+    }
+    const jobs = sourceJobs.map((sourceJob, animationFrameIndex) => ({
+      atlasIndex: frameJobs.length + animationFrameIndex,
+      animationName: name,
+      animationFrameIndex,
+      inputPath: sourceJob.inputPath,
+      sourceFrameIndex: sourceJob.sourceFrameIndex,
+      flipH: sourceJob.flipH !== true,
+    }));
+    frameJobs.push(...jobs);
+    animations.push({ name, fps, loop });
+    selections.push({
+      animationName: name,
+      inputPath: sourceJobs[0].inputPath,
+      selection: {
+        mode: 'mirror',
+        frames: sourceJobs.map(job => job.sourceFrameIndex),
+        frameCount: sourceJobs.length,
+        ordering: 'source_animation_order',
+      },
+      mirroredFrom: mirrorOf,
+      flipH: true,
+    });
+    jobsByAnimation.set(name, jobs);
+    usedAnimationNames.add(name);
+  };
+
+  for (const animation of godot.animations || []) {
+    if (animation.mirrorOf) continue;
+    await addClip({
+      name: animation.name,
+      clip: animation,
+      fps: animation.fps || godot.fps,
+      loop: animation.loop,
+      flipH: animation.flipH === true,
+    });
+  }
+
+  for (const animation of godot.animations || []) {
+    if (!animation.mirrorOf) continue;
+    addMirror({
+      name: animation.name,
+      mirrorOf: animation.mirrorOf,
+      fps: animation.fps || godot.fps,
+      loop: animation.loop,
+    });
+  }
+
+  for (const group of godot.animationGroups || []) {
+    const directionEntries = Object.entries(group.directions || {});
+    for (const [direction, clip] of directionEntries) {
+      await addClip({
+        name: `${group.name}_${direction}`,
+        clip,
+        fps: group.fps || godot.fps,
+        loop: group.loop,
+      });
+    }
+    for (const [direction, sourceDirection] of Object.entries(group.mirror || {})) {
+      addMirror({
+        name: `${group.name}_${direction}`,
+        mirrorOf: `${group.name}_${sourceDirection}`,
+        fps: group.fps || godot.fps,
+        loop: group.loop,
+      });
+    }
+  }
+
+  if (frameJobs.length === 0) {
+    throw new Error('godot.animations or godot.animationGroups must define at least one source clip');
+  }
+
+  return { frameJobs, animations, selections, warnings };
+}
+
+function siblingPath(filePath, suffix, ext) {
+  const dir = path.dirname(filePath);
+  const name = path.basename(filePath, path.extname(filePath));
+  return path.join(dir, `${name}${suffix}.${ext}`);
+}
+
+function godotResourcePathForAtlas(atlasPath, godotProjectRoot) {
+  if (godotProjectRoot) {
+    const root = path.resolve(godotProjectRoot);
+    const relative = path.relative(root, atlasPath);
+    if (relative && !relative.startsWith('..') && !path.isAbsolute(relative)) {
+      return `res://${relative.replace(/\\/g, '/')}`;
+    }
+  }
+  return `res://${path.basename(atlasPath)}`;
+}
+
+function buildExportWarnings({ keyed, placement, cleanup, canvasWidth, canvasHeight }) {
+  const warnings = [];
+  if (placement.scaledW <= 0 || placement.scaledH <= 0) {
+    warnings.push('Frame placement produced an empty drawn size.');
+  }
+  const outsideHorizontally = placement.offsetX + placement.scaledW <= 0 || placement.offsetX >= canvasWidth;
+  const outsideVertically = placement.offsetY + placement.scaledH <= 0 || placement.offsetY >= canvasHeight;
+  if (outsideHorizontally || outsideVertically) {
+    warnings.push('Frame placement is completely outside the output canvas.');
+  }
+  if (cleanup.enabled && cleanup.foregroundPixelsAfter === 0 && cleanup.foregroundPixelsBefore > 0) {
+    warnings.push('Cleanup removed all foreground pixels.');
+  }
+  if (cleanup.componentsFound > 1 && cleanup.componentsKept > 1) {
+    warnings.push('Multiple foreground components remain after cleanup; small artifacts may still affect layout.');
+  }
+  if (keyed.width <= 1 || keyed.height <= 1) {
+    warnings.push('Auto-crop produced a nearly empty foreground region.');
+  }
+  return warnings;
+}
+
 async function resolveOutputPath(outputPath, { baseDir = process.cwd(), defaultExt, defaultPrefix, overwrite }) {
   let resolved;
   if (outputPath) {
@@ -793,24 +1272,6 @@ function loadVideoProcessor(projectRoot = DEFAULT_PROJECT_ROOT) {
     videoProcessorModule = require(path.join(projectRoot, 'videoProcessor.cjs'));
   }
   return videoProcessorModule;
-}
-
-function drawTransparent(ctx, keyedData, layout, tempCanvas) {
-  tempCanvas.width = keyedData.width;
-  tempCanvas.height = keyedData.height;
-  const tempCtx = tempCanvas.getContext('2d');
-  const imageData = tempCtx.createImageData(keyedData.width, keyedData.height);
-  imageData.data.set(keyedData.data);
-  tempCtx.putImageData(imageData, 0, 0);
-
-  const scale = Math.min(layout.personWidth / keyedData.width, layout.personHeight / keyedData.height);
-  const scaledW = Math.round(keyedData.width * scale);
-  const scaledH = Math.round(keyedData.height * scale);
-  const offsetX = Math.round((layout.canvasWidth - scaledW) / 2);
-  const offsetY = Math.round((layout.canvasHeight - scaledH) / 2);
-  ctx.drawImage(tempCanvas, offsetX, offsetY, scaledW, scaledH);
-
-  return { scaledW, scaledH, offsetX, offsetY };
 }
 
 function normalizeColor(value, fallback) {
@@ -871,6 +1332,8 @@ function mimeTypeForOutput(filePath) {
     '.mp4': 'video/mp4',
     '.webm': 'video/webm',
     '.mov': 'video/quicktime',
+    '.tres': 'text/plain',
+    '.json': 'application/json',
   };
   return map[ext] || 'application/octet-stream';
 }

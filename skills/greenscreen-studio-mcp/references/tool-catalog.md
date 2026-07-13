@@ -32,7 +32,16 @@ Arguments:
       "personWidth": 760,
       "personHeight": 940,
       "autoCrop": true,
-      "bgColor": [0, 255, 0]
+      "bgColor": [0, 255, 0],
+      "anchor": "center",
+      "anchorOffset": { "x": 0, "y": 0 }
+    },
+    "cleanup": {
+      "removePaleGreenMarkers": false,
+      "removeSmallComponents": false,
+      "keepLargestComponent": false,
+      "minComponentPixels": 64,
+      "alphaThreshold": 10
     },
     "mode": "greenscreen"
   }
@@ -40,6 +49,10 @@ Arguments:
 ```
 
 `mode` is `greenscreen` or `transparent`. Missing fields use defaults.
+
+`layout.anchor` is `center`, `bottom_center`, or `feet`. `feet` aligns the cropped character's bottom to the centered `personWidth` x `personHeight` safe-area bottom, which is useful for Godot sprites.
+
+Cleanup runs after chroma keying and before auto-crop, so removed markers and components do not affect scaling or placement.
 
 ## inspect_image
 
@@ -148,12 +161,15 @@ Arguments:
     "step": 2,
     "hashSize": 16,
     "minSpacing": 12,
-    "maxCandidates": 5
+    "earlyFrameExclusion": 18,
+    "maxCandidates": 5,
+    "motionWeight": 0.35,
+    "suspiciousCloseThreshold": 24
   }
 }
 ```
 
-Use the best candidate as `range.endFrame` for a looping export, but prefer showing candidates when the user should decide.
+Use the best candidate as `range.endFrame` for a looping export, but prefer showing candidates when the user should decide. Candidates inside `max(minSpacing, earlyFrameExclusion)` frames from `startFrame` are excluded. Returned candidates include visual `score`, `adjustedScore`, `motionScore`, and `valleyDepth`, plus warnings if the best match is suspiciously close.
 
 ## export_spritesheet
 
@@ -179,10 +195,88 @@ Arguments:
     "frameHeight": 512,
     "framesPerRow": 8,
     "sampleEvery": 2,
-    "maxFrames": 64
+    "maxFrames": 64,
+    "range": {
+      "startFrame": 0,
+      "endFrame": 120
+    }
   },
   "overwrite": false
 }
 ```
 
-The output reports `frameCount`, `sheetWidth`, `sheetHeight`, `cols`, and `rows`.
+For exact animation clips, use `frames` instead of sampled selection:
+
+```json
+{
+  "spriteParams": {
+    "frameWidth": 256,
+    "frameHeight": 256,
+    "framesPerRow": 6,
+    "frames": [0, 6, 12, 19, 25, 31]
+  }
+}
+```
+
+`range` is end-exclusive. If `frames` and `range` are both supplied, explicit frames outside the range are omitted. Metadata is returned in deterministic ascending source-frame order.
+
+The output reports `frameCount`, `sheetWidth`, `sheetHeight`, `cols`, `rows`, `atlasDimensions`, per-frame `region`, per-frame `sourceFrameIndex`, `crop`, `placement`, cleanup stats, selection metadata, and warnings.
+
+## export_godot_spriteframes
+
+Export a Godot-ready atlas PNG, SpriteFrames `.tres`, and metadata JSON.
+
+Arguments:
+
+```json
+{
+  "outputPath": "C:/godot/project/characters/hero_spriteframes.tres",
+  "atlasPath": "C:/godot/project/characters/hero_atlas.png",
+  "metadataPath": "C:/godot/project/characters/hero_metadata.json",
+  "params": {
+    "mode": "transparent",
+    "layout": {
+      "anchor": "feet"
+    },
+    "cleanup": {
+      "removePaleGreenMarkers": true,
+      "keepLargestComponent": true,
+      "removeSmallComponents": true,
+      "minComponentPixels": 48
+    }
+  },
+  "godot": {
+    "frameWidth": 256,
+    "frameHeight": 256,
+    "safeAreaWidth": 160,
+    "safeAreaHeight": 160,
+    "framesPerRow": 8,
+    "fps": 12,
+    "godotProjectRoot": "C:/godot/project",
+    "animationGroups": [
+      {
+        "name": "walk",
+        "fps": 12,
+        "loop": true,
+        "directions": {
+          "down": { "inputPath": "C:/captures/walk_down.mp4", "frames": [0, 6, 12, 18] },
+          "down_right": { "inputPath": "C:/captures/walk_down_right.mp4", "frames": [0, 6, 12, 18] },
+          "right": { "inputPath": "C:/captures/walk_right.mp4", "frames": [0, 6, 12, 18] },
+          "up_right": { "inputPath": "C:/captures/walk_up_right.mp4", "frames": [0, 6, 12, 18] },
+          "up": { "inputPath": "C:/captures/walk_up.mp4", "frames": [0, 6, 12, 18] }
+        },
+        "mirror": {
+          "down_left": "down_right",
+          "left": "right",
+          "up_left": "up_right"
+        }
+      }
+    ]
+  },
+  "overwrite": false
+}
+```
+
+Flat `animations` are also supported for clips named exactly as desired, such as `idle_down`, `walk_start_right`, `walk_loop_up`, and `walk_stop_down_left`. Use `mirrorOf` on a flat animation to generate a horizontally flipped copy of an earlier animation.
+
+The returned metadata includes atlas dimensions, animation names, per-frame regions, per-frame source video frame indexes, flip flags, keying/layout params used, crop/placement information, cleanup statistics, and warnings.

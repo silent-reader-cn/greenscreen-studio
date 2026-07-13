@@ -73,18 +73,156 @@ Example:
 1. Call `probe_video`.
 2. Pick a `startFrame`, commonly 0 or the first clean pose.
 3. Call `find_loop_end` with the same `params` intended for export so similarity is evaluated after processing.
-4. Use `bestCandidate.frame` as `range.endFrame`, or present the candidate list if user judgment matters.
-5. Call `process_video` with `range: { "startFrame": <start>, "endFrame": <candidate> }`.
+4. Set `options.minSpacing` and `options.earlyFrameExclusion` high enough that adjacent or near-adjacent poses cannot be returned. For walking loops, start around 12 to 18 frames at 30 fps, then adjust by cadence.
+5. Use `bestCandidate.frame` as `range.endFrame`, or present the candidate list if user judgment matters.
+6. Inspect warnings. If the best candidate is suspiciously close to `startFrame`, prefer a later candidate or increase `earlyFrameExclusion`.
+7. Call `process_video` with `range: { "startFrame": <start>, "endFrame": <candidate> }`.
+
+Example options:
+
+```json
+{
+  "maxSearch": 240,
+  "step": 2,
+  "hashSize": 16,
+  "minSpacing": 16,
+  "earlyFrameExclusion": 18,
+  "maxCandidates": 8,
+  "motionWeight": 0.35,
+  "suspiciousCloseThreshold": 24
+}
+```
+
+Returned candidates include `score`, `adjustedScore`, `motionScore`, and `valleyDepth`. Low visual score is useful, but prefer candidates with a good adjusted score and a plausible pose boundary.
 
 ## Sprite Sheet
 
 1. Call `probe_video` to estimate frame count and choose sampling.
 2. Choose cell size with `spriteParams.frameWidth` and `spriteParams.frameHeight`.
 3. Set `framesPerRow` for the target atlas width.
-4. Use `sampleEvery` and `maxFrames` to control density.
+4. Use `sampleEvery`, `range`, and `maxFrames` to control density.
 5. Call `export_spritesheet`.
 
 For previews, cap `maxFrames` to 16 or 32. For final game atlases, compute rows from `ceil(maxFrames / framesPerRow)` and verify the returned `sheetWidth` and `sheetHeight`.
+
+## Exact-Frame Sprite Sheet
+
+Use exact frames when an animation clip needs selected poses, for example `idle`, `walk_start`, `walk_loop`, or `walk_stop`.
+
+```json
+{
+  "inputPath": "C:/assets/walk_down.mp4",
+  "outputPath": "C:/assets/walk_down_loop.png",
+  "params": {
+    "mode": "transparent",
+    "layout": {
+      "canvasWidth": 256,
+      "canvasHeight": 256,
+      "personWidth": 160,
+      "personHeight": 160,
+      "anchor": "feet"
+    },
+    "cleanup": {
+      "removePaleGreenMarkers": true,
+      "keepLargestComponent": true,
+      "removeSmallComponents": true,
+      "minComponentPixels": 48
+    }
+  },
+  "spriteParams": {
+    "frameWidth": 256,
+    "frameHeight": 256,
+    "framesPerRow": 6,
+    "frames": [0, 6, 12, 19, 25, 31]
+  }
+}
+```
+
+Frame metadata is returned in ascending source-frame order and includes each atlas region, source video frame index, crop, placement, cleanup stats, and warnings.
+
+## Godot SpriteFrames
+
+Use `export_godot_spriteframes` when the desired result is a Godot `SpriteFrames` resource rather than a standalone PNG.
+
+Recommended settings for a top-down character:
+
+- Outer frame: 256 x 256.
+- Character safe area: 160 x 160.
+- `layout.anchor: "feet"` to keep a stable baseline.
+- `mode: "transparent"`.
+- Cleanup enabled before auto-crop when pale-green tracking dots or isolated pixels are present.
+
+Example:
+
+```json
+{
+  "outputPath": "C:/godot/project/characters/hero_spriteframes.tres",
+  "atlasPath": "C:/godot/project/characters/hero_atlas.png",
+  "metadataPath": "C:/godot/project/characters/hero_metadata.json",
+  "params": {
+    "mode": "transparent",
+    "layout": {
+      "anchor": "feet"
+    },
+    "cleanup": {
+      "removePaleGreenMarkers": true,
+      "keepLargestComponent": true,
+      "removeSmallComponents": true,
+      "minComponentPixels": 48
+    }
+  },
+  "godot": {
+    "frameWidth": 256,
+    "frameHeight": 256,
+    "safeAreaWidth": 160,
+    "safeAreaHeight": 160,
+    "framesPerRow": 8,
+    "fps": 12,
+    "godotProjectRoot": "C:/godot/project",
+    "animationGroups": [
+      {
+        "name": "walk_loop",
+        "fps": 12,
+        "loop": true,
+        "directions": {
+          "down": { "inputPath": "C:/captures/down.mp4", "frames": [0, 6, 12, 18] },
+          "down_right": { "inputPath": "C:/captures/down_right.mp4", "frames": [0, 6, 12, 18] },
+          "right": { "inputPath": "C:/captures/right.mp4", "frames": [0, 6, 12, 18] },
+          "up_right": { "inputPath": "C:/captures/up_right.mp4", "frames": [0, 6, 12, 18] },
+          "up": { "inputPath": "C:/captures/up.mp4", "frames": [0, 6, 12, 18] }
+        },
+        "mirror": {
+          "down_left": "down_right",
+          "left": "right",
+          "up_left": "up_right"
+        }
+      }
+    ]
+  }
+}
+```
+
+For five source directions, capture or generate `down`, `down_right`, `right`, `up_right`, and `up`. Mirror `left` from `right`, `down_left` from `down_right`, and `up_left` from `up_right`. Keep `up` and `down` unmirrored unless the source art is symmetric enough for that to be intentional.
+
+For full movement sets, use animation group names such as:
+
+- `idle`
+- `walk_start`
+- `walk_loop` or `walk`
+- `walk_stop`
+
+The tool will produce Godot animation names such as `idle_down`, `walk_start_right`, `walk_loop_up_left`, and `walk_stop_down`.
+
+## Artifact Cleanup
+
+Cleanup runs after chroma keying and before auto-crop.
+
+Use:
+
+- `removePaleGreenMarkers: true` for pale-green tracking dots that survive RGB-distance keying.
+- `keepLargestComponent: true` for a single character silhouette.
+- `removeSmallComponents: true` with `minComponentPixels` around 32 to 96 for dust, marker fragments, or detached specks.
+- Higher `minComponentPixels` only after verifying it does not remove small character parts such as hands, weapon tips, or hair.
 
 ## Verification Checklist
 
@@ -93,3 +231,6 @@ For previews, cap `maxFrames` to 16 or 32. For final game atlases, compute rows 
 - Video outputs report completed progress and a plausible `result.frameCount`.
 - Chosen mode and format are compatible.
 - If a user supplied explicit dimensions, the returned `params.layout` preserves them after normalization.
+- Sprite and Godot exports report expected `frameCount`, `atlasDimensions`, per-frame regions, and source frame indexes.
+- Check `cleanup` stats to confirm marker/component removal happened when enabled.
+- Check warnings for suspicious loop candidates, empty foregrounds, out-of-canvas placement, or remaining foreground components.

@@ -151,6 +151,73 @@ function erodeAlpha(data, width, height, radius) {
  * @returns {Object} 裁剪后的数据 {data, width, height}
  */
 export function autoCropKeyed(keyedData, threshold = 10) {
+  return autoCropKeyedWithBounds(keyedData, threshold).imageData;
+}
+
+/**
+ * 自动裁剪并返回裁剪边界元数据。
+ *
+ * @param {Object} keyedData - 抠像后的数据 {data, width, height}
+ * @param {number} threshold - alpha 阈值，默认 10
+ * @returns {{imageData:Object,crop:Object}}
+ */
+export function autoCropKeyedWithBounds(keyedData, threshold = 10) {
+  const { data, width, height } = keyedData;
+  const bounds = findAlphaBounds(keyedData, threshold);
+
+  // 全透明或极小区域，不裁剪
+  if (!bounds) {
+    return {
+      imageData: keyedData,
+      crop: {
+        applied: false,
+        x: 0,
+        y: 0,
+        width,
+        height,
+        sourceWidth: width,
+        sourceHeight: height,
+        alphaThreshold: threshold,
+        reason: 'no_foreground',
+      },
+    };
+  }
+
+  const { minX, minY, maxX, maxY } = bounds;
+  const cropW = maxX - minX + 1;
+  const cropH = maxY - minY + 1;
+  const cropped = new Uint8ClampedArray(cropW * cropH * 4);
+
+  for (let y = 0; y < cropH; y++) {
+    for (let x = 0; x < cropW; x++) {
+      const srcIdx = ((y + minY) * width + (x + minX)) * 4;
+      const dstIdx = (y * cropW + x) * 4;
+      cropped[dstIdx] = data[srcIdx];
+      cropped[dstIdx + 1] = data[srcIdx + 1];
+      cropped[dstIdx + 2] = data[srcIdx + 2];
+      cropped[dstIdx + 3] = data[srcIdx + 3];
+    }
+  }
+
+  return {
+    imageData: { data: cropped, width: cropW, height: cropH },
+    crop: {
+      applied: cropW !== width || cropH !== height,
+      x: minX,
+      y: minY,
+      width: cropW,
+      height: cropH,
+      sourceWidth: width,
+      sourceHeight: height,
+      alphaThreshold: threshold,
+    },
+  };
+}
+
+/**
+ * 找到 alpha 大于阈值的包围盒。
+ */
+export function findAlphaBounds(keyedData, threshold = 10) {
   const { data, width, height } = keyedData;
   let minX = width, minY = height, maxX = 0, maxY = 0;
   let found = false;
@@ -168,25 +235,174 @@ export function autoCropKeyed(keyedData, threshold = 10) {
     }
   }
 
-  // 全透明或极小区域，不裁剪
-  if (!found) return keyedData;
+  return found ? { minX, minY, maxX, maxY } : null;
+}
 
-  const cropW = maxX - minX + 1;
-  const cropH = maxY - minY + 1;
-  const cropped = new Uint8ClampedArray(cropW * cropH * 4);
+/**
+ * 清理抠像后残留的标记点和孤立前景组件。
+ *
+ * 默认不启用任何破坏性清理；调用方需要显式开启对应选项。
+ */
+export function cleanupKeyed(keyedData, params = {}) {
+  const cleanup = normalizeCleanupParams(params);
+  const out = new Uint8ClampedArray(keyedData.data);
+  const imageData = { data: out, width: keyedData.width, height: keyedData.height };
+  const stats = {
+    enabled: cleanup.removePaleGreenMarkers || cleanup.removeSmallComponents || cleanup.keepLargestComponent,
+    alphaThreshold: cleanup.alphaThreshold,
+    foregroundPixelsBefore: countForeground(out, cleanup.alphaThreshold),
+    paleGreenPixelsRemoved: 0,
+    foregroundPixelsAfterPaleGreen: 0,
+    componentsFound: 0,
+    largestComponentPixels: 0,
+    componentsRemoved: 0,
+    componentPixelsRemoved: 0,
+    componentsKept: 0,
+    foregroundPixelsAfter: 0,
+  };
 
-  for (let y = 0; y < cropH; y++) {
-    for (let x = 0; x < cropW; x++) {
-      const srcIdx = ((y + minY) * width + (x + minX)) * 4;
-      const dstIdx = (y * cropW + x) * 4;
-      cropped[dstIdx] = data[srcIdx];
-      cropped[dstIdx + 1] = data[srcIdx + 1];
-      cropped[dstIdx + 2] = data[srcIdx + 2];
-      cropped[dstIdx + 3] = data[srcIdx + 3];
-    }
+  if (cleanup.removePaleGreenMarkers) {
+    stats.paleGreenPixelsRemoved = removePaleGreenMarkerPixels(out, keyedData.width, keyedData.height, cleanup);
+  }
+  stats.foregroundPixelsAfterPaleGreen = countForeground(out, cleanup.alphaThreshold);
+
+  if (cleanup.removeSmallComponents || cleanup.keepLargestComponent) {
+    const componentStats = cleanupComponents(out, keyedData.width, keyedData.height, cleanup);
+    stats.componentsFound = componentStats.componentsFound;
+    stats.largestComponentPixels = componentStats.largestComponentPixels;
+    stats.componentsRemoved = componentStats.componentsRemoved;
+    stats.componentPixelsRemoved = componentStats.componentPixelsRemoved;
+    stats.componentsKept = componentStats.componentsKept;
   }
 
-  return { data: cropped, width: cropW, height: cropH };
+  stats.foregroundPixelsAfter = countForeground(out, cleanup.alphaThreshold);
+  return { imageData, stats };
+}
+
+function normalizeCleanupParams(params = {}) {
+  const alphaThreshold = positiveInt(params.alphaThreshold, 10);
+  return {
+    removePaleGreenMarkers: params.removePaleGreenMarkers === true || params.removePaleGreen === true,
+    removeSmallComponents: params.removeSmallComponents === true,
+    keepLargestComponent: params.keepLargestComponent === true,
+    minComponentPixels: positiveInt(params.minComponentPixels, 64),
+    alphaThreshold,
+    paleGreenMinGreen: positiveInt(params.paleGreenMinGreen, 140),
+    paleGreenMinRedBlue: positiveInt(params.paleGreenMinRedBlue, 70),
+    paleGreenDominance: positiveInt(params.paleGreenDominance, 20),
+    paleGreenMaxRedBlueDelta: positiveInt(params.paleGreenMaxRedBlueDelta, 90),
+  };
+}
+
+function removePaleGreenMarkerPixels(data, width, height, cleanup) {
+  let removed = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      if (data[idx + 3] <= cleanup.alphaThreshold) continue;
+
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      if (isPaleGreenMarker(r, g, b, cleanup)) {
+        data[idx + 3] = 0;
+        removed++;
+      }
+    }
+  }
+  return removed;
+}
+
+function isPaleGreenMarker(r, g, b, cleanup) {
+  return (
+    g >= cleanup.paleGreenMinGreen &&
+    r >= cleanup.paleGreenMinRedBlue &&
+    b >= cleanup.paleGreenMinRedBlue &&
+    g - r >= cleanup.paleGreenDominance &&
+    g - b >= cleanup.paleGreenDominance &&
+    Math.abs(r - b) <= cleanup.paleGreenMaxRedBlueDelta
+  );
+}
+
+function cleanupComponents(data, width, height, cleanup) {
+  const visited = new Uint8Array(width * height);
+  const components = [];
+
+  for (let pixel = 0; pixel < width * height; pixel++) {
+    if (visited[pixel] || data[pixel * 4 + 3] <= cleanup.alphaThreshold) continue;
+
+    const pixels = [];
+    const queue = [pixel];
+    visited[pixel] = 1;
+
+    for (let qi = 0; qi < queue.length; qi++) {
+      const current = queue[qi];
+      pixels.push(current);
+      const x = current % width;
+      const y = Math.floor(current / width);
+      const neighbors = [
+        x > 0 ? current - 1 : -1,
+        x < width - 1 ? current + 1 : -1,
+        y > 0 ? current - width : -1,
+        y < height - 1 ? current + width : -1,
+      ];
+
+      for (const next of neighbors) {
+        if (next < 0 || visited[next] || data[next * 4 + 3] <= cleanup.alphaThreshold) continue;
+        visited[next] = 1;
+        queue.push(next);
+      }
+    }
+
+    components.push({ pixels, size: pixels.length });
+  }
+
+  let largestIndex = -1;
+  let largestComponentPixels = 0;
+  components.forEach((component, index) => {
+    if (component.size > largestComponentPixels) {
+      largestComponentPixels = component.size;
+      largestIndex = index;
+    }
+  });
+
+  let componentsRemoved = 0;
+  let componentPixelsRemoved = 0;
+  let componentsKept = 0;
+
+  components.forEach((component, index) => {
+    const isLargest = index === largestIndex;
+    const shouldRemove = cleanup.keepLargestComponent
+      ? !isLargest
+      : cleanup.removeSmallComponents && component.size < cleanup.minComponentPixels;
+
+    if (!shouldRemove) {
+      componentsKept++;
+      return;
+    }
+
+    for (const pixel of component.pixels) {
+      data[pixel * 4 + 3] = 0;
+    }
+    componentsRemoved++;
+    componentPixelsRemoved += component.size;
+  });
+
+  return {
+    componentsFound: components.length,
+    largestComponentPixels,
+    componentsRemoved,
+    componentPixelsRemoved,
+    componentsKept,
+  };
+}
+
+function countForeground(data, threshold) {
+  let count = 0;
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] > threshold) count++;
+  }
+  return count;
 }
 
 /**
@@ -202,14 +418,21 @@ export function autoCropKeyed(keyedData, threshold = 10) {
  * @param {number[]} backgroundColor - 合成底色，通常使用键控色 keyColor
  */
 export function composeToCanvas(ctx, keyedImageData, layout, tempCanvas, backgroundColor) {
-  const { canvasWidth, canvasHeight, personWidth, personHeight, bgColor } = layout;
+  const { canvasWidth, canvasHeight, bgColor } = layout;
   const fillColor = backgroundColor || bgColor || [0, 255, 0];
 
   // 1. 填充绿幕底色
   ctx.fillStyle = `rgb(${fillColor[0]}, ${fillColor[1]}, ${fillColor[2]})`;
   ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-  // 2. 将 keyedImageData 放到临时 canvas 上
+  return drawKeyedToCanvas(ctx, keyedImageData, layout, tempCanvas);
+}
+
+/**
+ * 将抠像后的人物绘制到画布上，并按 layout.anchor 放置。
+ */
+export function drawKeyedToCanvas(ctx, keyedImageData, layout, tempCanvas) {
+  // 1. 将 keyedImageData 放到临时 canvas 上
   // 适配两种输入：纯对象 {data,width,height} 或 ImageData 实例
   const srcW = keyedImageData.width;
   const srcH = keyedImageData.height;
@@ -222,19 +445,74 @@ export function composeToCanvas(ctx, keyedImageData, layout, tempCanvas, backgro
   imgData.data.set(keyedImageData.data);
   tempCtx.putImageData(imgData, 0, 0);
 
-  // 3. 等比缩放：取宽高比中较小的缩放比，确保人物放进 personWidth×personHeight 框内
-  const scaleX = personWidth / srcW;
-  const scaleY = personHeight / srcH;
-  const scale = Math.min(scaleX, scaleY);
+  const placement = computePlacement(srcW, srcH, layout);
 
+  ctx.drawImage(tempCanvas, placement.offsetX, placement.offsetY, placement.scaledW, placement.scaledH);
+
+  return placement;
+}
+
+/**
+ * 计算人物在输出画布中的位置。
+ *
+ * anchor:
+ *   - center: 保持旧行为，人物居中于整张输出画布
+ *   - bottom_center: 人物底部贴齐输出画布底部，水平居中
+ *   - feet: 人物脚底贴齐居中安全区底部，适合游戏角色统一基准线
+ */
+export function computePlacement(srcW, srcH, layout) {
+  const {
+    canvasWidth,
+    canvasHeight,
+    personWidth = canvasWidth,
+    personHeight = canvasHeight,
+    anchor = 'center',
+    anchorOffset = {},
+  } = layout;
+  const scale = Math.min(personWidth / srcW, personHeight / srcH);
   const scaledW = Math.round(srcW * scale);
   const scaledH = Math.round(srcH * scale);
+  const safeArea = {
+    x: Math.round((canvasWidth - personWidth) / 2),
+    y: Math.round((canvasHeight - personHeight) / 2),
+    width: personWidth,
+    height: personHeight,
+  };
 
-  // 4. 居中放置
-  const offsetX = Math.round((canvasWidth - scaledW) / 2);
-  const offsetY = Math.round((canvasHeight - scaledH) / 2);
+  let offsetX;
+  let offsetY;
+  if (anchor === 'bottom_center') {
+    offsetX = Math.round((canvasWidth - scaledW) / 2);
+    offsetY = canvasHeight - scaledH;
+  } else if (anchor === 'feet') {
+    offsetX = safeArea.x + Math.round((personWidth - scaledW) / 2);
+    offsetY = safeArea.y + personHeight - scaledH;
+  } else {
+    offsetX = Math.round((canvasWidth - scaledW) / 2);
+    offsetY = Math.round((canvasHeight - scaledH) / 2);
+  }
 
-  ctx.drawImage(tempCanvas, offsetX, offsetY, scaledW, scaledH);
+  const offset = {
+    x: Number.isFinite(Number(anchorOffset.x)) ? Math.round(Number(anchorOffset.x)) : 0,
+    y: Number.isFinite(Number(anchorOffset.y)) ? Math.round(Number(anchorOffset.y)) : 0,
+  };
+  offsetX += offset.x;
+  offsetY += offset.y;
 
-  return { scaledW, scaledH, offsetX, offsetY };
+  return {
+    scaledW,
+    scaledH,
+    offsetX,
+    offsetY,
+    scale,
+    anchor: ['center', 'bottom_center', 'feet'].includes(anchor) ? anchor : 'center',
+    anchorOffset: offset,
+    safeArea,
+  };
+}
+
+function positiveInt(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return fallback;
+  return Math.max(1, Math.round(number));
 }

@@ -55,14 +55,16 @@ console.log(`  🎬 ffmpeg: ${FFMPEG}`);
 console.log(`  🎬 ffprobe: ${FFPROBE}`);
 
 // 动态加载共享算法
-let applyKeying, composeToCanvas, autoCropKeyed;
+let applyKeying, composeToCanvas, autoCropKeyedWithBounds, cleanupKeyed, drawKeyedToCanvas;
 
 async function loadAlgorithms() {
   if (!applyKeying) {
     const mod = await import('./src/lib/keying.js');
     applyKeying = mod.applyKeying;
     composeToCanvas = mod.composeToCanvas;
-    autoCropKeyed = mod.autoCropKeyed;
+    autoCropKeyedWithBounds = mod.autoCropKeyedWithBounds;
+    cleanupKeyed = mod.cleanupKeyed;
+    drawKeyedToCanvas = mod.drawKeyedToCanvas;
   }
 }
 
@@ -118,7 +120,7 @@ function probeVideo(videoPath) {
 async function processVideo(inputPath, outputPath, params, onProgress) {
   await loadAlgorithms();
 
-  const { keying, layout, mode, range } = params;
+  const { keying, layout, mode, range, cleanup } = params;
   const { canvasWidth, canvasHeight } = layout;
 
   // 1. 探测视频
@@ -209,6 +211,9 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   let bytesBuffered = 0;
   let pipelineError = null;
   let encoderClosed = false;
+  let firstFrameMetadata = null;
+  const cleanupTotals = createCleanupSummary();
+  const warnings = [];
 
   encoder.on('close', (code) => {
     encoderClosed = true;
@@ -231,8 +236,11 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
         if (bytesBuffered === frameSize) {
           if (encoderClosed || pipelineError) return;
           try {
-            const processedFrame = processFrame(srcBuffer, srcW, srcH, keying, layout, mode);
-            encoder.stdin.write(processedFrame);
+            const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup });
+            if (!firstFrameMetadata) firstFrameMetadata = processedFrame.metadata;
+            mergeCleanupSummary(cleanupTotals, processedFrame.metadata.cleanup);
+            appendWarnings(warnings, processedFrame.metadata.warnings);
+            encoder.stdin.write(processedFrame.buffer);
           } catch (e) {
             if (!pipelineError) pipelineError = e;
             return;
@@ -251,8 +259,11 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
       // 处理最后一帧（如果有残余数据）
       if (!encoderClosed && !pipelineError && bytesBuffered > 0 && bytesBuffered >= frameSize) {
         try {
-          const processedFrame = processFrame(srcBuffer, srcW, srcH, keying, layout, mode);
-          encoder.stdin.write(processedFrame);
+          const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup });
+          if (!firstFrameMetadata) firstFrameMetadata = processedFrame.metadata;
+          mergeCleanupSummary(cleanupTotals, processedFrame.metadata.cleanup);
+          appendWarnings(warnings, processedFrame.metadata.warnings);
+          encoder.stdin.write(processedFrame.buffer);
           frameIndex++;
         } catch (e) {
           if (!pipelineError) pipelineError = e;
@@ -281,6 +292,9 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
         fps: fps,
         outputSize: fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0,
         range: hasRange ? { startFrame, endFrame, processFrameCount } : null,
+        sampleFrame: firstFrameMetadata,
+        cleanup: cleanupTotals,
+        warnings,
       });
     });
 
@@ -289,9 +303,13 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
 }
 
 /**
- * 处理单帧：提取 → 抠像 → 裁剪 → 合成 → 输出 raw RGBA
+ * 处理单帧：提取 → 抠像 → 清理 → 裁剪 → 合成 → 输出 raw RGBA + 元数据
  */
-function processFrame(srcBuffer, srcW, srcH, keying, layout, mode) {
+function processFrameWithMetadata(srcBuffer, srcW, srcH, params, outputSize) {
+  const { keying, layout, mode, cleanup } = params;
+  const renderLayout = outputSize
+    ? { ...layout, canvasWidth: outputSize.width, canvasHeight: outputSize.height }
+    : layout;
   // 从 raw buffer 构建 ImageData-like 对象
   const srcData = {
     data: new Uint8ClampedArray(srcBuffer),
@@ -301,48 +319,57 @@ function processFrame(srcBuffer, srcW, srcH, keying, layout, mode) {
 
   // 抠像
   let keyed = applyKeying(srcData, keying);
+  const cleanupResult = cleanupKeyed(keyed, cleanup || {});
+  keyed = cleanupResult.imageData;
 
   // 自动裁剪
+  let crop = {
+    applied: false,
+    x: 0,
+    y: 0,
+    width: keyed.width,
+    height: keyed.height,
+    sourceWidth: keyed.width,
+    sourceHeight: keyed.height,
+  };
   if (layout.autoCrop !== false) {
-    keyed = autoCropKeyed(keyed);
+    const cropResult = autoCropKeyedWithBounds(keyed);
+    keyed = cropResult.imageData;
+    crop = cropResult.crop;
   }
 
-  const { canvasWidth, canvasHeight } = layout;
+  const { canvasWidth, canvasHeight } = renderLayout;
+  const canvas = createCanvas(canvasWidth, canvasHeight);
+  const ctx = canvas.getContext('2d');
+  const tempCanvas = createCanvas(Math.max(1, keyed.width), Math.max(1, keyed.height));
+  let placement;
 
   if (mode === 'transparent') {
     // 透明模式：输出画布是透明的，只画人物
-    const canvas = createCanvas(canvasWidth, canvasHeight);
-    const ctx = canvas.getContext('2d');
-    // 画布默认透明，不需要填绿底
-
-    // 等比缩放人物到 personWidth×personHeight，居中
-    const tempCanvas = createCanvas(keyed.width, keyed.height);
-    const tempCtx = tempCanvas.getContext('2d');
-    const tempImgData = tempCtx.createImageData(keyed.width, keyed.height);
-    tempImgData.data.set(keyed.data);
-    tempCtx.putImageData(tempImgData, 0, 0);
-
-    const { personWidth, personHeight } = layout;
-    const scale = Math.min(personWidth / keyed.width, personHeight / keyed.height);
-    const sw = Math.round(keyed.width * scale);
-    const sh = Math.round(keyed.height * scale);
-    const ox = Math.round((canvasWidth - sw) / 2);
-    const oy = Math.round((canvasHeight - sh) / 2);
-    ctx.drawImage(tempCanvas, ox, oy, sw, sh);
-
-    // 输出 raw RGBA
-    const outImageData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
-    return Buffer.from(outImageData.data);
+    placement = drawKeyedToCanvas(ctx, keyed, renderLayout, tempCanvas);
   } else {
     // 绿幕合成模式
-    const canvas = createCanvas(canvasWidth, canvasHeight);
-    const ctx = canvas.getContext('2d');
-    const tempCanvas = createCanvas(keyed.width, keyed.height);
-    composeToCanvas(ctx, keyed, layout, tempCanvas, keying?.keyColor);
-
-    const outImageData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
-    return Buffer.from(outImageData.data);
+    placement = composeToCanvas(ctx, keyed, renderLayout, tempCanvas, keying?.keyColor);
   }
+
+  const outImageData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
+  const metadata = {
+    source: { width: srcW, height: srcH },
+    keyed: { width: keyed.width, height: keyed.height },
+    crop,
+    placement,
+    cleanup: cleanupResult.stats,
+    warnings: buildFrameWarnings({ keyed, crop, placement, cleanup: cleanupResult.stats, canvasWidth, canvasHeight }),
+  };
+
+  return { buffer: Buffer.from(outImageData.data), canvas, metadata };
+}
+
+/**
+ * 处理单帧：提取 → 抠像 → 裁剪 → 合成 → 输出 raw RGBA
+ */
+function processFrame(srcBuffer, srcW, srcH, keying, layout, mode, cleanup) {
+  return processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup }).buffer;
 }
 
 /**
@@ -418,115 +445,434 @@ function buildEncoderArgs(outputPath, mode, layout, fps, audioPath) {
 async function exportSpriteSheet(inputPath, params, spriteParams, onProgress) {
   await loadAlgorithms();
 
-  const { keying, layout } = params;
-  const { frameWidth, frameHeight, framesPerRow, maxFrames = Infinity, sampleEvery = 1 } = spriteParams;
-
   const info = await probeVideo(inputPath);
   const { width: srcW, height: srcH, fps, duration } = info;
   const totalFrames = info.frameCount || Math.round(fps * duration);
-  const maxSampledFrames = Math.ceil(totalFrames / sampleEvery);
-  const maxToProcess = Math.min(maxFrames, maxSampledFrames);
+  const selection = selectSpriteFrames(spriteParams, totalFrames);
+  const { frameWidth, frameHeight, framesPerRow } = spriteParams;
+  const maxToProcess = selection.frames.length;
   const cols = framesPerRow;
   const rows = Math.ceil(maxToProcess / cols);
   const sheetWidth = cols * frameWidth;
   const sheetHeight = rows * frameHeight;
 
-  console.log(`  📹 精灵图导出: ${srcW}×${srcH} @ ${fps}fps, 总${totalFrames}帧 每${sampleEvery}帧采样 → ${maxToProcess}帧, ${cols}×${rows}=${sheetWidth}×${sheetHeight}`);
+  console.log(`  📹 精灵图导出: ${srcW}×${srcH} @ ${fps}fps, 总${totalFrames}帧 → ${maxToProcess}帧, ${cols}×${rows}=${sheetWidth}×${sheetHeight}`);
 
   const sheetCanvas = createCanvas(sheetWidth, sheetHeight);
   const sheetCtx = sheetCanvas.getContext('2d');
 
-  const extractArgs = ['-i', inputPath, '-f', 'rawvideo', '-pix_fmt', 'rgba', '-'];
-  const extractor = spawn(FFMPEG, extractArgs);
+  const frameJobs = selection.frames.map((sourceFrameIndex, atlasIndex) => ({
+    atlasIndex,
+    sourceFrameIndex,
+    inputPath,
+  }));
+  const metadata = await renderFrameJobsToAtlas({
+    sheetCanvas,
+    sheetCtx,
+    frameJobs,
+    params,
+    frameWidth,
+    frameHeight,
+    cols,
+    onProgress,
+    totalProgress: maxToProcess,
+    sourceInfoByPath: new Map([[inputPath, { ...info, totalFrames, srcW, srcH }]]),
+  });
 
-  const frameSize = srcW * srcH * 4;
-  const srcBuffer = Buffer.alloc(frameSize);
+  const buffer = sheetCanvas.toBuffer('image/png');
+  console.log(`  ✅ 精灵图导出完成: ${metadata.frames.length}帧, ${sheetWidth}×${sheetHeight} PNG`);
 
-  let frameIndex = 0;
-  let inputFrameIndex = 0;
-  let bytesBuffered = 0;
-  let pipelineError = null;
+  return {
+    buffer,
+    frameCount: metadata.frames.length,
+    sheetWidth,
+    sheetHeight,
+    atlasDimensions: { width: sheetWidth, height: sheetHeight },
+    cols,
+    rows,
+    frames: metadata.frames,
+    selection,
+    cleanup: metadata.cleanup,
+    warnings: [...selection.warnings, ...metadata.warnings],
+  };
+}
 
-  return new Promise((resolve, reject) => {
-    extractor.stdout.on('data', chunk => {
-      if (pipelineError || frameIndex >= maxToProcess) return;
+/**
+ * 导出 Godot SpriteFrames：图集 PNG + SpriteFrames tres 字符串 + 元数据。
+ */
+async function exportGodotSpriteFrames(frameJobs, params, spriteParams, godotOptions = {}, onProgress) {
+  await loadAlgorithms();
 
-      let offset = 0;
-      while (offset < chunk.length && frameIndex < maxToProcess) {
-        const remaining = frameSize - bytesBuffered;
-        const toCopy = Math.min(remaining, chunk.length - offset);
-        chunk.copy(srcBuffer, bytesBuffered, offset, offset + toCopy);
-        bytesBuffered += toCopy;
-        offset += toCopy;
+  const { frameWidth, frameHeight, framesPerRow } = spriteParams;
+  const frameCount = frameJobs.length;
+  if (frameCount === 0) {
+    throw new Error('At least one Godot animation frame is required');
+  }
 
-        if (bytesBuffered === frameSize) {
-          const shouldSample = inputFrameIndex % sampleEvery === 0;
-          inputFrameIndex++;
+  const cols = Math.max(1, Math.min(framesPerRow || frameCount, frameCount));
+  const rows = Math.ceil(frameCount / cols);
+  const sheetWidth = cols * frameWidth;
+  const sheetHeight = rows * frameHeight;
+  const sheetCanvas = createCanvas(sheetWidth, sheetHeight);
+  const sheetCtx = sheetCanvas.getContext('2d');
 
-          if (shouldSample) {
-            try {
-              const srcData = {
-                data: new Uint8ClampedArray(srcBuffer),
-                width: srcW,
-                height: srcH,
-              };
-              let keyed = applyKeying(srcData, keying);
-              if (layout.autoCrop !== false) {
-                keyed = autoCropKeyed(keyed);
-              }
+  const metadata = await renderFrameJobsToAtlas({
+    sheetCanvas,
+    sheetCtx,
+    frameJobs,
+    params,
+    frameWidth,
+    frameHeight,
+    cols,
+    onProgress,
+    totalProgress: frameCount,
+  });
+  const animationMetadata = buildAnimationMetadata(frameJobs, godotOptions.animations || [], godotOptions.fps || 12);
+  const tres = buildGodotSpriteFramesTres({
+    atlasResourcePath: godotOptions.atlasResourcePath || 'res://atlas.png',
+    frames: metadata.frames,
+    animations: animationMetadata,
+  });
 
-              const tempCanvas = createCanvas(keyed.width, keyed.height);
-              const tempCtx = tempCanvas.getContext('2d');
-              const imgData = tempCtx.createImageData(keyed.width, keyed.height);
-              imgData.data.set(keyed.data);
-              tempCtx.putImageData(imgData, 0, 0);
+  return {
+    buffer: sheetCanvas.toBuffer('image/png'),
+    tres,
+    frameCount,
+    sheetWidth,
+    sheetHeight,
+    atlasDimensions: { width: sheetWidth, height: sheetHeight },
+    cols,
+    rows,
+    frames: metadata.frames,
+    animations: animationMetadata,
+    cleanup: metadata.cleanup,
+    warnings: metadata.warnings,
+  };
+}
 
-              const scale = Math.min(frameWidth / keyed.width, frameHeight / keyed.height);
-              const sw = Math.round(keyed.width * scale);
-              const sh = Math.round(keyed.height * scale);
-              const col = frameIndex % cols;
-              const row = Math.floor(frameIndex / cols);
-              const ox = col * frameWidth + Math.round((frameWidth - sw) / 2);
-              const oy = row * frameHeight + Math.round((frameHeight - sh) / 2);
+function selectSpriteFrames(spriteParams, totalFrames) {
+  const sampleEvery = positiveInt(spriteParams.sampleEvery, 1);
+  const maxFrames = spriteParams.maxFrames == null ? Infinity : positiveInt(spriteParams.maxFrames, Infinity);
+  const range = normalizeFrameRange(spriteParams.range, totalFrames);
+  const warnings = [];
+  let frames;
+  let mode;
 
-              sheetCtx.drawImage(tempCanvas, ox, oy, sw, sh);
-              frameIndex++;
+  if (Array.isArray(spriteParams.frames) && spriteParams.frames.length > 0) {
+    mode = 'frames';
+    const seen = new Set();
+    const invalid = [];
+    frames = [];
 
-              if (frameIndex % 30 === 0 && onProgress) {
-                onProgress(frameIndex, maxToProcess);
-              }
-            } catch (e) {
-              pipelineError = e;
-              return;
-            }
-          }
-          bytesBuffered = 0;
+    for (const rawFrame of spriteParams.frames) {
+      const frame = Number(rawFrame);
+      if (!Number.isInteger(frame) || frame < 0 || frame >= totalFrames) {
+        invalid.push(rawFrame);
+        continue;
+      }
+      if (seen.has(frame)) continue;
+      seen.add(frame);
+      frames.push(frame);
+    }
+
+    if (invalid.length > 0) {
+      throw new Error(`frames contains invalid source frame indexes: ${invalid.join(', ')}`);
+    }
+    if (frames.length !== spriteParams.frames.length) {
+      warnings.push('Duplicate frame indexes were removed from the explicit frame list.');
+    }
+
+    frames.sort((a, b) => a - b);
+    const beforeRange = frames.length;
+    frames = frames.filter(frame => frame >= range.startFrame && frame < range.endFrame);
+    if (frames.length !== beforeRange) {
+      warnings.push('Some explicit frame indexes were outside the requested range and were omitted.');
+    }
+    if (Number.isFinite(maxFrames)) {
+      frames = frames.slice(0, maxFrames);
+    }
+  } else {
+    mode = 'sample';
+    frames = [];
+    for (let frame = range.startFrame; frame < range.endFrame && frames.length < maxFrames; frame += sampleEvery) {
+      frames.push(frame);
+    }
+  }
+
+  if (frames.length === 0) {
+    throw new Error('Frame selection produced no frames');
+  }
+
+  return {
+    mode,
+    frames,
+    frameCount: frames.length,
+    range,
+    sampleEvery,
+    maxFrames: Number.isFinite(maxFrames) ? maxFrames : null,
+    ordering: 'ascending_source_frame',
+    warnings,
+  };
+}
+
+function normalizeFrameRange(range, totalFrames) {
+  const startFrame = range?.startFrame == null ? 0 : Math.round(Number(range.startFrame));
+  const endFrame = range?.endFrame == null ? totalFrames : Math.round(Number(range.endFrame));
+  if (!Number.isInteger(startFrame) || startFrame < 0 || startFrame >= totalFrames) {
+    throw new Error(`range.startFrame must be between 0 and ${Math.max(0, totalFrames - 1)}`);
+  }
+  if (!Number.isInteger(endFrame) || endFrame <= startFrame || endFrame > totalFrames) {
+    throw new Error(`range.endFrame must be greater than startFrame and no more than ${totalFrames}`);
+  }
+  return { startFrame, endFrame };
+}
+
+async function renderFrameJobsToAtlas({
+  sheetCtx,
+  frameJobs,
+  params,
+  frameWidth,
+  frameHeight,
+  cols,
+  onProgress,
+  totalProgress,
+  sourceInfoByPath = new Map(),
+}) {
+  const frames = new Array(frameJobs.length);
+  const warnings = [];
+  const cleanupSummary = createCleanupSummary();
+  const jobsByInput = new Map();
+  let rendered = 0;
+
+  for (const job of frameJobs) {
+    if (!jobsByInput.has(job.inputPath)) jobsByInput.set(job.inputPath, []);
+    jobsByInput.get(job.inputPath).push(job);
+  }
+
+  for (const [inputPath, jobs] of jobsByInput) {
+    let info = sourceInfoByPath.get(inputPath);
+    if (!info) {
+      const probed = await probeVideo(inputPath);
+      const totalFrames = probed.frameCount || Math.round(probed.fps * probed.duration);
+      info = { ...probed, totalFrames, srcW: probed.width, srcH: probed.height };
+      sourceInfoByPath.set(inputPath, info);
+    }
+
+    const srcW = info.srcW || info.width;
+    const srcH = info.srcH || info.height;
+    const totalFrames = info.totalFrames || info.frameCount || Math.round(info.fps * info.duration);
+    const frameBytes = srcW * srcH * 4;
+    const jobsByFrame = new Map();
+
+    for (const job of jobs) {
+      if (job.sourceFrameIndex < 0 || job.sourceFrameIndex >= totalFrames) {
+        throw new Error(`Frame ${job.sourceFrameIndex} is outside ${inputPath} frame range 0-${totalFrames - 1}`);
+      }
+      if (!jobsByFrame.has(job.sourceFrameIndex)) jobsByFrame.set(job.sourceFrameIndex, []);
+      jobsByFrame.get(job.sourceFrameIndex).push(job);
+    }
+
+    const selectedFrames = [...jobsByFrame.keys()].sort((a, b) => a - b);
+    const scanStart = selectedFrames[0];
+    const scanEnd = selectedFrames[selectedFrames.length - 1];
+    const expected = new Set(selectedFrames);
+    const seen = new Set();
+
+    await scanRawFrames(inputPath, scanStart, info.fps, scanEnd - scanStart + 1, frameBytes, (frameBuf, i) => {
+      const sourceFrameIndex = scanStart + i;
+      const frameJobsForSource = jobsByFrame.get(sourceFrameIndex);
+      if (!frameJobsForSource) return;
+
+      seen.add(sourceFrameIndex);
+      const processed = processFrameWithMetadata(frameBuf, srcW, srcH, params, { width: frameWidth, height: frameHeight });
+
+      for (const job of frameJobsForSource) {
+        mergeCleanupSummary(cleanupSummary, processed.metadata.cleanup);
+        const region = drawAtlasFrame(sheetCtx, processed.canvas, job, frameWidth, frameHeight, cols);
+        const frameWarnings = [...processed.metadata.warnings];
+        if (region.width !== frameWidth || region.height !== frameHeight) {
+          frameWarnings.push(`Atlas region for frame ${job.atlasIndex} did not match requested frame size.`);
+        }
+        appendWarnings(warnings, frameWarnings.map(warning => `${job.animationName ? `${job.animationName}: ` : ''}${warning}`));
+        frames[job.atlasIndex] = {
+          atlasIndex: job.atlasIndex,
+          animationName: job.animationName || null,
+          animationFrameIndex: job.animationFrameIndex ?? job.atlasIndex,
+          sourceVideoPath: inputPath,
+          sourceFrameIndex,
+          region,
+          flipH: job.flipH === true,
+          crop: processed.metadata.crop,
+          placement: processed.metadata.placement,
+          cleanup: processed.metadata.cleanup,
+          warnings: frameWarnings,
+        };
+        rendered++;
+        if (rendered % 30 === 0 && onProgress) {
+          onProgress(rendered, totalProgress);
         }
       }
     });
 
-    extractor.on('close', () => {
-      if (pipelineError) return reject(pipelineError);
+    for (const frame of expected) {
+      if (!seen.has(frame)) {
+        warnings.push(`Requested source frame ${frame} was not decoded from ${inputPath}.`);
+      }
+    }
+  }
 
-      onProgress && onProgress(frameIndex, maxToProcess);
-      const buffer = sheetCanvas.toBuffer('image/png');
-      console.log(`  ✅ 精灵图导出完成: ${frameIndex}帧, ${sheetWidth}×${sheetHeight} PNG`);
+  onProgress && onProgress(rendered, totalProgress);
+  return {
+    frames: frames.filter(Boolean).sort((a, b) => a.atlasIndex - b.atlasIndex),
+    cleanup: cleanupSummary,
+    warnings,
+  };
+}
 
-      resolve({
-        buffer,
-        frameCount: frameIndex,
-        sheetWidth,
-        sheetHeight,
-        cols,
-        rows,
-      });
-    });
+function drawAtlasFrame(sheetCtx, frameCanvas, job, frameWidth, frameHeight, cols) {
+  const col = job.atlasIndex % cols;
+  const row = Math.floor(job.atlasIndex / cols);
+  const x = col * frameWidth;
+  const y = row * frameHeight;
 
-    extractor.on('error', e => {
-      pipelineError = e;
-      reject(e);
-    });
+  if (job.flipH) {
+    sheetCtx.save();
+    sheetCtx.translate(x + frameWidth, y);
+    sheetCtx.scale(-1, 1);
+    sheetCtx.drawImage(frameCanvas, 0, 0, frameWidth, frameHeight);
+    sheetCtx.restore();
+  } else {
+    sheetCtx.drawImage(frameCanvas, x, y, frameWidth, frameHeight);
+  }
+
+  return { x, y, width: frameWidth, height: frameHeight };
+}
+
+function buildAnimationMetadata(frameJobs, animationSpecs, defaultFps) {
+  const specByName = new Map(animationSpecs.map(spec => [spec.name, spec]));
+  const names = [];
+  for (const job of frameJobs) {
+    if (!names.includes(job.animationName)) names.push(job.animationName);
+  }
+
+  return names.map(name => {
+    const spec = specByName.get(name) || {};
+    const jobs = frameJobs
+      .filter(job => job.animationName === name)
+      .sort((a, b) => a.animationFrameIndex - b.animationFrameIndex);
+    return {
+      name,
+      fps: Number.isFinite(Number(spec.fps)) ? Number(spec.fps) : defaultFps,
+      loop: spec.loop !== false,
+      frameCount: jobs.length,
+      atlasFrameIndexes: jobs.map(job => job.atlasIndex),
+    };
   });
+}
+
+function buildGodotSpriteFramesTres({ atlasResourcePath, frames, animations }) {
+  const lines = [
+    `[gd_resource type="SpriteFrames" load_steps=${frames.length + 2} format=3]`,
+    '',
+    `[ext_resource type="Texture2D" path="${escapeGodotString(atlasResourcePath)}" id="1_atlas"]`,
+    '',
+  ];
+
+  for (const frame of frames) {
+    lines.push(`[sub_resource type="AtlasTexture" id="AtlasTexture_${frame.atlasIndex}"]`);
+    lines.push('atlas = ExtResource("1_atlas")');
+    lines.push(`region = Rect2(${frame.region.x}, ${frame.region.y}, ${frame.region.width}, ${frame.region.height})`);
+    lines.push('');
+  }
+
+  lines.push('[resource]');
+  lines.push('animations = [{');
+  animations.forEach((animation, animationIndex) => {
+    if (animationIndex > 0) {
+      lines.push('}, {');
+    }
+    lines.push('"frames": [');
+    animation.atlasFrameIndexes.forEach((atlasIndex, frameIndex) => {
+      const suffix = frameIndex === animation.atlasFrameIndexes.length - 1 ? '' : ',';
+      lines.push(`{"duration": 1.0, "texture": SubResource("AtlasTexture_${atlasIndex}")}${suffix}`);
+    });
+    lines.push('],');
+    lines.push(`"loop": ${animation.loop ? 'true' : 'false'},`);
+    lines.push(`"name": &"${escapeGodotString(animation.name)}",`);
+    lines.push(`"speed": ${animation.fps}`);
+  });
+  lines.push('}]');
+  lines.push('');
+
+  return lines.join('\n');
+}
+
+function escapeGodotString(value) {
+  return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function buildFrameWarnings({ keyed, placement, cleanup, canvasWidth, canvasHeight }) {
+  const warnings = [];
+  if (placement.scaledW <= 0 || placement.scaledH <= 0) {
+    warnings.push('Frame placement produced an empty drawn size.');
+  }
+  const outsideHorizontally = placement.offsetX + placement.scaledW <= 0 || placement.offsetX >= canvasWidth;
+  const outsideVertically = placement.offsetY + placement.scaledH <= 0 || placement.offsetY >= canvasHeight;
+  if (outsideHorizontally || outsideVertically) {
+    warnings.push('Frame placement is completely outside the output canvas.');
+  }
+  if (cleanup.enabled && cleanup.foregroundPixelsAfter === 0 && cleanup.foregroundPixelsBefore > 0) {
+    warnings.push('Cleanup removed all foreground pixels.');
+  }
+  if (cleanup.componentsFound > 1 && cleanup.componentsKept > 1) {
+    warnings.push('Multiple foreground components remain after cleanup; small artifacts may still affect layout.');
+  }
+  if (keyed.width <= 1 || keyed.height <= 1) {
+    warnings.push('Auto-crop produced a nearly empty foreground region.');
+  }
+  return warnings;
+}
+
+function createCleanupSummary() {
+  return {
+    frames: 0,
+    foregroundPixelsBefore: 0,
+    paleGreenPixelsRemoved: 0,
+    foregroundPixelsAfterPaleGreen: 0,
+    componentsFound: 0,
+    largestComponentPixelsMax: 0,
+    componentsRemoved: 0,
+    componentPixelsRemoved: 0,
+    componentsKept: 0,
+    foregroundPixelsAfter: 0,
+  };
+}
+
+function mergeCleanupSummary(summary, stats) {
+  if (!stats) return summary;
+  summary.frames++;
+  summary.foregroundPixelsBefore += stats.foregroundPixelsBefore || 0;
+  summary.paleGreenPixelsRemoved += stats.paleGreenPixelsRemoved || 0;
+  summary.foregroundPixelsAfterPaleGreen += stats.foregroundPixelsAfterPaleGreen || 0;
+  summary.componentsFound += stats.componentsFound || 0;
+  summary.largestComponentPixelsMax = Math.max(summary.largestComponentPixelsMax, stats.largestComponentPixels || 0);
+  summary.componentsRemoved += stats.componentsRemoved || 0;
+  summary.componentPixelsRemoved += stats.componentPixelsRemoved || 0;
+  summary.componentsKept += stats.componentsKept || 0;
+  summary.foregroundPixelsAfter += stats.foregroundPixelsAfter || 0;
+  return summary;
+}
+
+function appendWarnings(target, warnings = []) {
+  for (const warning of warnings) {
+    if (warning && !target.includes(warning)) target.push(warning);
+  }
+}
+
+function positiveInt(value, fallback) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return fallback;
+  return Math.max(1, Math.round(number));
 }
 
 /**
@@ -585,7 +931,10 @@ async function findLoopEndFrameProcessed(inputPath, startFrame, fps, totalFrames
     step = 2,
     hashSize = 16,
     minSpacing = 12,
-    maxCandidates = 5
+    earlyFrameExclusion = minSpacing,
+    maxCandidates = 5,
+    motionWeight = 0.35,
+    suspiciousCloseThreshold = Math.max(minSpacing * 2, 24)
   } = options;
 
   const endSearch = Math.min(startFrame + maxSearch, totalFrames);
@@ -617,6 +966,7 @@ async function findLoopEndFrameProcessed(inputPath, startFrame, fps, totalFrames
   const referenceHash = hashProcessedFrame(startBuf, srcW, srcH);
   const scores = [{ frame: startFrame, score: 0, displayOnly: true }];
 
+  const exclusionFrames = Math.max(minSpacing, earlyFrameExclusion);
   const scanned = await scanRawFrames(inputPath, scanStartFrame, fps, searchCount, frameBytes, (frameBuf, i) => {
     const candidateHash = hashProcessedFrame(frameBuf, srcW, srcH);
     const score = hammingDistance(referenceHash, candidateHash);
@@ -624,7 +974,7 @@ async function findLoopEndFrameProcessed(inputPath, startFrame, fps, totalFrames
     scores.push({
       frame: frameNum,
       score,
-      ...(frameNum < startFrame + step ? { displayOnly: true } : {}),
+      ...(frameNum - startFrame < exclusionFrames ? { displayOnly: true, excluded: 'early_frame_exclusion' } : {}),
     });
   });
 
@@ -648,8 +998,16 @@ async function findLoopEndFrameProcessed(inputPath, startFrame, fps, totalFrames
     }
   }
 
-  const candidates = pickLoopCandidates(candidateScores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
-  return { candidates, scores };
+  const candidates = pickLoopCandidates(candidateScores, {
+    minSpacing,
+    earlyFrameExclusion,
+    maxCandidates,
+    startFrame,
+    endFrame: searchEndFrame,
+    motionWeight,
+  });
+  const warnings = buildLoopWarnings(candidates, startFrame, { minSpacing, earlyFrameExclusion, suspiciousCloseThreshold });
+  return { candidates, scores, warnings };
 }
 
 function createProcessedFrameHasher(previewParams, scaleW, scaleH) {
@@ -757,7 +1115,10 @@ function findLoopEndFrameRaw(inputPath, startFrame, fps, totalFrames, options = 
     step = 2,
     hashSize = 16,
     minSpacing = 12,
-    maxCandidates = 5
+    earlyFrameExclusion = minSpacing,
+    maxCandidates = 5,
+    motionWeight = 0.35,
+    suspiciousCloseThreshold = Math.max(minSpacing * 2, 24)
   } = options;
   const endSearch = Math.min(startFrame + maxSearch, totalFrames);
   // 连续提取：从 startFrame + 1 到 endSearch - 1。
@@ -767,6 +1128,7 @@ function findLoopEndFrameRaw(inputPath, startFrame, fps, totalFrames, options = 
   const scaleW = hashSize + 1;  // 9 for hashSize=8
   const scaleH = hashSize;       // 8
   const frameBytes = scaleW * scaleH * 4; // 288 bytes — 极轻量
+  const exclusionFrames = Math.max(minSpacing, earlyFrameExclusion);
 
   if (searchCount <= 0) {
     return Promise.resolve({
@@ -833,7 +1195,7 @@ function findLoopEndFrameRaw(inputPath, startFrame, fps, totalFrames, options = 
           scores.push({
             frame: frameNum,
             score,
-            ...(frameNum < startFrame + step ? { displayOnly: true } : {}),
+            ...(frameNum - startFrame < exclusionFrames ? { displayOnly: true, excluded: 'early_frame_exclusion' } : {}),
           });
         }
 
@@ -849,8 +1211,16 @@ function findLoopEndFrameRaw(inputPath, startFrame, fps, totalFrames, options = 
 
         if (!needTail) {
           // 3. 从 scores 中筛选最佳候选
-          const candidates = pickLoopCandidates(candidateScores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
-          return resolve({ candidates, scores });
+          const candidates = pickLoopCandidates(candidateScores, {
+            minSpacing,
+            earlyFrameExclusion,
+            maxCandidates,
+            startFrame,
+            endFrame: searchEndFrame,
+            motionWeight,
+          });
+          const warnings = buildLoopWarnings(candidates, startFrame, { minSpacing, earlyFrameExclusion, suspiciousCloseThreshold });
+          return resolve({ candidates, scores, warnings });
         }
 
         // 补提最后一帧
@@ -882,13 +1252,29 @@ function findLoopEndFrameRaw(inputPath, startFrame, fps, totalFrames, options = 
           }
 
           // 3. 从 scores 中筛选最佳候选
-          const candidates = pickLoopCandidates(finalCandidateScores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
-          resolve({ candidates, scores });
+          const candidates = pickLoopCandidates(finalCandidateScores, {
+            minSpacing,
+            earlyFrameExclusion,
+            maxCandidates,
+            startFrame,
+            endFrame: searchEndFrame,
+            motionWeight,
+          });
+          const warnings = buildLoopWarnings(candidates, startFrame, { minSpacing, earlyFrameExclusion, suspiciousCloseThreshold });
+          resolve({ candidates, scores, warnings });
         });
         tailProc.on('error', () => {
           // 尾帧提取失败不影响主结果
-          const candidates = pickLoopCandidates(candidateScores, { minSpacing, maxCandidates, startFrame, endFrame: searchEndFrame });
-          resolve({ candidates, scores });
+          const candidates = pickLoopCandidates(candidateScores, {
+            minSpacing,
+            earlyFrameExclusion,
+            maxCandidates,
+            startFrame,
+            endFrame: searchEndFrame,
+            motionWeight,
+          });
+          const warnings = buildLoopWarnings(candidates, startFrame, { minSpacing, earlyFrameExclusion, suspiciousCloseThreshold });
+          resolve({ candidates, scores, warnings });
         });
       });
       scanProc.on('error', reject);
@@ -974,58 +1360,73 @@ function hammingDistance(a, b) {
  * @param {number} options.endFrame - 搜索范围结束帧
  * @returns {Array<{frame:number,score:number}>}
  */
-function pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, endFrame }) {
+function pickLoopCandidates(scores, {
+  minSpacing,
+  earlyFrameExclusion = minSpacing,
+  maxCandidates,
+  startFrame,
+  endFrame,
+  motionWeight = 0.35,
+}) {
   if (scores.length === 0) return [];
+
+  const sf = startFrame ?? 0;
+  const minCandidateFrame = sf + Math.max(minSpacing, earlyFrameExclusion);
+  const eligibleScores = scores
+    .filter(s => s.frame - sf >= minSpacing && s.frame >= minCandidateFrame)
+    .sort((a, b) => a.frame - b.frame);
+  if (eligibleScores.length === 0) return [];
 
   // a) 找局部极小值（比左右都低或相等）
   const localMinima = [];
-  for (let i = 1; i < scores.length - 1; i++) {
-    if (scores[i].score <= scores[i - 1].score && scores[i].score <= scores[i + 1].score) {
-      localMinima.push(scores[i]);
+  for (let i = 0; i < eligibleScores.length; i++) {
+    const prev = eligibleScores[i - 1];
+    const current = eligibleScores[i];
+    const next = eligibleScores[i + 1];
+    const leftOk = !prev || current.score <= prev.score;
+    const rightOk = !next || current.score <= next.score;
+    if (leftOk && rightOk) {
+      localMinima.push(enrichLoopScore(current, prev, next, motionWeight));
     }
   }
-  const pool = localMinima.length > 0 ? localMinima : scores;
+  const pool = localMinima.length > 0
+    ? localMinima
+    : eligibleScores.map((score, index) => enrichLoopScore(score, eligibleScores[index - 1], eligibleScores[index + 1], motionWeight));
 
   // b) 分成 N 个等宽窗口（N = maxCandidates），每个窗口取最佳
-  const sf = startFrame ?? 0;
   const ef = endFrame ?? (pool.length > 0 ? pool[pool.length - 1].frame : sf + 1);
-  const searchLen = ef - sf;
+  const searchLen = Math.max(1, ef - minCandidateFrame + 1);
   const windowSize = searchLen / maxCandidates;
 
   const candidates = [];
   for (let w = 0; w < maxCandidates; w++) {
-    const wStart = sf + Math.floor(w * windowSize);
-    const wEnd = sf + Math.floor((w + 1) * windowSize);
+    const wStart = minCandidateFrame + Math.floor(w * windowSize);
+    const wEnd = minCandidateFrame + Math.floor((w + 1) * windowSize);
 
     // 该窗口内的候选帧（局部极小值 + 距起始帧足够远）
     const inWindow = pool.filter(s =>
-      s.frame > sf + 1 &&           // 跳过紧邻起始帧
+      s.frame >= minCandidateFrame &&
       s.frame >= wStart && s.frame < wEnd
     );
 
     if (inWindow.length === 0) continue;
 
-    // 选窗口内最佳（原始分最低）
-    inWindow.sort((a, b) => a.score - b.score);
+    // 选窗口内最佳（综合相似度和局部运动/姿态可用性）
+    inWindow.sort((a, b) => a.adjustedScore - b.adjustedScore);
     let best = inWindow[0];
-
-    // d) 距离惩罚：距起始帧太近的帧不可能是循环终点
-    const dist = best.frame - sf;
-    let penalty = 0;
-    if (dist > 0 && dist < minSpacing) {
-      penalty = best.score * 0.5 * (1 - dist / minSpacing);
-    }
 
     candidates.push({
       frame: best.frame,
       score: best.score,
-      adjusted: best.score + penalty,
+      adjustedScore: best.adjustedScore,
+      motionScore: best.motionScore,
+      valleyDepth: best.valleyDepth,
       window: w,
     });
   }
 
   // 按调整后分数排序，取 top maxCandidates
-  candidates.sort((a, b) => a.adjusted - b.adjusted);
+  candidates.sort((a, b) => a.adjustedScore - b.adjustedScore);
   const topCandidates = candidates.slice(0, maxCandidates);
 
   // 用 minSpacing 做最终去重
@@ -1037,8 +1438,60 @@ function pickLoopCandidates(scores, { minSpacing, maxCandidates, startFrame, end
     }
   }
 
-  // 按原始分排序返回
-  return deduped.sort((a, b) => a.score - b.score).map(c => ({ frame: c.frame, score: c.score }));
+  // 按综合分排序返回，保留原始视觉分和运动辅助分
+  return deduped
+    .sort((a, b) => a.adjustedScore - b.adjustedScore)
+    .map(c => ({
+      frame: c.frame,
+      score: c.score,
+      adjustedScore: c.adjustedScore,
+      motionScore: c.motionScore,
+      valleyDepth: c.valleyDepth,
+    }));
 }
 
-module.exports = { processVideo, probeVideo, findLoopEndFrame, dHashRaw, hammingDistance, pickLoopCandidates, exportSpriteSheet };
+function enrichLoopScore(score, prev, next, motionWeight) {
+  const neighborScores = [prev, next].filter(Boolean).map(s => s.score);
+  const valleyDepth = neighborScores.length > 0
+    ? Math.max(0, Math.min(...neighborScores) - score.score)
+    : 0;
+  const neighborMotion = neighborScores.length > 0
+    ? neighborScores.reduce((sum, neighborScore) => sum + Math.abs(neighborScore - score.score), 0) / neighborScores.length
+    : 0;
+  const motionScore = valleyDepth + neighborMotion * 0.25;
+  return {
+    ...score,
+    valleyDepth,
+    motionScore,
+    adjustedScore: Math.max(0, score.score - motionScore * motionWeight),
+  };
+}
+
+function buildLoopWarnings(candidates, startFrame, {
+  minSpacing,
+  earlyFrameExclusion = minSpacing,
+  suspiciousCloseThreshold = Math.max(minSpacing * 2, 24),
+}) {
+  const warnings = [];
+  const exclusionFrames = Math.max(minSpacing, earlyFrameExclusion);
+  if (candidates.some(candidate => candidate.frame - startFrame < exclusionFrames)) {
+    warnings.push(`A candidate violated the ${exclusionFrames}-frame early exclusion window.`);
+  }
+  const best = candidates[0];
+  if (best && best.frame - startFrame <= suspiciousCloseThreshold) {
+    warnings.push(`Best loop candidate is only ${best.frame - startFrame} frames after startFrame; inspect it before using as a loop endpoint.`);
+  }
+  return warnings;
+}
+
+module.exports = {
+  processVideo,
+  probeVideo,
+  findLoopEndFrame,
+  dHashRaw,
+  hammingDistance,
+  pickLoopCandidates,
+  exportSpriteSheet,
+  exportGodotSpriteFrames,
+  selectSpriteFrames,
+};
