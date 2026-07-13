@@ -3,6 +3,7 @@ dist/
 release/
 electron-dev.log
 *.png
+!docs/images/*.png
 test-*.png
 gen-test*.cjs
 .DS_Store
