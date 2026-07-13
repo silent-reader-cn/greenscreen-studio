@@ -1,0 +1,4 @@
+interface:
+  display_name: "Greenscreen Studio MCP"
+  short_description: "Use Greenscreen Studio media tools via MCP"
+  default_prompt: "Use $greenscreen-studio-mcp to standardize a greenscreen image or video with the local MCP server."

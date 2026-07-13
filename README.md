@@ -49,6 +49,12 @@
 - **自带 ffmpeg** — 视频引擎打包在内，用户无需额外安装
 - **NSIS 安装包 / 绿色版** 双输出
 
+### 🤖 MCP 自动化
+- **stdio MCP 服务器** — 通过 `mcp/server.mjs` 暴露本项目的图片/视频处理能力
+- **完整工具集** — 支持图片检查与导出、视频探测与处理、循环帧检测、精灵图导出、参数校验
+- **MCP Resources + Prompts** — 内置参数预设、处理流程说明、参数 schema 和标准化素材 prompt
+- **配套 Codex Skill** — `skills/greenscreen-studio-mcp/` 提供 MCP 使用流程、工具目录和客户端配置参考
+
 ## 使用说明
 
 ### 图片模式
@@ -165,6 +171,37 @@ npm run package:dir
 > 体积大的原因是内嵌了 ffmpeg + ffprobe 可执行文件（共计 ~145 MB）。
 > 后续可用 [ffmpeg-static 瘦身版](https://github.com/eugeneware/ffmpeg-static) 或下载时按需拉取来缩小。
 
+### MCP 服务器
+
+本项目内置本地 stdio MCP 服务器，可让支持 MCP 的 AI 客户端直接调用 Greenscreen Studio 的处理管线。
+
+```bash
+npm run mcp
+```
+
+通用 MCP 客户端配置示例：
+
+```json
+{
+  "mcpServers": {
+    "greenscreen-studio": {
+      "command": "node",
+      "args": ["C:/path/to/greenscreen-studio/mcp/server.mjs"],
+      "cwd": "C:/path/to/greenscreen-studio"
+    }
+  }
+}
+```
+
+主要工具：
+- `get_project_info` — 查看 MCP 能力、默认参数和资源
+- `inspect_image` / `export_image` — 图片尺寸检查与 PNG 标准化导出
+- `probe_video` / `process_video` — 视频探测与 WebM/MOV/MP4 导出
+- `find_loop_end` — 查找循环终点帧候选
+- `export_spritesheet` — 导出视频帧精灵图 PNG
+
+配套 skill 位于 `skills/greenscreen-studio-mcp/`，其中 `references/` 包含工具参数、典型工作流和客户端配置说明。
+
 ## 项目结构
 
 ```
@@ -188,6 +225,10 @@ greenscreen-studio/
 │   └── styles.css             # 全局样式
 ├── server.cjs           # Express 后端
 ├── videoProcessor.cjs   # ffmpeg 视频处理管线
+├── mcp/
+│   └── server.mjs       # Greenscreen Studio stdio MCP 服务器
+├── skills/
+│   └── greenscreen-studio-mcp/ # 配套 Codex skill
 ├── vite.config.js       # Vite 配置
 └── package.json         # 依赖 + 构建脚本
 ```
