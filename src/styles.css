@@ -1446,6 +1446,20 @@ body {
   overflow: hidden;
 }
 
+.video-preview-stage {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  max-width: 100%;
+  max-height: 100%;
+  line-height: 0;
+  overflow: hidden;
+}
+
+.video-preview-stage.selecting .preview-canvas {
+  cursor: crosshair;
+}
+
 .frame-canvas-wrapper .preview-canvas {
   max-width: 100%;
   max-height: 100%;
@@ -1454,6 +1468,13 @@ body {
   border: 1px solid #e0e0d8;
   border-radius: 4px;
   box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+.video-preview-stage .preview-canvas {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
 }
 
 .frame-loading {

@@ -262,10 +262,18 @@ const cleanupSchema = z.object({
   paleGreenMaxRedBlueDelta: z.number().int().min(0).max(255).optional(),
 });
 
+const regionSchema = z.object({
+  x: z.number().int().min(0),
+  y: z.number().int().min(0),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+
 const processingParamsSchema = z.object({
   keying: keyingSchema.optional(),
   layout: layoutSchema.optional(),
   cleanup: cleanupSchema.optional(),
+  region: regionSchema.optional(),
   mode: z.enum(['greenscreen', 'transparent']).optional(),
 });
 
@@ -385,6 +393,7 @@ export function normalizeProcessingParams(input = {}) {
     ...(input.cleanup || {}),
   };
   const anchorOffset = layout.anchorOffset || DEFAULT_LAYOUT.anchorOffset;
+  const region = normalizeProcessingRegion(input.region);
 
   return {
     keying: {
@@ -418,6 +427,7 @@ export function normalizeProcessingParams(input = {}) {
       ...(cleanup.paleGreenDominance != null ? { paleGreenDominance: clampNumber(cleanup.paleGreenDominance, 0, 255, 20) } : {}),
       ...(cleanup.paleGreenMaxRedBlueDelta != null ? { paleGreenMaxRedBlueDelta: clampNumber(cleanup.paleGreenMaxRedBlueDelta, 0, 255, 90) } : {}),
     },
+    ...(region ? { region } : {}),
     mode: input.mode === 'transparent' ? 'transparent' : 'greenscreen',
   };
 }
@@ -1292,6 +1302,21 @@ function positiveInt(value, fallback) {
   const number = Number(value);
   if (!Number.isFinite(number) || number <= 0) return fallback;
   return Math.max(1, Math.round(number));
+}
+
+function normalizeProcessingRegion(region) {
+  if (!region || typeof region !== 'object') return null;
+  const x = Number(region.x);
+  const y = Number(region.y);
+  const width = Number(region.width);
+  const height = Number(region.height);
+  if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
+  return {
+    x: Math.max(0, Math.round(x)),
+    y: Math.max(0, Math.round(y)),
+    width: Math.max(1, Math.round(width)),
+    height: Math.max(1, Math.round(height)),
+  };
 }
 
 function assertFile(filePath, label) {

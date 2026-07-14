@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { applyKeying, composeToCanvas, autoCropKeyed } from './lib/keying.js'
+import { clamp, cropImageData, getRegionOverlayStyle, makeRegionFromPoints } from './lib/region.js'
 import KeyingPanel from './components/KeyingPanel.jsx'
 import LayoutPanel from './components/LayoutPanel.jsx'
 import PreviewCanvas from './components/PreviewCanvas.jsx'
@@ -273,78 +274,10 @@ function getBaseMediaMetadata(file, kind = getMediaKind(file)) {
   }
 }
 
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value))
-}
-
-function normalizeRegion(region, imageData) {
-  if (!region || !imageData) return null
-
-  const x = clamp(Math.floor(region.x), 0, imageData.width)
-  const y = clamp(Math.floor(region.y), 0, imageData.height)
-  const width = clamp(Math.ceil(region.width), 0, imageData.width - x)
-  const height = clamp(Math.ceil(region.height), 0, imageData.height - y)
-
-  if (width <= 0 || height <= 0) return null
-  return { x, y, width, height }
-}
-
-function makeRegionFromPoints(start, end, imageData) {
-  if (!start || !end || !imageData) return null
-
-  const x1 = clamp(Math.floor(Math.min(start.x, end.x)), 0, imageData.width)
-  const y1 = clamp(Math.floor(Math.min(start.y, end.y)), 0, imageData.height)
-  const x2 = clamp(Math.ceil(Math.max(start.x, end.x)), 0, imageData.width)
-  const y2 = clamp(Math.ceil(Math.max(start.y, end.y)), 0, imageData.height)
-
-  return normalizeRegion({
-    x: x1,
-    y: y1,
-    width: x2 - x1,
-    height: y2 - y1,
-  }, imageData)
-}
-
-function cropImageData(imageData, region) {
-  const normalized = normalizeRegion(region, imageData)
-  if (!normalized) return imageData
-  if (
-    normalized.x === 0 &&
-    normalized.y === 0 &&
-    normalized.width === imageData.width &&
-    normalized.height === imageData.height
-  ) {
-    return imageData
-  }
-
-  const { x: cropX, y: cropY, width: cropW, height: cropH } = normalized
-  const cropped = new Uint8ClampedArray(cropW * cropH * 4)
-
-  for (let y = 0; y < cropH; y++) {
-    const srcRow = ((cropY + y) * imageData.width + cropX) * 4
-    const dstRow = y * cropW * 4
-    cropped.set(imageData.data.subarray(srcRow, srcRow + cropW * 4), dstRow)
-  }
-
-  return { data: cropped, width: cropW, height: cropH }
-}
-
 function putImageDataLike(ctx, imageData, x = 0, y = 0) {
   const canvasImageData = ctx.createImageData(imageData.width, imageData.height)
   canvasImageData.data.set(imageData.data)
   ctx.putImageData(canvasImageData, x, y)
-}
-
-function getRegionOverlayStyle(region, imageData) {
-  const normalized = normalizeRegion(region, imageData)
-  if (!normalized || !imageData) return null
-
-  return {
-    left: `${(normalized.x / imageData.width) * 100}%`,
-    top: `${(normalized.y / imageData.height) * 100}%`,
-    width: `${(normalized.width / imageData.width) * 100}%`,
-    height: `${(normalized.height / imageData.height) * 100}%`,
-  }
 }
 
 function getContainSize(contentSize, containerSize) {
@@ -547,6 +480,7 @@ export default function App() {
   // 视频预览状态
   const [videoFile, setVideoFile] = useState(null)
   const [videoInfo, setVideoInfo] = useState(null)
+  const [videoRegion, setVideoRegion] = useState(null)
   const [resultJobId, setResultJobId] = useState(null)
 
   // 全局拖放状态
@@ -584,14 +518,18 @@ export default function App() {
         height: `${imagePreviewDisplaySize.h}px`,
       }
     : undefined
+  const videoProcessingSize = videoInfo
+    ? videoRegion
+      ? { w: videoRegion.width, h: videoRegion.height }
+      : { w: videoInfo.width, h: videoInfo.height }
+    : { w: 0, h: 0 }
+  const layoutInputSize = mediaMode === 'video' ? videoProcessingSize : processingImageSize
 
   // 切换模式时保留另一边状态，避免 Tab 来回切换导致预览丢失
   const switchMode = useCallback((mode) => {
     setMediaMode(mode)
-    if (mode !== 'image') {
-      setRegionSelectionMode(false)
-      setRegionDraft(null)
-    }
+    setRegionSelectionMode(false)
+    setRegionDraft(null)
   }, [])
 
   const openClipboardImportPrompt = useCallback((file) => {
@@ -714,6 +652,9 @@ export default function App() {
   const handleVideoUpload = useCallback((file, info) => {
     setVideoFile(file)
     setVideoInfo(info)
+    setVideoRegion(null)
+    setRegionSelectionMode(false)
+    setRegionDraft(null)
     setResultJobId(null)
     // 新视频上传后重置帧范围为全视频
     if (info) {
@@ -762,6 +703,14 @@ export default function App() {
   const previewRef = useRef(null)
   const tempCanvasRef = useRef(document.createElement('canvas'))
   const regionDragRef = useRef(null)
+
+  useEffect(() => {
+    if (previewMode !== 'keying' && regionSelectionMode) {
+      regionDragRef.current = null
+      setRegionDraft(null)
+      setRegionSelectionMode(false)
+    }
+  }, [previewMode, regionSelectionMode])
 
   useEffect(() => {
     if (mediaMode !== 'image' || !imageData) return undefined
@@ -875,6 +824,28 @@ export default function App() {
     setImageRegion(null)
     setRegionDraft(null)
     setRegionSelectionMode(false)
+  }, [])
+
+  const beginVideoRegionSelection = useCallback(() => {
+    if (!videoInfo) return
+
+    setMediaMode('video')
+    setPreviewMode('keying')
+    setResultJobId(null)
+    setVideoRegion(null)
+    setRegionDraft(null)
+    setRegionSelectionMode(true)
+
+    window.requestAnimationFrame(() => {
+      document.querySelector('.frame-canvas-wrapper')?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    })
+  }, [videoInfo])
+
+  const resetVideoRegion = useCallback(() => {
+    setVideoRegion(null)
+    setRegionDraft(null)
+    setRegionSelectionMode(false)
+    setResultJobId(null)
   }, [])
 
   const renderPreview = useCallback(() => {
@@ -1105,9 +1076,12 @@ export default function App() {
               imageFile={imageFile}
               imageSize={imageSize}
               imageRegion={imageRegion}
+              videoRegion={videoRegion}
               regionSelectionMode={regionSelectionMode}
               onSelectImageRegion={beginImageRegionSelection}
               onResetImageRegion={resetImageRegion}
+              onSelectVideoRegion={beginVideoRegionSelection}
+              onResetVideoRegion={resetVideoRegion}
               videoFile={videoFile}
               videoInfo={videoInfo}
             />
@@ -1121,12 +1095,13 @@ export default function App() {
                 onVideoDone={handleVideoDone}
                 range={frameRange}
                 onRangeChange={handleRangeChange}
+                region={videoRegion}
                 droppedFile={droppedVideoFile}
                 dockTarget={videoDockTarget}
               />
             )}
             <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
-            <LayoutPanel params={layoutParams} onChange={setLayoutParams} imageSize={processingImageSize} />
+            <LayoutPanel params={layoutParams} onChange={setLayoutParams} imageSize={layoutInputSize} />
           </div>
 
           <div className="sidebar-dock">
@@ -1209,6 +1184,10 @@ export default function App() {
                 resultJobId={resultJobId}
                 range={frameRange}
                 onRangeChange={handleRangeChange}
+                region={videoRegion}
+                regionSelectionMode={regionSelectionMode && mediaMode === 'video'}
+                onRegionChange={setVideoRegion}
+                onRegionSelectionComplete={() => setRegionSelectionMode(false)}
               />
             )}
           </div>
@@ -1301,15 +1280,22 @@ function FileMetaPanel({
   imageFile,
   imageSize,
   imageRegion,
+  videoRegion,
   regionSelectionMode,
   onSelectImageRegion,
   onResetImageRegion,
+  onSelectVideoRegion,
+  onResetVideoRegion,
   videoFile,
   videoInfo,
 }) {
   const isImage = mediaMode === 'image'
   const file = isImage ? imageFile : videoFile
   const loaded = isImage ? imageSize.w > 0 : !!videoInfo
+  const activeRegion = isImage ? imageRegion : videoRegion
+  const onSelectRegion = isImage ? onSelectImageRegion : onSelectVideoRegion
+  const onResetRegion = isImage ? onResetImageRegion : onResetVideoRegion
+  const fullRegionLabel = isImage ? t('file.fullImage') : t('file.fullVideo')
   const summary = loaded
     ? (isImage ? `${imageSize.w}×${imageSize.h}` : `${videoInfo.width}×${videoInfo.height}`)
     : t('file.notLoaded')
@@ -1347,33 +1333,33 @@ function FileMetaPanel({
               </>
             )}
           </div>
-          {isImage && (
+          {loaded && (
             <div className="file-region-tools">
               <div className="file-region-status">
                 <span>{t('file.processingRegion')}</span>
                 <strong>
-                  {imageRegion
-                    ? `${imageRegion.width} × ${imageRegion.height} @ ${imageRegion.x}, ${imageRegion.y}`
-                    : t('file.fullImage')}
+                  {activeRegion
+                    ? `${activeRegion.width} × ${activeRegion.height} @ ${activeRegion.x}, ${activeRegion.y}`
+                    : fullRegionLabel}
                 </strong>
               </div>
               <div className="file-region-actions">
                 <button
                   type="button"
                   className="file-region-btn secondary"
-                  onClick={onResetImageRegion}
-                  disabled={!imageRegion && !regionSelectionMode}
+                  onClick={onResetRegion}
+                  disabled={!activeRegion && !regionSelectionMode}
                 >
                   {t('file.resetRegion')}
                 </button>
                 <button
                   type="button"
                   className="file-region-btn"
-                  onClick={onSelectImageRegion}
+                  onClick={onSelectRegion}
                 >
                   {regionSelectionMode
                     ? t('file.reselectRegion')
-                    : imageRegion ? t('file.resetSelectedRegion') : t('file.selectRegion')}
+                    : activeRegion ? t('file.resetSelectedRegion') : t('file.selectRegion')}
                 </button>
               </div>
             </div>

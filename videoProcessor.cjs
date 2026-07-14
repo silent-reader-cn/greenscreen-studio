@@ -111,7 +111,7 @@ function probeVideo(videoPath) {
  *
  * @param {string} inputPath - 输入视频路径
  * @param {string} outputPath - 输出视频路径
- * @param {Object} params - { keying, layout, mode, range? }
+ * @param {Object} params - { keying, layout, mode, range?, region? }
  *   mode: 'transparent' | 'greenscreen'
  *   range?: { startFrame: number, endFrame: number } 帧范围（可选，默认全视频）
  * @param {Function} onProgress - (current, total) => void
@@ -120,7 +120,7 @@ function probeVideo(videoPath) {
 async function processVideo(inputPath, outputPath, params, onProgress) {
   await loadAlgorithms();
 
-  const { keying, layout, mode, range, cleanup } = params;
+  const { keying, layout, mode, range, cleanup, region } = params;
   const { canvasWidth, canvasHeight } = layout;
 
   // 1. 探测视频
@@ -137,8 +137,13 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
 
   const hasRange = startFrame > 0 || endFrame < totalFrames;
   const rangeDesc = hasRange ? ` [${startFrame}–${endFrame}帧, ${processFrameCount}帧]` : '';
+  const normalizedRegion = normalizeRegionForSize(region, srcW, srcH);
+  const hasRegion = normalizedRegion && !isFullRegion(normalizedRegion, srcW, srcH);
+  const regionDesc = hasRegion
+    ? `, region=${normalizedRegion.width}×${normalizedRegion.height}@${normalizedRegion.x},${normalizedRegion.y}`
+    : '';
 
-  console.log(`  📹 视频信息: ${srcW}×${srcH} @ ${fps}fps, ${duration.toFixed(1)}s, ${totalFrames} frames, audio=${hasAudio}${rangeDesc}`);
+  console.log(`  📹 视频信息: ${srcW}×${srcH} @ ${fps}fps, ${duration.toFixed(1)}s, ${totalFrames} frames, audio=${hasAudio}${rangeDesc}${regionDesc}`);
 
   // 2. 临时文件：提取的原始音频
   const tmpDir = path.join(os.tmpdir(), 'greenscreen-studio');
@@ -236,7 +241,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
         if (bytesBuffered === frameSize) {
           if (encoderClosed || pipelineError) return;
           try {
-            const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup });
+            const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup, region });
             if (!firstFrameMetadata) firstFrameMetadata = processedFrame.metadata;
             mergeCleanupSummary(cleanupTotals, processedFrame.metadata.cleanup);
             appendWarnings(warnings, processedFrame.metadata.warnings);
@@ -259,7 +264,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
       // 处理最后一帧（如果有残余数据）
       if (!encoderClosed && !pipelineError && bytesBuffered > 0 && bytesBuffered >= frameSize) {
         try {
-          const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup });
+          const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup, region });
           if (!firstFrameMetadata) firstFrameMetadata = processedFrame.metadata;
           mergeCleanupSummary(cleanupTotals, processedFrame.metadata.cleanup);
           appendWarnings(warnings, processedFrame.metadata.warnings);
@@ -302,11 +307,81 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   });
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeRegionForSize(region, width, height) {
+  if (!region || width <= 0 || height <= 0) return null;
+
+  const rawX = Number(region.x);
+  const rawY = Number(region.y);
+  const rawWidth = Number(region.width);
+  const rawHeight = Number(region.height);
+  if (![rawX, rawY, rawWidth, rawHeight].every(Number.isFinite)) return null;
+
+  const x = clamp(Math.floor(rawX), 0, width);
+  const y = clamp(Math.floor(rawY), 0, height);
+  const regionWidth = clamp(Math.ceil(rawWidth), 0, width - x);
+  const regionHeight = clamp(Math.ceil(rawHeight), 0, height - y);
+
+  if (regionWidth <= 0 || regionHeight <= 0) return null;
+  return { x, y, width: regionWidth, height: regionHeight };
+}
+
+function isFullRegion(region, width, height) {
+  return (
+    region &&
+    region.x === 0 &&
+    region.y === 0 &&
+    region.width === width &&
+    region.height === height
+  );
+}
+
+function cropImageDataToRegion(imageData, region) {
+  const normalized = normalizeRegionForSize(region, imageData.width, imageData.height);
+  if (!normalized || isFullRegion(normalized, imageData.width, imageData.height)) return imageData;
+
+  const { x: cropX, y: cropY, width: cropW, height: cropH } = normalized;
+  const cropped = new Uint8ClampedArray(cropW * cropH * 4);
+
+  for (let y = 0; y < cropH; y++) {
+    const srcRow = ((cropY + y) * imageData.width + cropX) * 4;
+    const dstRow = y * cropW * 4;
+    cropped.set(imageData.data.subarray(srcRow, srcRow + cropW * 4), dstRow);
+  }
+
+  return { data: cropped, width: cropW, height: cropH };
+}
+
+function getProcessingRegionMetadata(region, srcW, srcH) {
+  const normalized = normalizeRegionForSize(region, srcW, srcH);
+  if (!normalized || isFullRegion(normalized, srcW, srcH)) {
+    return {
+      applied: false,
+      x: 0,
+      y: 0,
+      width: srcW,
+      height: srcH,
+      sourceWidth: srcW,
+      sourceHeight: srcH,
+    };
+  }
+
+  return {
+    applied: true,
+    ...normalized,
+    sourceWidth: srcW,
+    sourceHeight: srcH,
+  };
+}
+
 /**
- * 处理单帧：提取 → 抠像 → 清理 → 裁剪 → 合成 → 输出 raw RGBA + 元数据
+ * 处理单帧：提取 → 可选处理区域裁剪 → 抠像 → 清理 → 裁剪 → 合成 → 输出 raw RGBA + 元数据
  */
 function processFrameWithMetadata(srcBuffer, srcW, srcH, params, outputSize) {
-  const { keying, layout, mode, cleanup } = params;
+  const { keying, layout, mode, cleanup, region } = params;
   const renderLayout = outputSize
     ? { ...layout, canvasWidth: outputSize.width, canvasHeight: outputSize.height }
     : layout;
@@ -316,9 +391,13 @@ function processFrameWithMetadata(srcBuffer, srcW, srcH, params, outputSize) {
     width: srcW,
     height: srcH,
   };
+  const processingRegion = getProcessingRegionMetadata(region, srcW, srcH);
+  const processingData = processingRegion.applied
+    ? cropImageDataToRegion(srcData, processingRegion)
+    : srcData;
 
   // 抠像
-  let keyed = applyKeying(srcData, keying);
+  let keyed = applyKeying(processingData, keying);
   const cleanupResult = cleanupKeyed(keyed, cleanup || {});
   keyed = cleanupResult.imageData;
 
@@ -355,6 +434,7 @@ function processFrameWithMetadata(srcBuffer, srcW, srcH, params, outputSize) {
   const outImageData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
   const metadata = {
     source: { width: srcW, height: srcH },
+    processingRegion,
     keyed: { width: keyed.width, height: keyed.height },
     crop,
     placement,
@@ -368,8 +448,8 @@ function processFrameWithMetadata(srcBuffer, srcW, srcH, params, outputSize) {
 /**
  * 处理单帧：提取 → 抠像 → 裁剪 → 合成 → 输出 raw RGBA
  */
-function processFrame(srcBuffer, srcW, srcH, keying, layout, mode, cleanup) {
-  return processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup }).buffer;
+function processFrame(srcBuffer, srcW, srcH, keying, layout, mode, cleanup, region) {
+  return processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup, region }).buffer;
 }
 
 /**
@@ -701,6 +781,7 @@ async function renderFrameJobsToAtlas({
           sourceVideoPath: inputPath,
           sourceFrameIndex,
           region,
+          processingRegion: processed.metadata.processingRegion,
           flipH: job.flipH === true,
           crop: processed.metadata.crop,
           placement: processed.metadata.placement,
@@ -920,6 +1001,8 @@ function getLoopPreviewParams(options = {}) {
     keying: params.keying,
     layout: params.layout,
     mode: params.mode || 'greenscreen',
+    region: params.region,
+    cleanup: params.cleanup,
   };
 }
 
@@ -1011,7 +1094,7 @@ async function findLoopEndFrameProcessed(inputPath, startFrame, fps, totalFrames
 }
 
 function createProcessedFrameHasher(previewParams, scaleW, scaleH) {
-  const { keying, layout, mode } = previewParams;
+  const { keying, layout, mode, cleanup, region } = previewParams;
   const { canvasWidth, canvasHeight } = layout;
   const processedCanvas = createCanvas(canvasWidth, canvasHeight);
   const processedCtx = processedCanvas.getContext('2d');
@@ -1019,7 +1102,7 @@ function createProcessedFrameHasher(previewParams, scaleW, scaleH) {
   const hashCtx = hashCanvas.getContext('2d');
 
   return (srcBuffer, srcW, srcH) => {
-    const processedFrame = processFrame(srcBuffer, srcW, srcH, keying, layout, mode);
+    const processedFrame = processFrame(srcBuffer, srcW, srcH, keying, layout, mode, cleanup, region);
     const imageData = processedCtx.createImageData(canvasWidth, canvasHeight);
     imageData.data.set(processedFrame);
     processedCtx.putImageData(imageData, 0, 0);

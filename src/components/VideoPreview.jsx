@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { applyKeying, composeToCanvas, autoCropKeyed } from '../lib/keying.js'
+import { clamp, cropImageData, getRegionOverlayStyle, makeRegionFromPoints } from '../lib/region.js'
 import { t } from '../i18n.js'
 
 const AUTO_LOOP_DETECT_KEY = 'greenscreen-studio-auto-loop-detect'
@@ -12,7 +13,20 @@ const AUTO_LOOP_DETECT_KEY = 'greenscreen-studio-auto-loop-detect'
  *   2. 已上传未处理 → 时间轴选帧 + 实时抠像预览（滑块拖动即时生效）
  *   3. 处理完成 → <video> 播放器
  */
-export default function VideoPreview({ videoFile, videoInfo, keyingParams, layoutParams, previewMode = 'keying', resultJobId, range, onRangeChange }) {
+export default function VideoPreview({
+  videoFile,
+  videoInfo,
+  keyingParams,
+  layoutParams,
+  previewMode = 'keying',
+  resultJobId,
+  range,
+  onRangeChange,
+  region,
+  regionSelectionMode = false,
+  onRegionChange,
+  onRegionSelectionComplete,
+}) {
   const [frameTime, setFrameTime] = useState(0)        // 当前选中的时间点（秒）
   const [frameImageData, setFrameImageData] = useState(null)  // 当前帧的 ImageData
   const [loading, setLoading] = useState(false)
@@ -24,6 +38,8 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const [autoLoopDetect, setAutoLoopDetect] = useState(() => loadStoredBoolean(AUTO_LOOP_DETECT_KEY, false))
   const [loadedVideoJobId, setLoadedVideoJobId] = useState(null)
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
+  const [canvasDisplaySize, setCanvasDisplaySize] = useState(null)
+  const [regionDraft, setRegionDraft] = useState(null)
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -32,6 +48,7 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const timelineTrackRef = useRef(null)
   const seekRef = useRef(false)  // 防止 seek 事件重入
   const scrubbingRef = useRef(false)
+  const regionDragRef = useRef(null)
   const rangeRef = useRef(range)
   const detectRequestRef = useRef(0)
   const lastAutoDetectKeyRef = useRef('')
@@ -45,11 +62,23 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   const startPct = duration > 0 ? clamp((startFrame / fps / duration) * 100, 0, 100) : 0
   const endPct = duration > 0 ? clamp((endFrame / fps / duration) * 100, 0, 100) : 0
   const currentPct = duration > 0 ? clamp((frameTime / duration) * 100, 0, 100) : 0
+  const processingFrameImageData = useMemo(
+    () => cropImageData(frameImageData, region),
+    [frameImageData, region]
+  )
+  const canSelectRegion = Boolean(
+    videoInfo &&
+    frameImageData &&
+    previewMode === 'keying' &&
+    regionSelectionMode &&
+    !resultJobId
+  )
   const loopDetectionParams = useMemo(() => ({
     keying: keyingParams,
     layout: layoutParams,
     mode: 'greenscreen',
-  }), [keyingParams, layoutParams])
+    ...(region ? { region } : {}),
+  }), [keyingParams, layoutParams, region])
   const loopDetectionSignature = useMemo(
     () => JSON.stringify(loopDetectionParams),
     [loopDetectionParams]
@@ -62,6 +91,13 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
   useEffect(() => {
     saveStoredBoolean(AUTO_LOOP_DETECT_KEY, autoLoopDetect)
   }, [autoLoopDetect])
+
+  useEffect(() => {
+    if (!regionSelectionMode) {
+      regionDragRef.current = null
+      setRegionDraft(null)
+    }
+  }, [regionSelectionMode])
 
   // ===== 监听预览容器尺寸变化，用于计算 canvas 的 contain 尺寸 =====
   useEffect(() => {
@@ -321,6 +357,10 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
 
   useEffect(() => () => stopLoopPreview(), [stopLoopPreview])
 
+  useEffect(() => {
+    if (regionSelectionMode) stopLoopPreview()
+  }, [regionSelectionMode, stopLoopPreview])
+
   useEffect(() => () => {
     if (autoDetectTimerRef.current) {
       clearTimeout(autoDetectTimerRef.current)
@@ -333,11 +373,11 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
 
   // ===== 实时抠像预览（参数变化时重新渲染）=====
   useEffect(() => {
-    if (!frameImageData) return
+    if (!processingFrameImageData) return
     const canvas = canvasRef.current
     if (!canvas) return
 
-    let keyed = applyKeying(frameImageData, keyingParams)
+    let keyed = applyKeying(processingFrameImageData, keyingParams)
 
     if (previewMode === 'keying') {
       // 抠像预览：棋盘格背景
@@ -358,12 +398,15 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       const ctx = canvas.getContext('2d')
       composeToCanvas(ctx, keyed, layoutParams, tempCanvasRef.current, keyingParams.keyColor)
     }
-  }, [frameImageData, keyingParams, layoutParams, previewMode])
+  }, [processingFrameImageData, keyingParams, layoutParams, previewMode])
 
   // ===== Canvas CSS 尺寸自适应：按当前画布实际比例 contain，避免竖屏/合成画布被裁切 =====
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || containerSize.w <= 0 || containerSize.h <= 0 || canvas.width <= 0 || canvas.height <= 0) return
+    if (!processingFrameImageData || !canvas || containerSize.w <= 0 || containerSize.h <= 0 || canvas.width <= 0 || canvas.height <= 0) {
+      setCanvasDisplaySize(null)
+      return
+    }
 
     const aspect = canvas.width / canvas.height
     const containerAspect = containerSize.w / containerSize.h
@@ -378,9 +421,14 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       cssW = containerSize.h * aspect
     }
 
-    canvas.style.width = `${Math.max(1, Math.round(cssW))}px`
-    canvas.style.height = `${Math.max(1, Math.round(cssH))}px`
-  }, [containerSize, frameImageData, keyingParams, layoutParams, previewMode])
+    const nextSize = {
+      w: Math.max(1, Math.round(cssW)),
+      h: Math.max(1, Math.round(cssH)),
+    }
+    setCanvasDisplaySize(prev => (
+      prev?.w === nextSize.w && prev?.h === nextSize.h ? prev : nextSize
+    ))
+  }, [containerSize, processingFrameImageData, keyingParams, layoutParams, previewMode])
 
   // ===== 帧选择器拖拽：按可见轨道计算，保证 0% / 100% 能落到两端 =====
   const timeFromTimelineX = useCallback((clientX) => {
@@ -443,6 +491,76 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
     }
   }, [duration, nudgeTimeline])
 
+  const getCanvasPoint = useCallback((event) => {
+    const canvas = canvasRef.current
+    if (!canvas) return null
+
+    const rect = canvas.getBoundingClientRect()
+    if (!rect.width || !rect.height) return null
+
+    return {
+      x: clamp((event.clientX - rect.left) * (canvas.width / rect.width), 0, canvas.width),
+      y: clamp((event.clientY - rect.top) * (canvas.height / rect.height), 0, canvas.height),
+    }
+  }, [])
+
+  const handleRegionPointerDown = useCallback((event) => {
+    if (!canSelectRegion) return
+
+    const point = getCanvasPoint(event)
+    if (!point) return
+
+    event.preventDefault()
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    regionDragRef.current = {
+      origin: point,
+      pointerId: event.pointerId,
+    }
+    setRegionDraft({ x: point.x, y: point.y, width: 0, height: 0 })
+  }, [canSelectRegion, getCanvasPoint])
+
+  const handleRegionPointerMove = useCallback((event) => {
+    if (!canSelectRegion || !regionDragRef.current) return
+
+    const point = getCanvasPoint(event)
+    if (!point) return
+
+    event.preventDefault()
+    setRegionDraft(makeRegionFromPoints(regionDragRef.current.origin, point, frameImageData))
+  }, [canSelectRegion, frameImageData, getCanvasPoint])
+
+  const handleRegionPointerUp = useCallback((event) => {
+    if (!canSelectRegion || !regionDragRef.current) return
+
+    const point = getCanvasPoint(event)
+    const drag = regionDragRef.current
+    regionDragRef.current = null
+    if (event.currentTarget.hasPointerCapture?.(drag.pointerId)) {
+      event.currentTarget.releasePointerCapture(drag.pointerId)
+    }
+
+    if (!point) {
+      setRegionDraft(null)
+      return
+    }
+
+    event.preventDefault()
+    const nextRegion = makeRegionFromPoints(drag.origin, point, frameImageData)
+    setRegionDraft(null)
+
+    if (!nextRegion || nextRegion.width < 4 || nextRegion.height < 4) return
+
+    onRegionChange?.(nextRegion)
+    onRegionSelectionComplete?.()
+  }, [canSelectRegion, frameImageData, getCanvasPoint, onRegionChange, onRegionSelectionComplete])
+
+  const handleRegionPointerCancel = useCallback((event) => {
+    if (regionDragRef.current?.pointerId === event.pointerId) {
+      regionDragRef.current = null
+      setRegionDraft(null)
+    }
+  }, [])
+
   // ===== 处理完成后切换到播放器 =====
   if (resultJobId) {
     return (
@@ -486,7 +604,24 @@ export default function VideoPreview({ videoFile, videoInfo, keyingParams, layou
       {/* Canvas 预览 */}
       <div className="frame-canvas-wrapper" ref={wrapperRef}>
         {loading && <div className="frame-loading">{t('preview.loadingFrame')}</div>}
-        <canvas ref={canvasRef} className="preview-canvas" />
+        <div
+          className={`video-preview-stage ${canSelectRegion ? 'selecting' : ''}`}
+          style={canvasDisplaySize
+            ? { width: `${canvasDisplaySize.w}px`, height: `${canvasDisplaySize.h}px` }
+            : undefined}
+          onPointerDown={handleRegionPointerDown}
+          onPointerMove={handleRegionPointerMove}
+          onPointerUp={handleRegionPointerUp}
+          onPointerCancel={handleRegionPointerCancel}
+        >
+          <canvas ref={canvasRef} className="preview-canvas" />
+          {canSelectRegion && regionDraft && (
+            <div
+              className="region-selection-box"
+              style={getRegionOverlayStyle(regionDraft, frameImageData)}
+            />
+          )}
+        </div>
       </div>
 
       {/* 时间轴帧选择器 */}
@@ -682,10 +817,6 @@ function saveStoredBoolean(key, value) {
   try {
     localStorage.setItem(key, String(value))
   } catch (e) { /* ignore */ }
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value))
 }
 
 function drawCheckerboard(ctx, w, h) {

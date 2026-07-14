@@ -50,6 +50,7 @@ export default function VideoPanel({
   onVideoDone,
   range,
   onRangeChange,
+  region,
   droppedFile,
   dockTarget,
 }) {
@@ -183,7 +184,7 @@ export default function VideoPanel({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             jobId: videoInfo.jobId,
-            params: { keying: keyingParams, layout: layoutParams },
+            params: { keying: keyingParams, layout: layoutParams, region },
             spriteParams,
           })
         })
@@ -206,7 +207,7 @@ export default function VideoPanel({
     try {
       const body = {
         jobId: videoInfo.jobId,
-        params: { keying: keyingParams, layout: layoutParams, mode },
+        params: { keying: keyingParams, layout: layoutParams, mode, region },
         format,
       }
       const totalFrames = videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)

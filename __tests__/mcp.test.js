@@ -39,6 +39,12 @@ describe('Greenscreen Studio MCP helpers', () => {
         personHeight: -1,
         autoCrop: false,
       },
+      region: {
+        x: 3.2,
+        y: -4,
+        width: 20.7,
+        height: 10.1,
+      },
       mode: 'transparent',
     })
 
@@ -47,6 +53,7 @@ describe('Greenscreen Studio MCP helpers', () => {
     expect(params.layout.canvasWidth).toBe(16)
     expect(params.layout.personHeight).toBe(940)
     expect(params.layout.autoCrop).toBe(false)
+    expect(params.region).toEqual({ x: 3, y: 0, width: 21, height: 10 })
     expect(params.mode).toBe('transparent')
   })
 
