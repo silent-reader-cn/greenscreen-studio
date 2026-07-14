@@ -353,12 +353,14 @@ describe('selectSpriteFrames', () => {
 describe('stable video auto-crop helpers', () => {
   let mergeAlphaBounds
   let cropKeyedToBounds
+  let createLoopHashLayout
 
   beforeEach(async () => {
     vi.resetModules()
     const mod = await import('../../videoProcessor.cjs')
     mergeAlphaBounds = mod.mergeAlphaBounds
     cropKeyedToBounds = mod.cropKeyedToBounds
+    createLoopHashLayout = mod.createLoopHashLayout
   })
 
   it('merges per-frame alpha bounds into one union box', () => {
@@ -428,5 +430,28 @@ describe('stable video auto-crop helpers', () => {
       width: 2,
       height: 2,
     })
+  })
+
+  it('keeps loop-detection hashes foreground-focused when export auto-crop is off', () => {
+    const layout = {
+      canvasWidth: 512,
+      canvasHeight: 512,
+      personWidth: 320,
+      personHeight: 420,
+      autoCrop: false,
+      anchor: 'feet',
+    }
+
+    const hashLayout = createLoopHashLayout(layout)
+
+    expect(hashLayout).toMatchObject({
+      canvasWidth: 512,
+      canvasHeight: 512,
+      personWidth: 320,
+      personHeight: 420,
+      autoCrop: true,
+      anchor: 'feet',
+    })
+    expect(layout.autoCrop).toBe(false)
   })
 })

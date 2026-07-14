@@ -1316,14 +1316,15 @@ async function findLoopEndFrameProcessed(inputPath, startFrame, fps, totalFrames
 
 function createProcessedFrameHasher(previewParams, scaleW, scaleH) {
   const { keying, layout, mode, cleanup, region } = previewParams;
-  const { canvasWidth, canvasHeight } = layout;
+  const hashLayout = createLoopHashLayout(layout);
+  const { canvasWidth, canvasHeight } = hashLayout;
   const processedCanvas = createCanvas(canvasWidth, canvasHeight);
   const processedCtx = processedCanvas.getContext('2d');
   const hashCanvas = createCanvas(scaleW, scaleH);
   const hashCtx = hashCanvas.getContext('2d');
 
   return (srcBuffer, srcW, srcH) => {
-    const processedFrame = processFrame(srcBuffer, srcW, srcH, keying, layout, mode, cleanup, region);
+    const processedFrame = processFrame(srcBuffer, srcW, srcH, keying, hashLayout, mode, cleanup, region);
     const imageData = processedCtx.createImageData(canvasWidth, canvasHeight);
     imageData.data.set(processedFrame);
     processedCtx.putImageData(imageData, 0, 0);
@@ -1332,6 +1333,13 @@ function createProcessedFrameHasher(previewParams, scaleW, scaleH) {
     hashCtx.drawImage(processedCanvas, 0, 0, scaleW, scaleH);
     const hashData = hashCtx.getImageData(0, 0, scaleW, scaleH);
     return dHashRaw(hashData.data, scaleW, scaleH);
+  };
+}
+
+function createLoopHashLayout(layout) {
+  return {
+    ...layout,
+    autoCrop: true,
   };
 }
 
@@ -1800,4 +1808,5 @@ module.exports = {
   selectSpriteFrames,
   mergeAlphaBounds,
   cropKeyedToBounds,
+  createLoopHashLayout,
 };

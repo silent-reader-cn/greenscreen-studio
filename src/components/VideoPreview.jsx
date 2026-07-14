@@ -171,8 +171,9 @@ export default function VideoPreview({
     if (!video || !playbackRef.current.playing) return
 
     const fps = videoInfo?.fps || 30
-    const startFrame = Math.max(0, range?.startFrame ?? 0)
-    const endFrame = Math.max(range?.endFrame ?? startFrame + 1, startFrame + 1)
+    const currentRange = rangeRef.current || {}
+    const startFrame = Math.max(0, currentRange.startFrame ?? 0)
+    const endFrame = Math.max(currentRange.endFrame ?? startFrame + 1, startFrame + 1)
     const startTime = startFrame / fps
     const endTime = Math.min(video.duration || endFrame / fps, endFrame / fps)
 
@@ -185,7 +186,7 @@ export default function VideoPreview({
     }
 
     playbackRef.current.rafId = requestAnimationFrame(renderLoopFrame)
-  }, [captureCurrentFrame, range, videoInfo])
+  }, [captureCurrentFrame, videoInfo])
 
   const toggleLoopPreview = useCallback(async () => {
     if (isLoopPlaying) {
@@ -750,12 +751,14 @@ export default function VideoPreview({
               // 用全局 scores 的 min/max 归一化到 0%-100%
               const mn = scoreRange?.min ?? Math.min(...loopCandidates.map(c => c.score))
               const mx = scoreRange?.max ?? Math.max(...loopCandidates.map(c => c.score))
-              const scoreRangeVal = Math.max(mx - mn, 1)
+              const scoreRangeVal = mx - mn
               return loopCandidates.map((c, i) => {
                 const activeEnd = c.frame === range.endFrame
                 const activeStart = c.frame === range.startFrame
                 const fps = videoInfo?.fps || 30
-                const similarity = Math.round(100 * (mx - c.score) / scoreRangeVal)
+                const similarity = scoreRangeVal <= 0
+                  ? 100
+                  : clamp(Math.round(100 * (mx - c.score) / scoreRangeVal), 0, 100)
                 const totalFrames = videoInfo?.frameCount || Math.round(fps * duration) || range.endFrame
                 const selectEndFrame = () => {
                   stopLoopPreview()
