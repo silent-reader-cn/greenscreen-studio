@@ -185,7 +185,10 @@ export default function VideoPanel({
           body: JSON.stringify({
             jobId: videoInfo.jobId,
             params: { keying: keyingParams, layout: layoutParams, region },
-            spriteParams,
+            spriteParams: {
+              ...spriteParams,
+              range: range ? { startFrame: range.startFrame, endFrame: range.endFrame } : undefined,
+            },
           })
         })
         if (!resp.ok) {

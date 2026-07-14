@@ -349,3 +349,84 @@ describe('selectSpriteFrames', () => {
     expect(selection.range).toEqual({ startFrame: 5, endFrame: 20 })
   })
 })
+
+describe('stable video auto-crop helpers', () => {
+  let mergeAlphaBounds
+  let cropKeyedToBounds
+
+  beforeEach(async () => {
+    vi.resetModules()
+    const mod = await import('../../videoProcessor.cjs')
+    mergeAlphaBounds = mod.mergeAlphaBounds
+    cropKeyedToBounds = mod.cropKeyedToBounds
+  })
+
+  it('merges per-frame alpha bounds into one union box', () => {
+    let union = null
+    union = mergeAlphaBounds(union, { minX: 10, minY: 8, maxX: 20, maxY: 30 })
+    union = mergeAlphaBounds(union, { minX: 4, minY: 12, maxX: 24, maxY: 28 })
+    union = mergeAlphaBounds(union, { minX: 12, minY: 2, maxX: 18, maxY: 36 })
+
+    expect(union).toEqual({ minX: 4, minY: 2, maxX: 24, maxY: 36 })
+  })
+
+  it('crops keyed frame data to a fixed union box', () => {
+    const width = 5
+    const height = 4
+    const data = new Uint8ClampedArray(width * height * 4)
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4
+        data[i] = x
+        data[i + 1] = y
+        data[i + 2] = x + y
+        data[i + 3] = 255
+      }
+    }
+
+    const result = cropKeyedToBounds(
+      { data, width, height },
+      { minX: 1, minY: 1, maxX: 3, maxY: 2 },
+      10,
+      { strategy: 'video_union' }
+    )
+
+    expect(result.imageData.width).toBe(3)
+    expect(result.imageData.height).toBe(2)
+    expect(result.crop).toMatchObject({
+      applied: true,
+      x: 1,
+      y: 1,
+      width: 3,
+      height: 2,
+      sourceWidth: 5,
+      sourceHeight: 4,
+      strategy: 'video_union',
+    })
+
+    const firstPixel = Array.from(result.imageData.data.slice(0, 4))
+    const lastPixelStart = (result.imageData.width * result.imageData.height - 1) * 4
+    const lastPixel = Array.from(result.imageData.data.slice(lastPixelStart, lastPixelStart + 4))
+    expect(firstPixel).toEqual([1, 1, 2, 255])
+    expect(lastPixel).toEqual([3, 2, 5, 255])
+  })
+
+  it('keeps the original keyed frame when the union scan found no foreground', () => {
+    const imageData = {
+      data: new Uint8ClampedArray(2 * 2 * 4),
+      width: 2,
+      height: 2,
+    }
+
+    const result = cropKeyedToBounds(imageData, null, 10, { strategy: 'video_union' })
+
+    expect(result.imageData).toBe(imageData)
+    expect(result.crop).toMatchObject({
+      applied: false,
+      reason: 'no_foreground',
+      strategy: 'video_union',
+      width: 2,
+      height: 2,
+    })
+  })
+})

@@ -55,7 +55,8 @@ console.log(`  🎬 ffmpeg: ${FFMPEG}`);
 console.log(`  🎬 ffprobe: ${FFPROBE}`);
 
 // 动态加载共享算法
-let applyKeying, composeToCanvas, autoCropKeyedWithBounds, cleanupKeyed, drawKeyedToCanvas;
+let applyKeying, composeToCanvas, autoCropKeyedWithBounds, cleanupKeyed, drawKeyedToCanvas, findAlphaBounds;
+const AUTO_CROP_ALPHA_THRESHOLD = 10;
 
 async function loadAlgorithms() {
   if (!applyKeying) {
@@ -65,6 +66,7 @@ async function loadAlgorithms() {
     autoCropKeyedWithBounds = mod.autoCropKeyedWithBounds;
     cleanupKeyed = mod.cleanupKeyed;
     drawKeyedToCanvas = mod.drawKeyedToCanvas;
+    findAlphaBounds = mod.findAlphaBounds;
   }
 }
 
@@ -128,12 +130,13 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   const { width: srcW, height: srcH, fps, duration, hasAudio } = info;
   const totalFrames = info.frameCount || Math.round(fps * duration);
 
-  // 计算帧范围
-  const startFrame = range?.startFrame ?? 0;
-  const endFrame = range?.endFrame ?? totalFrames;
+  // 计算帧范围。range 为 end-exclusive；未指定时处理全视频。
+  const normalizedRange = normalizeFrameRange(range, totalFrames);
+  const { startFrame, endFrame } = normalizedRange;
   const processFrameCount = endFrame - startFrame;
   const startTime = startFrame / fps;
   const rangeDuration = processFrameCount / fps;
+  const frameSize = srcW * srcH * 4; // RGBA
 
   const hasRange = startFrame > 0 || endFrame < totalFrames;
   const rangeDesc = hasRange ? ` [${startFrame}–${endFrame}帧, ${processFrameCount}帧]` : '';
@@ -144,6 +147,23 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
     : '';
 
   console.log(`  📹 视频信息: ${srcW}×${srcH} @ ${fps}fps, ${duration.toFixed(1)}s, ${totalFrames} frames, audio=${hasAudio}${rangeDesc}${regionDesc}`);
+
+  const usesStableVideoCrop = layout.autoCrop !== false;
+  const progressTotal = usesStableVideoCrop ? processFrameCount * 2 : processFrameCount;
+  const renderProgressOffset = usesStableVideoCrop ? processFrameCount : 0;
+  const stableCrop = usesStableVideoCrop
+    ? await scanStableVideoCrop(inputPath, {
+        startFrame,
+        endFrame,
+        fps,
+        frameBytes: frameSize,
+        srcW,
+        srcH,
+        params: { keying, cleanup, region },
+        onProgress,
+        progressTotal,
+      })
+    : null;
 
   // 2. 临时文件：提取的原始音频
   const tmpDir = path.join(os.tmpdir(), 'greenscreen-studio');
@@ -196,7 +216,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
     // 解析进度（encoder 报告的帧号，以 processFrameCount 为总数）
     const match = text.match(/frame=\s*(\d+)/);
     if (match && onProgress) {
-      onProgress(parseInt(match[1]), processFrameCount);
+      onProgress(renderProgressOffset + parseInt(match[1]), progressTotal);
     }
   });
 
@@ -209,7 +229,6 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   });
 
   // 6. 逐帧处理管道
-  const frameSize = srcW * srcH * 4; // RGBA
   const srcBuffer = Buffer.alloc(frameSize);
 
   let frameIndex = 0;
@@ -241,7 +260,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
         if (bytesBuffered === frameSize) {
           if (encoderClosed || pipelineError) return;
           try {
-            const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup, region });
+            const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup, region, stableCrop });
             if (!firstFrameMetadata) firstFrameMetadata = processedFrame.metadata;
             mergeCleanupSummary(cleanupTotals, processedFrame.metadata.cleanup);
             appendWarnings(warnings, processedFrame.metadata.warnings);
@@ -254,7 +273,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
           frameIndex++;
 
           if (frameIndex % 30 === 0 && onProgress) {
-            onProgress(frameIndex, processFrameCount);
+            onProgress(renderProgressOffset + frameIndex, progressTotal);
           }
         }
       }
@@ -264,7 +283,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
       // 处理最后一帧（如果有残余数据）
       if (!encoderClosed && !pipelineError && bytesBuffered > 0 && bytesBuffered >= frameSize) {
         try {
-          const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup, region });
+          const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup, region, stableCrop });
           if (!firstFrameMetadata) firstFrameMetadata = processedFrame.metadata;
           mergeCleanupSummary(cleanupTotals, processedFrame.metadata.cleanup);
           appendWarnings(warnings, processedFrame.metadata.warnings);
@@ -290,7 +309,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
       if (pipelineError) return reject(pipelineError);
       if (code !== 0) return reject(new Error(`ffmpeg encoder exited with code ${code}`));
 
-      onProgress && onProgress(processFrameCount, processFrameCount);
+      onProgress && onProgress(progressTotal, progressTotal);
       resolve({
         frameCount: frameIndex,
         duration: rangeDuration || duration,
@@ -298,6 +317,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
         outputSize: fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0,
         range: hasRange ? { startFrame, endFrame, processFrameCount } : null,
         sampleFrame: firstFrameMetadata,
+        stableCrop: summarizeStableCrop(stableCrop),
         cleanup: cleanupTotals,
         warnings,
       });
@@ -377,11 +397,185 @@ function getProcessingRegionMetadata(region, srcW, srcH) {
   };
 }
 
+function mergeAlphaBounds(current, next) {
+  if (!next) return current || null;
+  if (!current) return { ...next };
+  return {
+    minX: Math.min(current.minX, next.minX),
+    minY: Math.min(current.minY, next.minY),
+    maxX: Math.max(current.maxX, next.maxX),
+    maxY: Math.max(current.maxY, next.maxY),
+  };
+}
+
+function clampAlphaBounds(bounds, width, height) {
+  if (!bounds || width <= 0 || height <= 0) return null;
+  const minX = clamp(Math.floor(bounds.minX), 0, width - 1);
+  const minY = clamp(Math.floor(bounds.minY), 0, height - 1);
+  const maxX = clamp(Math.ceil(bounds.maxX), 0, width - 1);
+  const maxY = clamp(Math.ceil(bounds.maxY), 0, height - 1);
+  if (maxX < minX || maxY < minY) return null;
+  return { minX, minY, maxX, maxY };
+}
+
+function cropKeyedToBounds(keyedData, bounds, threshold = AUTO_CROP_ALPHA_THRESHOLD, metadata = {}) {
+  const { data, width, height } = keyedData;
+  const normalized = clampAlphaBounds(bounds, width, height);
+
+  if (!normalized) {
+    return {
+      imageData: keyedData,
+      crop: {
+        applied: false,
+        x: 0,
+        y: 0,
+        width,
+        height,
+        sourceWidth: width,
+        sourceHeight: height,
+        alphaThreshold: threshold,
+        reason: 'no_foreground',
+        ...metadata,
+      },
+    };
+  }
+
+  const { minX, minY, maxX, maxY } = normalized;
+  const cropW = maxX - minX + 1;
+  const cropH = maxY - minY + 1;
+  const cropped = new Uint8ClampedArray(cropW * cropH * 4);
+
+  for (let y = 0; y < cropH; y++) {
+    const srcRow = ((minY + y) * width + minX) * 4;
+    const dstRow = y * cropW * 4;
+    cropped.set(data.subarray(srcRow, srcRow + cropW * 4), dstRow);
+  }
+
+  return {
+    imageData: { data: cropped, width: cropW, height: cropH },
+    crop: {
+      applied: cropW !== width || cropH !== height,
+      x: minX,
+      y: minY,
+      width: cropW,
+      height: cropH,
+      sourceWidth: width,
+      sourceHeight: height,
+      alphaThreshold: threshold,
+      ...metadata,
+    },
+  };
+}
+
+function boundsToCropBox(bounds) {
+  if (!bounds) return null;
+  return {
+    x: bounds.minX,
+    y: bounds.minY,
+    width: bounds.maxX - bounds.minX + 1,
+    height: bounds.maxY - bounds.minY + 1,
+  };
+}
+
+function summarizeStableCrop(stableCrop) {
+  if (!stableCrop) return null;
+  return {
+    strategy: stableCrop.strategy,
+    bounds: boundsToCropBox(stableCrop.bounds),
+    alphaThreshold: stableCrop.alphaThreshold,
+    scan: stableCrop.scan,
+  };
+}
+
+function getFrameAlphaBounds(srcBuffer, srcW, srcH, params) {
+  const { keying, cleanup, region } = params;
+  const srcData = {
+    data: new Uint8ClampedArray(srcBuffer),
+    width: srcW,
+    height: srcH,
+  };
+  const processingRegion = getProcessingRegionMetadata(region, srcW, srcH);
+  const processingData = processingRegion.applied
+    ? cropImageDataToRegion(srcData, processingRegion)
+    : srcData;
+  let keyed = applyKeying(processingData, keying);
+  keyed = cleanupKeyed(keyed, cleanup || {}).imageData;
+
+  return {
+    bounds: findAlphaBounds(keyed, AUTO_CROP_ALPHA_THRESHOLD),
+    processingRegion,
+  };
+}
+
+async function scanStableVideoCrop(inputPath, {
+  startFrame,
+  endFrame,
+  fps,
+  frameBytes,
+  srcW,
+  srcH,
+  params,
+  onProgress,
+  progressTotal,
+}) {
+  const frameCount = endFrame - startFrame;
+  if (frameCount <= 0) {
+    throw new Error('Frame range must contain at least one frame');
+  }
+
+  console.log(`  🔎 自动裁剪扫描: ${startFrame}–${endFrame}帧 (${frameCount}帧)`);
+
+  let unionBounds = null;
+  let scannedFrameCount = 0;
+  let foregroundFrameCount = 0;
+  let scanRegion = null;
+
+  await scanRawFrames(inputPath, startFrame, fps, frameCount, frameBytes, (frameBuf) => {
+    const { bounds, processingRegion } = getFrameAlphaBounds(frameBuf, srcW, srcH, params);
+    if (!scanRegion) scanRegion = processingRegion;
+    if (bounds) {
+      unionBounds = mergeAlphaBounds(unionBounds, bounds);
+      foregroundFrameCount++;
+    }
+    scannedFrameCount++;
+    if (onProgress && scannedFrameCount % 30 === 0) {
+      onProgress(scannedFrameCount, progressTotal);
+    }
+  });
+
+  if (!scanRegion) {
+    scanRegion = getProcessingRegionMetadata(params.region, srcW, srcH);
+  }
+
+  const summary = {
+    strategy: 'video_union',
+    bounds: unionBounds,
+    alphaThreshold: AUTO_CROP_ALPHA_THRESHOLD,
+    scan: {
+      startFrame,
+      endFrame,
+      requestedFrameCount: frameCount,
+      scannedFrameCount,
+      foregroundFrameCount,
+      sourceWidth: scanRegion.width,
+      sourceHeight: scanRegion.height,
+      processingRegion: scanRegion,
+    },
+  };
+
+  const box = boundsToCropBox(unionBounds);
+  const boxDesc = box ? `${box.width}×${box.height}@${box.x},${box.y}` : 'no foreground';
+  console.log(`  🔎 自动裁剪并集框: ${boxDesc}, foreground=${foregroundFrameCount}/${scannedFrameCount}`);
+  if (onProgress) onProgress(scannedFrameCount, progressTotal);
+
+  return summary;
+}
+
 /**
  * 处理单帧：提取 → 可选处理区域裁剪 → 抠像 → 清理 → 裁剪 → 合成 → 输出 raw RGBA + 元数据
  */
 function processFrameWithMetadata(srcBuffer, srcW, srcH, params, outputSize) {
-  const { keying, layout, mode, cleanup, region } = params;
+  const { keying, layout, mode, cleanup, region, stableCrop } = params;
   const renderLayout = outputSize
     ? { ...layout, canvasWidth: outputSize.width, canvasHeight: outputSize.height }
     : layout;
@@ -412,7 +606,12 @@ function processFrameWithMetadata(srcBuffer, srcW, srcH, params, outputSize) {
     sourceHeight: keyed.height,
   };
   if (layout.autoCrop !== false) {
-    const cropResult = autoCropKeyedWithBounds(keyed);
+    const cropResult = stableCrop
+      ? cropKeyedToBounds(keyed, stableCrop.bounds, stableCrop.alphaThreshold, {
+          strategy: stableCrop.strategy,
+          scan: stableCrop.scan,
+        })
+      : autoCropKeyedWithBounds(keyed);
     keyed = cropResult.imageData;
     crop = cropResult.crop;
   }
@@ -557,6 +756,7 @@ async function exportSpriteSheet(inputPath, params, spriteParams, onProgress) {
     onProgress,
     totalProgress: maxToProcess,
     sourceInfoByPath: new Map([[inputPath, { ...info, totalFrames, srcW, srcH }]]),
+    stableCropRangesByInput: new Map([[inputPath, selection.range]]),
   });
 
   const buffer = sheetCanvas.toBuffer('image/png');
@@ -717,6 +917,7 @@ async function renderFrameJobsToAtlas({
   onProgress,
   totalProgress,
   sourceInfoByPath = new Map(),
+  stableCropRangesByInput = new Map(),
 }) {
   const frames = new Array(frameJobs.length);
   const warnings = [];
@@ -757,6 +958,26 @@ async function renderFrameJobsToAtlas({
     const scanEnd = selectedFrames[selectedFrames.length - 1];
     const expected = new Set(selectedFrames);
     const seen = new Set();
+    const stableCropRange = stableCropRangesByInput.get(inputPath) || {
+      startFrame: scanStart,
+      endFrame: scanEnd + 1,
+    };
+    const normalizedStableCropRange = normalizeFrameRange(stableCropRange, totalFrames);
+    const stableCrop = params.layout?.autoCrop !== false
+      ? await scanStableVideoCrop(inputPath, {
+          startFrame: normalizedStableCropRange.startFrame,
+          endFrame: normalizedStableCropRange.endFrame,
+          fps: info.fps,
+          frameBytes,
+          srcW,
+          srcH,
+          params: {
+            keying: params.keying,
+            cleanup: params.cleanup,
+            region: params.region,
+          },
+        })
+      : null;
 
     await scanRawFrames(inputPath, scanStart, info.fps, scanEnd - scanStart + 1, frameBytes, (frameBuf, i) => {
       const sourceFrameIndex = scanStart + i;
@@ -764,7 +985,7 @@ async function renderFrameJobsToAtlas({
       if (!frameJobsForSource) return;
 
       seen.add(sourceFrameIndex);
-      const processed = processFrameWithMetadata(frameBuf, srcW, srcH, params, { width: frameWidth, height: frameHeight });
+      const processed = processFrameWithMetadata(frameBuf, srcW, srcH, { ...params, stableCrop }, { width: frameWidth, height: frameHeight });
 
       for (const job of frameJobsForSource) {
         mergeCleanupSummary(cleanupSummary, processed.metadata.cleanup);
@@ -1577,4 +1798,6 @@ module.exports = {
   exportSpriteSheet,
   exportGodotSpriteFrames,
   selectSpriteFrames,
+  mergeAlphaBounds,
+  cropKeyedToBounds,
 };
