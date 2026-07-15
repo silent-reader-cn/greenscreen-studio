@@ -45,6 +45,7 @@ export default function VideoPreview({
   const canvasRef = useRef(null)
   const wrapperRef = useRef(null)
   const tempCanvasRef = useRef(document.createElement('canvas'))
+  const captureCanvasRef = useRef(document.createElement('canvas'))
   const timelineTrackRef = useRef(null)
   const seekRef = useRef(false)  // 防止 seek 事件重入
   const scrubbingRef = useRef(false)
@@ -53,7 +54,7 @@ export default function VideoPreview({
   const detectRequestRef = useRef(0)
   const lastAutoDetectKeyRef = useRef('')
   const autoDetectTimerRef = useRef(null)
-  const playbackRef = useRef({ playing: false, rafId: null })
+  const playbackRef = useRef({ playing: false, rafId: null, loopSeekPending: false })
 
   const duration = videoInfo?.duration || videoRef.current?.duration || 0
   const fps = videoInfo?.fps || 30
@@ -127,9 +128,9 @@ export default function VideoPreview({
 
     const w = video.videoWidth
     const h = video.videoHeight
-    const canvas = document.createElement('canvas')
-    canvas.width = w
-    canvas.height = h
+    const canvas = captureCanvasRef.current
+    if (canvas.width !== w) canvas.width = w
+    if (canvas.height !== h) canvas.height = h
     const ctx = canvas.getContext('2d')
     ctx.drawImage(video, 0, 0)
     const imgData = ctx.getImageData(0, 0, w, h)
@@ -139,6 +140,7 @@ export default function VideoPreview({
 
   const stopLoopPreview = useCallback(() => {
     playbackRef.current.playing = false
+    playbackRef.current.loopSeekPending = false
     if (playbackRef.current.rafId) {
       cancelAnimationFrame(playbackRef.current.rafId)
       playbackRef.current.rafId = null
@@ -159,16 +161,10 @@ export default function VideoPreview({
     video.currentTime = Math.min(time, video.duration || 0)
   }, [])
 
-  const onSeeked = useCallback(() => {
-    const captured = captureCurrentFrame()
-    setLoading(false)
-    seekRef.current = false
-    if (!captured) return
-  }, [captureCurrentFrame])
-
   const renderLoopFrame = useCallback(() => {
     const video = videoRef.current
     if (!video || !playbackRef.current.playing) return
+    if (playbackRef.current.loopSeekPending) return
 
     const fps = videoInfo?.fps || 30
     const currentRange = rangeRef.current || {}
@@ -178,7 +174,10 @@ export default function VideoPreview({
     const endTime = Math.min(video.duration || endFrame / fps, endFrame / fps)
 
     if (video.currentTime >= endTime) {
+      playbackRef.current.loopSeekPending = true
+      playbackRef.current.rafId = null
       video.currentTime = startTime
+      return
     }
 
     if (captureCurrentFrame()) {
@@ -187,6 +186,26 @@ export default function VideoPreview({
 
     playbackRef.current.rafId = requestAnimationFrame(renderLoopFrame)
   }, [captureCurrentFrame, videoInfo])
+
+  const onSeeked = useCallback(() => {
+    const video = videoRef.current
+    const wasLoopSeek = playbackRef.current.loopSeekPending
+    const captured = captureCurrentFrame()
+    setLoading(false)
+    seekRef.current = false
+
+    if (captured && video) {
+      setFrameTime(video.currentTime)
+    }
+
+    if (wasLoopSeek) {
+      playbackRef.current.loopSeekPending = false
+      if (playbackRef.current.playing && video) {
+        video.play().catch(() => {})
+        playbackRef.current.rafId = requestAnimationFrame(renderLoopFrame)
+      }
+    }
+  }, [captureCurrentFrame, renderLoopFrame])
 
   const toggleLoopPreview = useCallback(async () => {
     if (isLoopPlaying) {
