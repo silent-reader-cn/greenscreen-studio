@@ -20,6 +20,7 @@ export default function VideoPreview({
   layoutParams,
   previewMode = 'keying',
   resultJobId,
+  resultFormat,
   range,
   onRangeChange,
   region,
@@ -583,15 +584,24 @@ export default function VideoPreview({
 
   // ===== 处理完成后切换到播放器 =====
   if (resultJobId) {
+    const resultSrc = `/api/video/preview/${resultJobId}`
     return (
       <div className="video-player-section">
-        <video
-          className="result-video"
-          src={`/api/video/download/${resultJobId}`}
-          controls
-          autoPlay
-          loop
-        />
+        {resultFormat === 'gif' ? (
+          <img
+            className="result-video"
+            src={resultSrc}
+            alt={t('preview.processedHint')}
+          />
+        ) : (
+          <video
+            className="result-video"
+            src={resultSrc}
+            controls
+            autoPlay
+            loop
+          />
+        )}
         <p className="player-hint">{t('preview.processedHint')}</p>
       </div>
     )

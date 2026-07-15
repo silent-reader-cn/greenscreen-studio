@@ -4,9 +4,10 @@ import CollapsiblePanel from './CollapsiblePanel.jsx'
 import { formatBytes, t } from '../i18n.js'
 
 const FMT_OPTIONS = [
-  { value: 'webm', labelKey: 'videoPanel.transparentWebm', transparent: true },
-  { value: 'mov', labelKey: 'videoPanel.transparentMov', transparent: true },
-  { value: 'mp4', labelKey: 'videoPanel.greenscreenMp4', transparent: false },
+  { value: 'webm', labelKey: 'videoPanel.transparentWebm', modes: ['transparent'] },
+  { value: 'mov', labelKey: 'videoPanel.transparentMov', modes: ['transparent'] },
+  { value: 'mp4', labelKey: 'videoPanel.greenscreenMp4', modes: ['greenscreen'] },
+  { value: 'gif', labelKey: 'videoPanel.loopGif', modes: ['transparent', 'greenscreen'] },
 ]
 
 const DEFAULT_SPRITE_PARAMS = {
@@ -107,12 +108,14 @@ export default function VideoPanel({
     updateVideoParams({ spriteParams: nextSpriteParams })
   }, [spriteParams, updateVideoParams])
 
-  const availableFormats = FMT_OPTIONS.filter(f => mode === 'transparent' ? f.transparent : !f.transparent)
+  const availableFormats = FMT_OPTIONS.filter(f => f.modes.includes(mode))
 
   useEffect(() => {
-    if (mode === 'transparent' && format === 'mp4') setFormat('webm')
-    if (mode === 'greenscreen' && (format === 'webm' || format === 'mov')) setFormat('mp4')
-  }, [mode, format])
+    const formats = FMT_OPTIONS.filter(f => f.modes.includes(mode))
+    if (!formats.some(f => f.value === format)) {
+      setFormat(formats[0]?.value || 'webm')
+    }
+  }, [mode, format, setFormat])
 
   useEffect(() => {
     return () => {

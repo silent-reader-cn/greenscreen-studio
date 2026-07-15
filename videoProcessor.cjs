@@ -7,6 +7,7 @@
  *   - webm: VP9 + alpha (透明背景)
  *   - mov: ProRes 4444 + alpha (透明背景)
  *   - mp4: H.264 绿幕合成 (不透明)
+ *   - gif: 循环 GIF 动图 (无音频)
  */
 
 const { spawn, spawnSync } = require('child_process');
@@ -137,6 +138,8 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   const startTime = startFrame / fps;
   const rangeDuration = processFrameCount / fps;
   const frameSize = srcW * srcH * 4; // RGBA
+  const outputExt = path.extname(outputPath).toLowerCase();
+  const outputSupportsAudio = outputExt !== '.gif';
 
   const hasRange = startFrame > 0 || endFrame < totalFrames;
   const rangeDesc = hasRange ? ` [${startFrame}–${endFrame}帧, ${processFrameCount}帧]` : '';
@@ -173,7 +176,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
 
   // 3. 提取音频（如果有）— 如果指定了范围，同时裁剪音频
   let audioExtracted = false;
-  if (hasAudio) {
+  if (hasAudio && outputSupportsAudio) {
     const audioArgs = [
       ...(hasRange ? ['-ss', String(startTime)] : []),
       '-i', inputPath,
@@ -657,6 +660,7 @@ function processFrame(srcBuffer, srcW, srcH, keying, layout, mode, cleanup, regi
 function buildEncoderArgs(outputPath, mode, layout, fps, audioPath) {
   const { canvasWidth, canvasHeight } = layout;
   const fpsStr = fps.toString();
+  const ext = path.extname(outputPath).toLowerCase();
   const args = [
     // 输入：raw RGBA from stdin
     '-f', 'rawvideo',
@@ -671,8 +675,14 @@ function buildEncoderArgs(outputPath, mode, layout, fps, audioPath) {
     args.push('-i', audioPath);
   }
 
-  if (mode === 'transparent') {
-    const ext = path.extname(outputPath).toLowerCase();
+  if (ext === '.gif') {
+    args.push(
+      '-an',
+      '-filter_complex',
+      '[0:v]split[s0][s1];[s0]palettegen=reserve_transparent=on[p];[s1][p]paletteuse=dither=bayer:bayer_scale=5:alpha_threshold=128',
+      '-loop', '0',
+    );
+  } else if (mode === 'transparent') {
     if (ext === '.webm') {
       // VP9 + alpha
       args.push(
@@ -694,7 +704,6 @@ function buildEncoderArgs(outputPath, mode, layout, fps, audioPath) {
     }
   } else {
     // 绿幕合成模式（不透明）
-    const ext = path.extname(outputPath).toLowerCase();
     if (ext === '.webm') {
       args.push('-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '32', '-pix_fmt', 'yuv420p');
     } else {
@@ -704,7 +713,6 @@ function buildEncoderArgs(outputPath, mode, layout, fps, audioPath) {
 
   // 音频编码（根据容器格式选择）
   if (audioPath) {
-    const ext = path.extname(outputPath).toLowerCase();
     if (ext === '.webm') {
       // WebM 只支持 Vorbis 或 Opus
       args.push('-c:a', 'libopus', '-b:a', '192k', '-shortest');

@@ -113,6 +113,7 @@ Use this MCP when an agent has local image or video file paths and needs the Gre
    - transparent WebM: \`mode: "transparent"\`, \`format: "webm"\`
    - transparent ProRes: \`mode: "transparent"\`, \`format: "mov"\`
    - green-screen H.264: \`mode: "greenscreen"\`, \`format: "mp4"\`
+   - looping GIF: \`format: "gif"\` with either transparent or green-screen mode
 3. Call \`process_video\`. Long videos can exceed some client timeouts; trim with \`range\` first when testing.
 
 ## Looping clips and sprites
@@ -908,11 +909,11 @@ export function createGreenscreenMcpServer(options = {}) {
 
   server.registerTool('process_video', {
     title: 'Process Video',
-    description: 'Apply Greenscreen Studio frame processing to a local video and write WebM, MOV, or MP4 output.',
+    description: 'Apply Greenscreen Studio frame processing to a local video and write WebM, MOV, MP4, or looping GIF output.',
     inputSchema: {
       inputPath: z.string().describe('Local path to the source video.'),
       outputPath: z.string().optional().describe('Output path. Extension must match format if provided.'),
-      format: z.enum(['webm', 'mov', 'mp4']).optional().describe('Output container. Defaults to webm for transparent mode, mp4 for green-screen mode.'),
+      format: z.enum(['webm', 'mov', 'mp4', 'gif']).optional().describe('Output container. Defaults to webm for transparent mode, mp4 for green-screen mode. GIF exports loop forever and has no audio.'),
       params: processingParamsSchema.optional(),
       range: rangeSchema.optional().describe('Optional frame range [startFrame, endFrame) for trimming or tests.'),
       overwrite: z.boolean().optional().describe('Allow replacing outputPath when it already exists. Defaults to false.'),
@@ -1332,7 +1333,7 @@ function normalizeVideoFormat(format, mode) {
 }
 
 function assertVideoFormatForMode(format, mode) {
-  const allowed = mode === 'transparent' ? ['webm', 'mov'] : ['mp4', 'webm', 'mov'];
+  const allowed = mode === 'transparent' ? ['webm', 'mov', 'gif'] : ['mp4', 'webm', 'mov', 'gif'];
   if (!allowed.includes(format)) {
     throw new Error(`${mode} mode supports ${allowed.join(', ')} output, got ${format}`);
   }
@@ -1357,6 +1358,7 @@ function mimeTypeForOutput(filePath) {
     '.mp4': 'video/mp4',
     '.webm': 'video/webm',
     '.mov': 'video/quicktime',
+    '.gif': 'image/gif',
     '.tres': 'text/plain',
     '.json': 'application/json',
   };

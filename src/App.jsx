@@ -482,6 +482,7 @@ export default function App() {
   const [videoInfo, setVideoInfo] = useState(null)
   const [videoRegion, setVideoRegion] = useState(null)
   const [resultJobId, setResultJobId] = useState(null)
+  const [resultVideoFormat, setResultVideoFormat] = useState(null)
 
   // 全局拖放状态
   const [dragOver, setDragOver] = useState(false)
@@ -656,6 +657,7 @@ export default function App() {
     setRegionSelectionMode(false)
     setRegionDraft(null)
     setResultJobId(null)
+    setResultVideoFormat(null)
     // 新视频上传后重置帧范围为全视频
     if (info) {
       const totalFrames = info.frameCount || Math.round(info.fps * info.duration)
@@ -665,8 +667,9 @@ export default function App() {
     }
   }, [])
 
-  const handleVideoDone = useCallback((jobId) => {
+  const handleVideoDone = useCallback((jobId, format) => {
     setResultJobId(jobId)
+    setResultVideoFormat(format || null)
   }, [])
 
   useEffect(() => {
@@ -832,6 +835,7 @@ export default function App() {
     setMediaMode('video')
     setPreviewMode('keying')
     setResultJobId(null)
+    setResultVideoFormat(null)
     setVideoRegion(null)
     setRegionDraft(null)
     setRegionSelectionMode(true)
@@ -846,6 +850,7 @@ export default function App() {
     setRegionDraft(null)
     setRegionSelectionMode(false)
     setResultJobId(null)
+    setResultVideoFormat(null)
   }, [])
 
   const renderPreview = useCallback(() => {
@@ -1182,6 +1187,7 @@ export default function App() {
                 layoutParams={layoutParams}
                 previewMode={previewMode}
                 resultJobId={resultJobId}
+                resultFormat={resultVideoFormat}
                 range={frameRange}
                 onRangeChange={handleRangeChange}
                 region={videoRegion}

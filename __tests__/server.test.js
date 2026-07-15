@@ -169,6 +169,31 @@ describe('GET /api/video/download/:jobId', () => {
   })
 })
 
+// ===== GET /api/video/preview/:jobId =====
+
+describe('GET /api/video/preview/:jobId', () => {
+  let app
+
+  beforeEach(async () => {
+    vi.resetModules()
+    vi.doMock('../../videoProcessor.cjs', () => ({
+      processVideo: vi.fn(),
+      probeVideo: vi.fn(),
+      exportSpriteSheet: vi.fn(),
+    }))
+
+    const mod = await import('../../server.cjs')
+    app = mod.app
+  })
+
+  it('不存在的 jobId 返回 404', async () => {
+    const res = await request(app)
+      .get('/api/video/preview/bad-job')
+    expect(res.status).toBe(404)
+    expect(res.body).toHaveProperty('error')
+  })
+})
+
 // ===== POST /api/video/find-loop-end =====
 
 describe('POST /api/video/find-loop-end', () => {

@@ -190,7 +190,7 @@ app.post('/api/video/upload', videoUpload.single('video'), async (req, res) => {
  * POST /api/video/process
  * 开始处理视频。body: { jobId, params, format }
  *   params: { keying, layout, mode }
- *   format: 'webm' | 'mov' | 'mp4'
+ *   format: 'webm' | 'mov' | 'mp4' | 'gif'
  * 返回 { taskId } 用于轮询进度
  */
 app.post('/api/video/process', express.json({ limit: '10mb' }), (req, res) => {
@@ -199,7 +199,7 @@ app.post('/api/video/process', express.json({ limit: '10mb' }), (req, res) => {
   if (!job) return res.status(404).json({ error: 'job not found' });
 
   const taskId = `task_${Date.now()}`;
-  const ext = format || (params.mode === 'transparent' ? 'webm' : 'mp4');
+  const ext = String(format || (params.mode === 'transparent' ? 'webm' : 'mp4')).toLowerCase();
   const outputPath = path.join(tmpDir, `output_${taskId}.${ext}`).replace(/\\/g, '/');
 
   // 计算帧范围（用于初始进度显示）
@@ -260,6 +260,21 @@ app.get('/api/video/progress/:taskId', (req, res) => {
     error: job.error,
     result: job.result,
   });
+});
+
+/**
+ * GET /api/video/preview/:jobId
+ * 预览处理完成的视频/动图，不清理临时文件。
+ */
+app.get('/api/video/preview/:jobId', (req, res) => {
+  const job = videoJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'job not found' });
+  if (job.status !== 'done') return res.status(400).json({ error: `job status: ${job.status}` });
+  if (!fs.existsSync(job.outputPath)) return res.status(404).json({ error: 'output file not found' });
+
+  res.setHeader('Content-Type', getVideoMime(job.outputFormat));
+  const stream = fs.createReadStream(job.outputPath);
+  stream.pipe(res);
 });
 
 /**
@@ -385,7 +400,7 @@ app.post('/api/video/export-spritesheet', express.json({ limit: '10mb' }), async
 });
 
 function getVideoMime(ext) {
-  const map = { webm: 'video/webm', mov: 'video/quicktime', mp4: 'video/mp4' };
+  const map = { webm: 'video/webm', mov: 'video/quicktime', mp4: 'video/mp4', gif: 'image/gif' };
   return map[ext] || 'application/octet-stream';
 }
 
