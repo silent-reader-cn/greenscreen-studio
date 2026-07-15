@@ -114,7 +114,7 @@ Use this MCP when an agent has local image or video file paths and needs the Gre
    - transparent ProRes: \`mode: "transparent"\`, \`format: "mov"\`
    - green-screen H.264: \`mode: "greenscreen"\`, \`format: "mp4"\`
    - looping GIF: \`format: "gif"\` with either transparent or green-screen mode
-3. Call \`process_video\`. Long videos can exceed some client timeouts; trim with \`range\` first when testing.
+3. Call \`process_video\`. Video auto-crop scans the requested \`range\` and reuses one stable anchor crop box for every exported frame. Long videos can exceed some client timeouts; trim with \`range\` first when testing.
 
 ## Looping clips and sprites
 

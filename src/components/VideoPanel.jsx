@@ -48,7 +48,6 @@ export default function VideoPanel({
   videoParams,
   onVideoParamsChange,
   onVideoUpload,
-  onVideoDone,
   range,
   onRangeChange,
   region,
@@ -240,7 +239,6 @@ export default function VideoPanel({
             pollTimerRef.current = null
             setProcessing(false)
             setStatus('done')
-            onVideoDone?.(videoInfo.jobId, format)
           } else if (pData.status === 'error') {
             clearInterval(pollTimerRef.current)
             pollTimerRef.current = null

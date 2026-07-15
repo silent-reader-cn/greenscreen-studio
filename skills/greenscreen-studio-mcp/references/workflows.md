@@ -29,6 +29,8 @@ If the background should be a non-default key color, set both `keying.keyColor` 
 2. For quick validation, call `process_video` with a short `range`, such as frames 0 to 30.
 3. For final output, remove `range` or set the approved loop range.
 
+Video auto-crop scans the requested frame range and then reuses one stable anchor crop box for every exported frame, so changing silhouettes do not change the per-frame scaling basis.
+
 Recommended formats:
 
 - `webm`: compact transparent VP9 output.

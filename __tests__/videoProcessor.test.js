@@ -350,9 +350,37 @@ describe('selectSpriteFrames', () => {
   })
 })
 
+describe('buildEncoderArgs', () => {
+  let buildEncoderArgs
+
+  beforeEach(async () => {
+    vi.resetModules()
+    const mod = await import('../../videoProcessor.cjs')
+    buildEncoderArgs = mod.buildEncoderArgs
+  })
+
+  it('encodes GIF exports as looping full-frame animations', () => {
+    const { encoderArgs } = buildEncoderArgs(
+      'out.gif',
+      'transparent',
+      { canvasWidth: 320, canvasHeight: 240 },
+      12,
+      null
+    )
+
+    expect(encoderArgs).toContain('-an')
+    expect(encoderArgs).toContain('-loop')
+    expect(encoderArgs[encoderArgs.indexOf('-loop') + 1]).toBe('0')
+    expect(encoderArgs).toContain('-gifflags')
+    expect(encoderArgs[encoderArgs.indexOf('-gifflags') + 1]).toBe('0')
+    expect(encoderArgs.join(' ')).toContain('paletteuse')
+  })
+})
+
 describe('stable video auto-crop helpers', () => {
   let mergeAlphaBounds
   let cropKeyedToBounds
+  let cropKeyedToStableCrop
   let createLoopHashLayout
 
   beforeEach(async () => {
@@ -360,6 +388,7 @@ describe('stable video auto-crop helpers', () => {
     const mod = await import('../../videoProcessor.cjs')
     mergeAlphaBounds = mod.mergeAlphaBounds
     cropKeyedToBounds = mod.cropKeyedToBounds
+    cropKeyedToStableCrop = mod.cropKeyedToStableCrop
     createLoopHashLayout = mod.createLoopHashLayout
   })
 
@@ -430,6 +459,49 @@ describe('stable video auto-crop helpers', () => {
       width: 2,
       height: 2,
     })
+  })
+
+  it('keeps a stable foot anchor when side extents swap between frames', () => {
+    const makeFrame = ({ footX, sideX }) => {
+      const width = 20
+      const height = 12
+      const data = new Uint8ClampedArray(width * height * 4)
+      const paint = (x, y, rgba = [255, 255, 255, 255]) => {
+        const i = (y * width + x) * 4
+        data[i] = rgba[0]
+        data[i + 1] = rgba[1]
+        data[i + 2] = rgba[2]
+        data[i + 3] = rgba[3]
+      }
+
+      for (let y = 5; y <= 9; y++) paint(footX, y)
+      paint(footX - 1, 9)
+      paint(footX + 1, 9)
+      paint(sideX, 5)
+
+      return { data, width, height }
+    }
+
+    const stableCrop = {
+      strategy: 'video_stable_anchor',
+      frameBox: { width: 17, height: 9, anchorX: 8, anchorY: 6, padding: 2 },
+    }
+
+    const leftEffect = cropKeyedToStableCrop(makeFrame({ footX: 13, sideX: 3 }), stableCrop, 10)
+    const rightEffect = cropKeyedToStableCrop(makeFrame({ footX: 6, sideX: 16 }), stableCrop, 10)
+    const anchorPixel = (result) => {
+      const { data, width } = result.imageData
+      return data[(6 * width + 8) * 4 + 3]
+    }
+
+    expect(leftEffect.imageData.width).toBe(17)
+    expect(leftEffect.imageData.height).toBe(9)
+    expect(rightEffect.imageData.width).toBe(17)
+    expect(rightEffect.imageData.height).toBe(9)
+    expect(leftEffect.crop.anchor.x).toBe(13)
+    expect(rightEffect.crop.anchor.x).toBe(6)
+    expect(anchorPixel(leftEffect)).toBe(255)
+    expect(anchorPixel(rightEffect)).toBe(255)
   })
 
   it('keeps loop-detection hashes foreground-focused when export auto-crop is off', () => {

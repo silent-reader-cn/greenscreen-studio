@@ -667,11 +667,6 @@ export default function App() {
     }
   }, [])
 
-  const handleVideoDone = useCallback((jobId, format) => {
-    setResultJobId(jobId)
-    setResultVideoFormat(format || null)
-  }, [])
-
   useEffect(() => {
     setVideoDockTarget(videoDockRef.current)
   }, [mediaMode])
@@ -1097,7 +1092,6 @@ export default function App() {
                 videoParams={videoParams}
                 onVideoParamsChange={setVideoParams}
                 onVideoUpload={handleVideoUpload}
-                onVideoDone={handleVideoDone}
                 range={frameRange}
                 onRangeChange={handleRangeChange}
                 region={videoRegion}

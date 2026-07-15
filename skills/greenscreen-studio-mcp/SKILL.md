@@ -41,7 +41,7 @@ Read `references/client-config.md` when the user asks how to connect this MCP se
 - Existing output files are protected by default. Pass `overwrite: true` only when the user asked to replace a file or the path is clearly scratch output.
 - Transparent video supports `webm`, `mov`, and looping `gif`; green-screen video supports `mp4`, `webm`, `mov`, and looping `gif`; GIF exports have no audio.
 - Long video calls can exceed client request timeouts. For tests or previews, pass a small `range` such as `{ "startFrame": 0, "endFrame": 30 }`.
-- Video auto-crop uses one stable union crop box scanned over the requested frame range; when no range is provided, it scans the full video.
+- Video auto-crop scans the requested frame range, then uses one stable anchor crop box for every frame; when no range is provided, it scans the full video.
 - Prefer preserving the same `params` across preview, loop detection, final export, and sprite sheet generation so results match.
 - For game sprites, prefer `mode: "transparent"` and set `layout.anchor: "feet"` or `"bottom_center"` when a stable baseline matters. The default anchor remains `"center"` for backward compatibility.
 - For exact clips such as `idle`, `walk_start`, `walk_loop`, and `walk_stop`, pass `spriteParams.frames` or Godot clip `frames` explicitly instead of relying on `sampleEvery`.
