@@ -383,6 +383,123 @@ describe('findLoopEndFrame cache reuse', () => {
   })
 })
 
+describe('scanStableVideoCrop cache reuse', () => {
+  let scanStableVideoCrop
+  let loadAlgorithms
+  let spawnMock
+  let spawnArgs
+
+  beforeEach(async () => {
+    vi.resetModules()
+    spawnArgs = []
+    spawnMock = vi.spyOn(cp, 'spawn').mockImplementation((command, args) => {
+      spawnArgs.push(args)
+
+      const framesIndex = args.indexOf('-frames:v')
+      const frames = framesIndex >= 0 ? Number(args[framesIndex + 1]) : 1
+      const frameBytes = 4
+      const stdoutBuffer = Buffer.alloc(frameBytes * frames, 0)
+
+      return {
+        stdout: {
+          on: vi.fn((event, cb) => {
+            if (event === 'data') cb(stdoutBuffer)
+          }),
+        },
+        stderr: {
+          on: vi.fn(),
+        },
+        on: vi.fn((event, cb) => {
+          if (event === 'close') cb(0)
+        }),
+      }
+    })
+
+    const mod = await import('../../videoProcessor.cjs')
+    scanStableVideoCrop = mod.scanStableVideoCrop
+    loadAlgorithms = mod.loadAlgorithms
+    await loadAlgorithms()
+  })
+
+  afterEach(() => {
+    spawnMock.mockRestore()
+  })
+
+  it('reuses cached alpha bounds when the selected range changes', async () => {
+    const baseOptions = {
+      totalFrames: 8,
+      fps: 1,
+      frameBytes: 4,
+      srcW: 1,
+      srcH: 1,
+      params: {
+        keying: { keyColor: [0, 255, 0], tolerance: 30, spillSuppression: 0, feather: 0 },
+        cleanup: {},
+        region: null,
+      },
+    }
+
+    const first = await scanStableVideoCrop('/fake/crop.mp4', {
+      ...baseOptions,
+      startFrame: 0,
+      endFrame: 4,
+    })
+    const second = await scanStableVideoCrop('/fake/crop.mp4', {
+      ...baseOptions,
+      startFrame: 2,
+      endFrame: 6,
+    })
+
+    expect(first.scan.newlyScannedFrameCount).toBe(4)
+    expect(second.scan.cachedFrameCount).toBe(2)
+    expect(second.scan.newlyScannedFrameCount).toBe(2)
+
+    const frameCounts = spawnArgs
+      .filter(args => args.includes('-frames:v'))
+      .map(args => Number(args[args.indexOf('-frames:v') + 1]))
+
+    expect(frameCounts).toEqual([4, 2])
+  })
+})
+
+describe('getVideoWorkerCount', () => {
+  let getVideoWorkerCount
+  const originalWorkers = process.env.GREENSCREEN_VIDEO_WORKERS
+  const originalDisable = process.env.GREENSCREEN_DISABLE_WORKERS
+
+  beforeEach(async () => {
+    vi.resetModules()
+    delete process.env.GREENSCREEN_VIDEO_WORKERS
+    delete process.env.GREENSCREEN_DISABLE_WORKERS
+    const mod = await import('../../videoProcessor.cjs')
+    getVideoWorkerCount = mod.getVideoWorkerCount
+  })
+
+  afterEach(() => {
+    if (originalWorkers == null) {
+      delete process.env.GREENSCREEN_VIDEO_WORKERS
+    } else {
+      process.env.GREENSCREEN_VIDEO_WORKERS = originalWorkers
+    }
+    if (originalDisable == null) {
+      delete process.env.GREENSCREEN_DISABLE_WORKERS
+    } else {
+      process.env.GREENSCREEN_DISABLE_WORKERS = originalDisable
+    }
+  })
+
+  it('honors explicit worker count overrides and caps them to frame count', () => {
+    process.env.GREENSCREEN_VIDEO_WORKERS = '3'
+    expect(getVideoWorkerCount(10)).toBe(3)
+    expect(getVideoWorkerCount(2)).toBe(2)
+  })
+
+  it('can be disabled through an environment flag', () => {
+    process.env.GREENSCREEN_DISABLE_WORKERS = '1'
+    expect(getVideoWorkerCount(100)).toBe(0)
+  })
+})
+
 describe('selectSpriteFrames', () => {
   let selectSpriteFrames
 

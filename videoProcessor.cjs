@@ -11,6 +11,7 @@
  */
 
 const { spawn, spawnSync } = require('child_process');
+const { Worker, isMainThread, workerData } = require('worker_threads');
 const { createCanvas, Image } = require('canvas');
 const fs = require('fs');
 const path = require('path');
@@ -49,17 +50,22 @@ function resolveFfprobe() {
   return 'ffprobe';
 }
 
+const IS_VIDEO_FRAME_WORKER = !isMainThread && workerData?.role === 'video-frame-worker';
 const FFMPEG = resolveFfmpeg();
 const FFPROBE = resolveFfprobe();
 
-console.log(`  🎬 ffmpeg: ${FFMPEG}`);
-console.log(`  🎬 ffprobe: ${FFPROBE}`);
+if (!IS_VIDEO_FRAME_WORKER) {
+  console.log(`  🎬 ffmpeg: ${FFMPEG}`);
+  console.log(`  🎬 ffprobe: ${FFPROBE}`);
+}
 
 // 动态加载共享算法
 let applyKeying, composeToCanvas, autoCropKeyedWithBounds, cleanupKeyed, drawKeyedToCanvas, findAlphaBounds;
 const AUTO_CROP_ALPHA_THRESHOLD = 10;
 const LOOP_HASH_CACHE_LIMIT = 8;
+const STABLE_CROP_CACHE_LIMIT = 8;
 const loopHashCache = new Map();
+const stableCropCache = new Map();
 
 async function loadAlgorithms() {
   if (!applyKeying) {
@@ -118,6 +124,27 @@ function createLoopHashCacheKey({
   });
 }
 
+function createStableCropCacheKey({
+  inputPath,
+  totalFrames,
+  fps,
+  sourceWidth,
+  sourceHeight,
+  params,
+}) {
+  return stableStringify({
+    inputPath: path.resolve(inputPath),
+    fingerprint: getVideoFingerprint(inputPath),
+    totalFrames: totalFrames || null,
+    fps,
+    sourceWidth: sourceWidth || null,
+    sourceHeight: sourceHeight || null,
+    alphaThreshold: AUTO_CROP_ALPHA_THRESHOLD,
+    params: params || null,
+    mode: 'stable-video-crop',
+  });
+}
+
 function touchLoopHashCacheEntry(cacheKey, entry) {
   loopHashCache.delete(cacheKey);
   loopHashCache.set(cacheKey, entry);
@@ -129,6 +156,20 @@ function trimLoopHashCache() {
     const oldestKey = loopHashCache.keys().next().value;
     if (oldestKey == null) break;
     loopHashCache.delete(oldestKey);
+  }
+}
+
+function touchStableCropCacheEntry(cacheKey, entry) {
+  stableCropCache.delete(cacheKey);
+  stableCropCache.set(cacheKey, entry);
+  entry.lastUsedAt = Date.now();
+}
+
+function trimStableCropCache() {
+  while (stableCropCache.size > STABLE_CROP_CACHE_LIMIT) {
+    const oldestKey = stableCropCache.keys().next().value;
+    if (oldestKey == null) break;
+    stableCropCache.delete(oldestKey);
   }
 }
 
@@ -147,6 +188,24 @@ function getLoopHashCacheEntry(cacheKey, meta = {}) {
   };
   loopHashCache.set(cacheKey, entry);
   trimLoopHashCache();
+  return entry;
+}
+
+function getStableCropCacheEntry(cacheKey, meta = {}) {
+  const existing = stableCropCache.get(cacheKey);
+  if (existing) {
+    touchStableCropCacheEntry(cacheKey, existing);
+    return existing;
+  }
+
+  const entry = {
+    ...meta,
+    frames: new Map(),
+    pending: Promise.resolve(),
+    lastUsedAt: Date.now(),
+  };
+  stableCropCache.set(cacheKey, entry);
+  trimStableCropCache();
   return entry;
 }
 
@@ -188,6 +247,25 @@ function collectMissingFrameRanges(hashes, ranges) {
   return missing;
 }
 
+function collectMissingCachedFrameRanges(frameMap, ranges) {
+  const missing = [];
+  for (const range of ranges) {
+    let segmentStart = null;
+    for (let frame = range.startFrame; frame < range.endFrame; frame++) {
+      if (!frameMap.has(frame)) {
+        if (segmentStart == null) segmentStart = frame;
+      } else if (segmentStart != null) {
+        missing.push({ startFrame: segmentStart, endFrame: frame });
+        segmentStart = null;
+      }
+    }
+    if (segmentStart != null) {
+      missing.push({ startFrame: segmentStart, endFrame: range.endFrame });
+    }
+  }
+  return missing;
+}
+
 async function ensureLoopHashRanges(entry, ranges, scanRange) {
   const normalizedRanges = normalizeFrameRanges(ranges, entry.totalFrames);
   if (normalizedRanges.length === 0) {
@@ -214,6 +292,200 @@ async function ensureLoopHashRanges(entry, ranges, scanRange) {
   const result = await current;
   entry.lastUsedAt = Date.now();
   return result;
+}
+
+async function ensureStableCropRanges(entry, ranges, scanRange) {
+  const rangeLimit = Math.max(entry.totalFrames || 0, ...ranges.map(range => range.endFrame));
+  const normalizedRanges = normalizeFrameRanges(ranges, rangeLimit);
+  if (normalizedRanges.length === 0) {
+    return { scannedFrameCount: 0, missingRanges: [] };
+  }
+
+  const current = (entry.pending || Promise.resolve())
+    .catch(() => {})
+    .then(async () => {
+      const missingRanges = collectMissingCachedFrameRanges(entry.frames, normalizedRanges);
+      let scannedFrameCount = 0;
+
+      for (const range of missingRanges) {
+        const scanned = await scanRange(range.startFrame, range.endFrame, (frameIndex, frameCrop) => {
+          entry.frames.set(frameIndex, frameCrop);
+        });
+        scannedFrameCount += scanned;
+      }
+
+      return { scannedFrameCount, missingRanges };
+    });
+
+  entry.pending = current.catch(() => {});
+  const result = await current;
+  entry.lastUsedAt = Date.now();
+  return result;
+}
+
+function copyBufferToArrayBuffer(buffer) {
+  return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+}
+
+function getAvailableParallelism() {
+  if (typeof os.availableParallelism === 'function') {
+    return Math.max(1, os.availableParallelism());
+  }
+  return Math.max(1, os.cpus().length || 1);
+}
+
+function getVideoWorkerCount(frameCount) {
+  const override = Number(process.env.GREENSCREEN_VIDEO_WORKERS);
+  if (Number.isInteger(override) && override >= 0) {
+    return Math.min(override, Math.max(0, frameCount));
+  }
+  if (process.env.GREENSCREEN_DISABLE_WORKERS === '1') return 0;
+
+  const cores = getAvailableParallelism();
+  if (cores <= 2 || frameCount < 12) return 0;
+  return Math.max(0, Math.min(cores - 1, 6, frameCount));
+}
+
+class FrameWorkerPool {
+  constructor(workerCount, workerParams) {
+    this.workerCount = workerCount;
+    this.workerParams = workerParams;
+    this.workerPath = path.join(__dirname, 'videoFrameWorker.cjs');
+    this.workers = [];
+    this.idleWorkers = [];
+    this.queue = [];
+    this.jobs = new Map();
+    this.nextJobId = 1;
+    this.closed = false;
+
+    for (let i = 0; i < workerCount; i++) {
+      this.addWorker();
+    }
+  }
+
+  addWorker() {
+    const worker = new Worker(this.workerPath, {
+      workerData: {
+        role: 'video-frame-worker',
+        ...this.workerParams,
+      },
+    });
+    worker.currentJobId = null;
+    worker.on('message', message => this.handleMessage(worker, message));
+    worker.on('error', err => this.handleWorkerFailure(worker, err));
+    worker.on('exit', code => {
+      if (!this.closed && code !== 0) {
+        this.handleWorkerFailure(worker, new Error(`frame worker exited with code ${code}`));
+      }
+      this.removeWorker(worker);
+    });
+    this.workers.push(worker);
+    this.idleWorkers.push(worker);
+  }
+
+  process(frameIndex, frameBuffer, extra = {}) {
+    if (this.closed) {
+      return Promise.reject(new Error('frame worker pool is closed'));
+    }
+
+    const id = this.nextJobId++;
+    const sourceBuffer = frameBuffer instanceof ArrayBuffer
+      ? frameBuffer
+      : copyBufferToArrayBuffer(frameBuffer);
+
+    return new Promise((resolve, reject) => {
+      this.queue.push({ id, frameIndex, sourceBuffer, extra, resolve, reject });
+      this.pump();
+    });
+  }
+
+  pump() {
+    while (!this.closed && this.idleWorkers.length > 0 && this.queue.length > 0) {
+      const worker = this.idleWorkers.pop();
+      const job = this.queue.shift();
+      worker.currentJobId = job.id;
+      this.jobs.set(job.id, job);
+      worker.postMessage({
+        id: job.id,
+        frameIndex: job.frameIndex,
+        srcBuffer: job.sourceBuffer,
+        ...job.extra,
+      }, [job.sourceBuffer]);
+    }
+  }
+
+  handleMessage(worker, message) {
+    const job = this.jobs.get(message.id);
+    if (!job) return;
+
+    this.jobs.delete(message.id);
+    worker.currentJobId = null;
+    if (!this.closed && this.workers.includes(worker)) {
+      this.idleWorkers.push(worker);
+    }
+
+    if (message.error) {
+      const err = new Error(message.error);
+      err.stack = message.stack || err.stack;
+      job.reject(err);
+    } else {
+      const result = {
+        frameIndex: message.frameIndex,
+        metadata: message.metadata,
+      };
+      if (message.outputBuffer) {
+        result.buffer = Buffer.from(message.outputBuffer);
+      }
+      if ('bounds' in message) {
+        result.bounds = message.bounds || null;
+      }
+      if (message.processingRegion) {
+        result.processingRegion = message.processingRegion;
+      }
+      job.resolve(result);
+    }
+
+    this.pump();
+  }
+
+  handleWorkerFailure(worker, err) {
+    const jobId = worker.currentJobId;
+    if (jobId != null && this.jobs.has(jobId)) {
+      const job = this.jobs.get(jobId);
+      this.jobs.delete(jobId);
+      job.reject(err);
+    }
+    this.removeWorker(worker);
+    if (this.workers.length === 0) {
+      while (this.queue.length > 0) {
+        this.queue.shift().reject(err);
+      }
+    } else {
+      this.pump();
+    }
+  }
+
+  removeWorker(worker) {
+    this.workers = this.workers.filter(item => item !== worker);
+    this.idleWorkers = this.idleWorkers.filter(item => item !== worker);
+  }
+
+  destroy() {
+    this.closed = true;
+    const err = new Error('frame worker pool closed');
+    while (this.queue.length > 0) {
+      this.queue.shift().reject(err);
+    }
+    for (const job of this.jobs.values()) {
+      job.reject(err);
+    }
+    for (const worker of this.workers) {
+      worker.terminate();
+    }
+    this.workers = [];
+    this.idleWorkers = [];
+    this.jobs.clear();
+  }
 }
 
 /**
@@ -303,6 +575,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
     ? await scanStableVideoCrop(inputPath, {
         startFrame,
         endFrame,
+        totalFrames,
         fps,
         frameBytes: frameSize,
         srcW,
@@ -312,6 +585,23 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
         progressTotal,
       })
     : null;
+  const frameProcessingParams = { keying, layout, mode, cleanup, region, stableCrop };
+  const workerCount = getVideoWorkerCount(processFrameCount);
+  let frameWorkerPool = null;
+  if (workerCount > 1) {
+    try {
+      frameWorkerPool = new FrameWorkerPool(workerCount, {
+        srcW,
+        srcH,
+        params: frameProcessingParams,
+        outputSize: null,
+      });
+      console.log(`  🧵 逐帧处理启用 ${workerCount} 个 worker`);
+    } catch (err) {
+      console.warn(`  ⚠️ worker 初始化失败，退回串行处理: ${err.message}`);
+      frameWorkerPool = null;
+    }
+  }
 
   // 2. 临时文件：提取的原始音频
   const tmpDir = path.join(os.tmpdir(), 'greenscreen-studio');
@@ -380,16 +670,112 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
   const srcBuffer = Buffer.alloc(frameSize);
 
   let frameIndex = 0;
+  let writtenFrameCount = 0;
   let bytesBuffered = 0;
   let pipelineError = null;
   let encoderClosed = false;
+  let encoderInputEnded = false;
+  let encoderBackpressured = false;
+  let extractorClosed = false;
+  let extractorPaused = false;
+  let pendingWorkerFrames = 0;
+  let nextFrameToWrite = 0;
   let firstFrameMetadata = null;
   const cleanupTotals = createCleanupSummary();
   const warnings = [];
+  const completedWorkerFrames = new Map();
+  const maxInFlightFrames = frameWorkerPool ? Math.max(2, workerCount * 2) : 0;
 
   encoder.on('close', (code) => {
     encoderClosed = true;
   });
+
+  const setPipelineError = (err) => {
+    if (!pipelineError) pipelineError = err;
+  };
+
+  const writeProcessedFrame = (processedFrame) => {
+    if (encoderClosed || encoderInputEnded || pipelineError) return true;
+    if (!firstFrameMetadata) firstFrameMetadata = processedFrame.metadata;
+    mergeCleanupSummary(cleanupTotals, processedFrame.metadata.cleanup);
+    appendWarnings(warnings, processedFrame.metadata.warnings);
+    const canContinue = encoder.stdin.write(processedFrame.buffer);
+    writtenFrameCount++;
+
+    if (writtenFrameCount % 30 === 0 && onProgress) {
+      onProgress(renderProgressOffset + writtenFrameCount, progressTotal);
+    }
+
+    if (!canContinue && !encoderBackpressured) {
+      encoderBackpressured = true;
+      encoder.stdin.once('drain', () => {
+        encoderBackpressured = false;
+        flushCompletedWorkerFrames();
+        resumeExtractorIfNeeded();
+        maybeFinishEncoderInput();
+      });
+    }
+    return canContinue;
+  };
+
+  const flushCompletedWorkerFrames = () => {
+    while (!pipelineError && !encoderBackpressured && completedWorkerFrames.has(nextFrameToWrite)) {
+      const processedFrame = completedWorkerFrames.get(nextFrameToWrite);
+      completedWorkerFrames.delete(nextFrameToWrite);
+      const canContinue = writeProcessedFrame(processedFrame);
+      nextFrameToWrite++;
+      if (!canContinue) break;
+    }
+  };
+
+  const resumeExtractorIfNeeded = () => {
+    if (!extractorPaused || pipelineError || encoderBackpressured) return;
+    if (!frameWorkerPool || pendingWorkerFrames < maxInFlightFrames) {
+      extractorPaused = false;
+      extractor.stdout.resume();
+    }
+  };
+
+  const maybeFinishEncoderInput = () => {
+    if (!extractorClosed || encoderClosed || encoderInputEnded || encoderBackpressured) return;
+    if (!pipelineError && frameWorkerPool && (pendingWorkerFrames > 0 || completedWorkerFrames.size > 0)) return;
+    encoderInputEnded = true;
+    encoder.stdin.end();
+  };
+
+  const scheduleFrame = (sourceFrameIndex) => {
+    if (!frameWorkerPool) {
+      const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, frameProcessingParams);
+      const canContinue = writeProcessedFrame(processedFrame);
+      if (!canContinue && !extractorPaused) {
+        extractorPaused = true;
+        extractor.stdout.pause();
+      }
+      return;
+    }
+
+    const frameCopy = copyBufferToArrayBuffer(srcBuffer);
+    pendingWorkerFrames++;
+    frameWorkerPool.process(sourceFrameIndex, frameCopy)
+      .then((processedFrame) => {
+        pendingWorkerFrames--;
+        completedWorkerFrames.set(processedFrame.frameIndex, processedFrame);
+        flushCompletedWorkerFrames();
+        resumeExtractorIfNeeded();
+        maybeFinishEncoderInput();
+      })
+      .catch((err) => {
+        pendingWorkerFrames--;
+        setPipelineError(err);
+        resumeExtractorIfNeeded();
+        maybeFinishEncoderInput();
+      });
+
+    if ((pendingWorkerFrames >= maxInFlightFrames || encoderBackpressured) && !extractorPaused) {
+      extractorPaused = true;
+      extractor.stdout.pause();
+    }
+  };
 
   return new Promise((resolve, reject) => {
     extractor.stdout.on('data', chunk => {
@@ -408,47 +794,35 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
         if (bytesBuffered === frameSize) {
           if (encoderClosed || pipelineError) return;
           try {
-            const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup, region, stableCrop });
-            if (!firstFrameMetadata) firstFrameMetadata = processedFrame.metadata;
-            mergeCleanupSummary(cleanupTotals, processedFrame.metadata.cleanup);
-            appendWarnings(warnings, processedFrame.metadata.warnings);
-            encoder.stdin.write(processedFrame.buffer);
+            scheduleFrame(frameIndex);
           } catch (e) {
-            if (!pipelineError) pipelineError = e;
+            setPipelineError(e);
             return;
           }
           bytesBuffered = 0;
           frameIndex++;
-
-          if (frameIndex % 30 === 0 && onProgress) {
-            onProgress(renderProgressOffset + frameIndex, progressTotal);
-          }
         }
       }
     });
 
     extractor.on('close', () => {
+      extractorClosed = true;
       // 处理最后一帧（如果有残余数据）
       if (!encoderClosed && !pipelineError && bytesBuffered > 0 && bytesBuffered >= frameSize) {
         try {
-          const processedFrame = processFrameWithMetadata(srcBuffer, srcW, srcH, { keying, layout, mode, cleanup, region, stableCrop });
-          if (!firstFrameMetadata) firstFrameMetadata = processedFrame.metadata;
-          mergeCleanupSummary(cleanupTotals, processedFrame.metadata.cleanup);
-          appendWarnings(warnings, processedFrame.metadata.warnings);
-          encoder.stdin.write(processedFrame.buffer);
+          scheduleFrame(frameIndex);
           frameIndex++;
         } catch (e) {
-          if (!pipelineError) pipelineError = e;
+          setPipelineError(e);
         }
       }
-      if (!encoderClosed) {
-        encoder.stdin.end();
-      }
+      maybeFinishEncoderInput();
     });
 
     extractor.on('error', e => { if (!pipelineError) pipelineError = e; });
 
     encoder.on('close', code => {
+      if (frameWorkerPool) frameWorkerPool.destroy();
       // 清理临时音频
       if (audioExtracted) {
         try { fs.unlinkSync(audioPath); } catch (e) {}
@@ -459,7 +833,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
 
       onProgress && onProgress(progressTotal, progressTotal);
       resolve({
-        frameCount: frameIndex,
+        frameCount: writtenFrameCount,
         duration: rangeDuration || duration,
         fps: fps,
         outputSize: fs.existsSync(outputPath) ? fs.statSync(outputPath).size : 0,
@@ -683,9 +1057,147 @@ function getFrameAlphaBounds(srcBuffer, srcW, srcH, params) {
   };
 }
 
+async function scanStableCropFrameRange(inputPath, {
+  startFrame,
+  endFrame,
+  fps,
+  frameBytes,
+  srcW,
+  srcH,
+  params,
+  workerCount,
+  onFrame,
+}) {
+  const frameCount = endFrame - startFrame;
+  if (frameCount <= 0) return 0;
+
+  if (workerCount <= 1) {
+    return scanRawFrames(inputPath, startFrame, fps, frameCount, frameBytes, (frameBuf, frameIndex) => {
+      onFrame(startFrame + frameIndex, getFrameAlphaBounds(frameBuf, srcW, srcH, params));
+    });
+  }
+
+  const frameWorkerPool = new FrameWorkerPool(workerCount, {
+    srcW,
+    srcH,
+    params,
+    task: 'alpha-bounds',
+  });
+  const maxInFlightFrames = Math.max(2, workerCount * 2);
+
+  try {
+    return await new Promise((resolve, reject) => {
+      const args = [
+        '-ss', String(startFrame / fps),
+        '-i', inputPath,
+        '-f', 'rawvideo',
+        '-pix_fmt', 'rgba',
+        '-frames:v', String(frameCount),
+        '-'
+      ];
+      const proc = spawn(FFMPEG, args);
+      const frameBuf = Buffer.alloc(frameBytes);
+      let bytesBuffered = 0;
+      let frameIndex = 0;
+      let pendingWorkerFrames = 0;
+      let extractorClosed = false;
+      let extractorPaused = false;
+      let settled = false;
+      let pipelineError = null;
+      let err = '';
+
+      const rejectOnce = (error) => {
+        if (settled) return;
+        pipelineError = error;
+        settled = true;
+        if (typeof proc.kill === 'function') {
+          try { proc.kill(); } catch (e) {}
+        }
+        frameWorkerPool.destroy();
+        reject(error);
+      };
+
+      const resumeExtractorIfNeeded = () => {
+        if (!extractorPaused || pipelineError) return;
+        if (pendingWorkerFrames < maxInFlightFrames) {
+          extractorPaused = false;
+          proc.stdout.resume();
+        }
+      };
+
+      const resolveIfDone = () => {
+        if (!extractorClosed || pendingWorkerFrames > 0 || settled) return;
+        settled = true;
+        frameWorkerPool.destroy();
+        resolve(frameIndex);
+      };
+
+      const scheduleFrame = () => {
+        const sourceFrameIndex = startFrame + frameIndex;
+        const frameArrayBuffer = copyBufferToArrayBuffer(frameBuf);
+        pendingWorkerFrames++;
+        frameWorkerPool.process(sourceFrameIndex, frameArrayBuffer)
+          .then((frameCrop) => {
+            pendingWorkerFrames--;
+            onFrame(frameCrop.frameIndex, {
+              bounds: frameCrop.bounds || null,
+              processingRegion: frameCrop.processingRegion,
+            });
+            resumeExtractorIfNeeded();
+            resolveIfDone();
+          })
+          .catch(rejectOnce);
+
+        if (pendingWorkerFrames >= maxInFlightFrames && !extractorPaused) {
+          extractorPaused = true;
+          proc.stdout.pause();
+        }
+      };
+
+      proc.stdout.on('data', chunk => {
+        if (pipelineError) return;
+
+        let offset = 0;
+        while (offset < chunk.length) {
+          const remaining = frameBytes - bytesBuffered;
+          const toCopy = Math.min(remaining, chunk.length - offset);
+          chunk.copy(frameBuf, bytesBuffered, offset, offset + toCopy);
+          bytesBuffered += toCopy;
+          offset += toCopy;
+
+          if (bytesBuffered === frameBytes) {
+            try {
+              scheduleFrame();
+            } catch (e) {
+              rejectOnce(e);
+              return;
+            }
+            bytesBuffered = 0;
+            frameIndex++;
+          }
+        }
+      });
+      proc.stderr.on('data', d => { err += d.toString(); });
+      proc.on('close', code => {
+        extractorClosed = true;
+        if (pipelineError) return;
+        if (code !== 0 && frameIndex === 0) {
+          rejectOnce(new Error(`扫描帧失败: ${err.slice(0, 200)}`));
+          return;
+        }
+        resolveIfDone();
+      });
+      proc.on('error', rejectOnce);
+    });
+  } finally {
+    frameWorkerPool.destroy();
+  }
+}
+
 async function scanStableVideoCrop(inputPath, {
   startFrame,
   endFrame,
+  totalFrames,
   fps,
   frameBytes,
   srcW,
@@ -701,23 +1213,72 @@ async function scanStableVideoCrop(inputPath, {
 
   console.log(`  🔎 自动裁剪扫描: ${startFrame}–${endFrame}帧 (${frameCount}帧)`);
 
+  const cacheKey = createStableCropCacheKey({
+    inputPath,
+    totalFrames,
+    fps,
+    sourceWidth: srcW,
+    sourceHeight: srcH,
+    params,
+  });
+  const entry = getStableCropCacheEntry(cacheKey, {
+    totalFrames: totalFrames || endFrame,
+    srcW,
+    srcH,
+  });
+  entry.totalFrames = Math.max(entry.totalFrames || 0, totalFrames || endFrame);
+
+  const workerCount = getVideoWorkerCount(frameCount);
+  const canUseWorkers = workerCount > 1;
+  let progressFrameCount = 0;
+  for (let frame = startFrame; frame < endFrame; frame++) {
+    if (entry.frames.has(frame)) progressFrameCount++;
+  }
+  if (onProgress && progressFrameCount > 0) {
+    onProgress(Math.min(progressFrameCount, frameCount), progressTotal);
+  }
+
+  const scanResult = await ensureStableCropRanges(entry, [{ startFrame, endFrame }], async (rangeStart, rangeEnd, onFrameCrop) => {
+    const missingFrameCount = rangeEnd - rangeStart;
+    if (missingFrameCount <= 0) return 0;
+    const workerDesc = canUseWorkers ? `, workers=${workerCount}` : '';
+    console.log(`  🔎 自动裁剪补扫: ${rangeStart}–${rangeEnd}帧 (${missingFrameCount}帧${workerDesc})`);
+
+    return scanStableCropFrameRange(inputPath, {
+      startFrame: rangeStart,
+      endFrame: rangeEnd,
+      fps,
+      frameBytes,
+      srcW,
+      srcH,
+      params,
+      workerCount: canUseWorkers ? workerCount : 0,
+      onFrame: (frameIndex, frameCrop) => {
+        onFrameCrop(frameIndex, frameCrop);
+        progressFrameCount++;
+        if (onProgress && progressFrameCount % 30 === 0) {
+          onProgress(Math.min(progressFrameCount, frameCount), progressTotal);
+        }
+      },
+    });
+  });
+
   let unionBounds = null;
   let scannedFrameCount = 0;
   let foregroundFrameCount = 0;
   let scanRegion = null;
 
-  await scanRawFrames(inputPath, startFrame, fps, frameCount, frameBytes, (frameBuf) => {
-    const { bounds, processingRegion } = getFrameAlphaBounds(frameBuf, srcW, srcH, params);
+  for (let frame = startFrame; frame < endFrame; frame++) {
+    const cachedFrame = entry.frames.get(frame);
+    if (!cachedFrame) continue;
+    const { bounds, processingRegion } = cachedFrame;
     if (!scanRegion) scanRegion = processingRegion;
     if (bounds) {
       unionBounds = mergeAlphaBounds(unionBounds, bounds);
       foregroundFrameCount++;
     }
     scannedFrameCount++;
-    if (onProgress && scannedFrameCount % 30 === 0) {
-      onProgress(scannedFrameCount, progressTotal);
-    }
-  });
+  }
 
   if (!scanRegion) {
     scanRegion = getProcessingRegionMetadata(params.region, srcW, srcH);
@@ -733,6 +1294,8 @@ async function scanStableVideoCrop(inputPath, {
       requestedFrameCount: frameCount,
       scannedFrameCount,
       foregroundFrameCount,
+      cachedFrameCount: Math.max(0, scannedFrameCount - scanResult.scannedFrameCount),
+      newlyScannedFrameCount: scanResult.scannedFrameCount,
       sourceWidth: scanRegion.width,
       sourceHeight: scanRegion.height,
       processingRegion: scanRegion,
@@ -741,8 +1304,8 @@ async function scanStableVideoCrop(inputPath, {
 
   const box = boundsToCropBox(unionBounds);
   const boxDesc = box ? `${box.width}×${box.height}@${box.x},${box.y}` : 'no foreground';
-  console.log(`  🔎 自动裁剪并集框: ${boxDesc}, foreground=${foregroundFrameCount}/${scannedFrameCount}`);
-  if (onProgress) onProgress(scannedFrameCount, progressTotal);
+  console.log(`  🔎 自动裁剪并集框: ${boxDesc}, foreground=${foregroundFrameCount}/${scannedFrameCount}, cached=${summary.scan.cachedFrameCount}, scanned=${summary.scan.newlyScannedFrameCount}`);
+  if (onProgress) onProgress(frameCount, progressTotal);
 
   return summary;
 }
@@ -1150,6 +1713,7 @@ async function renderFrameJobsToAtlas({
       ? await scanStableVideoCrop(inputPath, {
           startFrame: normalizedStableCropRange.startFrame,
           endFrame: normalizedStableCropRange.endFrame,
+          totalFrames,
           fps: info.fps,
           frameBytes,
           srcW,
@@ -1935,4 +2499,9 @@ module.exports = {
   mergeAlphaBounds,
   cropKeyedToBounds,
   createLoopHashLayout,
+  scanStableVideoCrop,
+  getVideoWorkerCount,
+  getFrameAlphaBounds,
+  loadAlgorithms,
+  processFrameWithMetadata,
 };

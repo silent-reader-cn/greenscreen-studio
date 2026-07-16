@@ -59,6 +59,7 @@
       "dist/**/*",
       "server.cjs",
       "videoProcessor.cjs",
+      "videoFrameWorker.cjs",
       "mcp/**/*",
       "skills/**/*",
       "src/lib/**/*",
