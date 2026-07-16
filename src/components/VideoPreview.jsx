@@ -1,9 +1,57 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { applyKeying, composeToCanvas, autoCropKeyed } from '../lib/keying.js'
+import { applyKeying, composeToCanvas, cropKeyedToBounds, findAlphaBounds } from '../lib/keying.js'
 import { clamp, cropImageData, getRegionOverlayStyle, makeRegionFromPoints } from '../lib/region.js'
 import { t } from '../i18n.js'
 
 const AUTO_LOOP_DETECT_KEY = 'greenscreen-studio-auto-loop-detect'
+const PREVIEW_STABLE_CROP_ALPHA_THRESHOLD = 10
+const EMPTY_STABLE_PREVIEW_CROP = Object.freeze({ status: 'idle', bounds: null, scan: null })
+
+function mergeAlphaBounds(current, next) {
+  if (!next) return current || null
+  if (!current) return { ...next }
+  return {
+    minX: Math.min(current.minX, next.minX),
+    minY: Math.min(current.minY, next.minY),
+    maxX: Math.max(current.maxX, next.maxX),
+    maxY: Math.max(current.maxY, next.maxY),
+  }
+}
+
+function frameIndexesInRange(startFrame, endFrame) {
+  const start = Math.max(0, Math.round(startFrame))
+  const end = Math.max(start + 1, Math.round(endFrame))
+  const count = end - start
+  return Array.from({ length: count }, (_, i) => start + i)
+}
+
+function waitForVideoEvent(video, eventName) {
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      video.removeEventListener(eventName, onEvent)
+      video.removeEventListener('error', onError)
+    }
+    const onEvent = () => {
+      cleanup()
+      resolve()
+    }
+    const onError = () => {
+      cleanup()
+      reject(new Error('video preview scan failed'))
+    }
+    video.addEventListener(eventName, onEvent, { once: true })
+    video.addEventListener('error', onError, { once: true })
+  })
+}
+
+async function seekVideoToTime(video, time) {
+  const target = Math.max(0, Math.min(time, video.duration || time))
+  if (video.readyState >= 2 && Math.abs(video.currentTime - target) < 0.0005) {
+    return
+  }
+  video.currentTime = target
+  await waitForVideoEvent(video, 'seeked')
+}
 
 /**
  * 视频预览组件
@@ -41,6 +89,7 @@ export default function VideoPreview({
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
   const [canvasDisplaySize, setCanvasDisplaySize] = useState(null)
   const [regionDraft, setRegionDraft] = useState(null)
+  const [stablePreviewCrop, setStablePreviewCrop] = useState(EMPTY_STABLE_PREVIEW_CROP)
 
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -56,6 +105,7 @@ export default function VideoPreview({
   const lastAutoDetectKeyRef = useRef('')
   const autoDetectTimerRef = useRef(null)
   const playbackRef = useRef({ playing: false, rafId: null, loopSeekPending: false })
+  const stableCropRequestRef = useRef(0)
 
   const duration = videoInfo?.duration || videoRef.current?.duration || 0
   const fps = videoInfo?.fps || 30
@@ -85,6 +135,14 @@ export default function VideoPreview({
     () => JSON.stringify(loopDetectionParams),
     [loopDetectionParams]
   )
+  const stablePreviewCropKey = useMemo(() => JSON.stringify({
+    jobId: videoInfo?.jobId || '',
+    startFrame,
+    endFrame,
+    keying: keyingParams,
+    layoutAutoCrop: layoutParams.autoCrop !== false,
+    region,
+  }), [endFrame, keyingParams, layoutParams.autoCrop, region, startFrame, videoInfo?.jobId])
 
   useEffect(() => {
     rangeRef.current = range
@@ -392,6 +450,95 @@ export default function VideoPreview({
     if (resultJobId) stopLoopPreview()
   }, [resultJobId, stopLoopPreview])
 
+  useEffect(() => {
+    stableCropRequestRef.current += 1
+    const requestId = stableCropRequestRef.current
+    setStablePreviewCrop({
+      status: layoutParams.autoCrop === false ? 'disabled' : 'scanning',
+      bounds: null,
+      scan: null,
+    })
+
+    if (!videoFile || !videoInfo || previewMode !== 'composite' || layoutParams.autoCrop === false) {
+      return undefined
+    }
+
+    let cancelled = false
+    let objectUrl = ''
+    const scanVideo = document.createElement('video')
+    scanVideo.muted = true
+    scanVideo.preload = 'auto'
+    const scanCanvas = document.createElement('canvas')
+
+    const scan = async () => {
+      objectUrl = URL.createObjectURL(videoFile)
+      scanVideo.src = objectUrl
+      await waitForVideoEvent(scanVideo, 'loadeddata')
+      if (cancelled || requestId !== stableCropRequestRef.current) return
+
+      const sourceWidth = scanVideo.videoWidth
+      const sourceHeight = scanVideo.videoHeight
+      scanCanvas.width = sourceWidth
+      scanCanvas.height = sourceHeight
+      const ctx = scanCanvas.getContext('2d')
+      const currentFps = videoInfo.fps || 30
+      const totalFrames = videoInfo.frameCount || Math.round(currentFps * (videoInfo.duration || scanVideo.duration || 0))
+      const scanStart = Math.max(0, Math.min(startFrame, Math.max(0, totalFrames - 1)))
+      const scanEnd = Math.max(scanStart + 1, Math.min(endFrame || totalFrames, totalFrames))
+      const frames = frameIndexesInRange(scanStart, scanEnd)
+      let bounds = null
+      let scannedFrameCount = 0
+      let foregroundFrameCount = 0
+
+      for (const frame of frames) {
+        if (cancelled || requestId !== stableCropRequestRef.current) return
+        const time = Math.min(frame / currentFps, scanVideo.duration || frame / currentFps)
+        await seekVideoToTime(scanVideo, time)
+        if (cancelled || requestId !== stableCropRequestRef.current) return
+
+        ctx.drawImage(scanVideo, 0, 0)
+        let imageData = ctx.getImageData(0, 0, sourceWidth, sourceHeight)
+        imageData = cropImageData(imageData, region)
+        const keyed = applyKeying(imageData, keyingParams)
+        const frameBounds = findAlphaBounds(keyed, PREVIEW_STABLE_CROP_ALPHA_THRESHOLD)
+        bounds = mergeAlphaBounds(bounds, frameBounds)
+        scannedFrameCount += 1
+        if (frameBounds) foregroundFrameCount += 1
+      }
+
+      if (!cancelled && requestId === stableCropRequestRef.current) {
+        setStablePreviewCrop({
+          status: 'ready',
+          bounds,
+          scan: {
+            startFrame: scanStart,
+            endFrame: scanEnd,
+            scannedFrameCount,
+            foregroundFrameCount,
+          },
+        })
+      }
+    }
+
+    scan().catch((err) => {
+      if (!cancelled && requestId === stableCropRequestRef.current) {
+        console.error('稳定裁剪预览扫描失败:', err)
+        setStablePreviewCrop({
+          status: 'error',
+          bounds: null,
+          scan: null,
+        })
+      }
+    })
+
+    return () => {
+      cancelled = true
+      scanVideo.removeAttribute('src')
+      scanVideo.load()
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [endFrame, keyingParams, layoutParams.autoCrop, previewMode, region, stablePreviewCropKey, startFrame, videoFile, videoInfo])
+
   // ===== 实时抠像预览（参数变化时重新渲染）=====
   useEffect(() => {
     if (!processingFrameImageData) return
@@ -411,15 +558,21 @@ export default function VideoPreview({
       ctx.putImageData(imgData, 0, 0)
     } else {
       // 合成预览：绿幕画布 + 缩放人物
-      if (layoutParams.autoCrop !== false) {
-        keyed = autoCropKeyed(keyed)
-      }
       canvas.width = layoutParams.canvasWidth
       canvas.height = layoutParams.canvasHeight
       const ctx = canvas.getContext('2d')
+      if (layoutParams.autoCrop !== false) {
+        if (stablePreviewCrop.status !== 'ready') {
+          const bg = layoutParams.bgColor || keyingParams.keyColor || [0, 255, 0]
+          ctx.fillStyle = `rgb(${bg[0]}, ${bg[1]}, ${bg[2]})`
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+          return
+        }
+        keyed = cropKeyedToBounds(keyed, stablePreviewCrop.bounds, PREVIEW_STABLE_CROP_ALPHA_THRESHOLD)
+      }
       composeToCanvas(ctx, keyed, layoutParams, tempCanvasRef.current, keyingParams.keyColor)
     }
-  }, [processingFrameImageData, keyingParams, layoutParams, previewMode])
+  }, [processingFrameImageData, keyingParams, layoutParams, previewMode, stablePreviewCrop])
 
   // ===== Canvas CSS 尺寸自适应：按当前画布实际比例 contain，避免竖屏/合成画布被裁切 =====
   useEffect(() => {

@@ -154,6 +154,10 @@ export function autoCropKeyed(keyedData, threshold = 10) {
   return autoCropKeyedWithBounds(keyedData, threshold).imageData;
 }
 
+export function cropKeyedToBounds(keyedData, bounds, threshold = 10) {
+  return cropKeyedToBoundsWithMetadata(keyedData, bounds, threshold).imageData;
+}
+
 /**
  * 自动裁剪并返回裁剪边界元数据。
  *
@@ -162,8 +166,12 @@ export function autoCropKeyed(keyedData, threshold = 10) {
  * @returns {{imageData:Object,crop:Object}}
  */
 export function autoCropKeyedWithBounds(keyedData, threshold = 10) {
-  const { data, width, height } = keyedData;
   const bounds = findAlphaBounds(keyedData, threshold);
+  return cropKeyedToBoundsWithMetadata(keyedData, bounds, threshold);
+}
+
+export function cropKeyedToBoundsWithMetadata(keyedData, bounds, threshold = 10) {
+  const { data, width, height } = keyedData;
 
   // 全透明或极小区域，不裁剪
   if (!bounds) {
@@ -183,7 +191,10 @@ export function autoCropKeyedWithBounds(keyedData, threshold = 10) {
     };
   }
 
-  const { minX, minY, maxX, maxY } = bounds;
+  const minX = Math.max(0, Math.min(width - 1, Math.floor(bounds.minX)));
+  const minY = Math.max(0, Math.min(height - 1, Math.floor(bounds.minY)));
+  const maxX = Math.max(0, Math.min(width - 1, Math.ceil(bounds.maxX)));
+  const maxY = Math.max(0, Math.min(height - 1, Math.ceil(bounds.maxY)));
   const cropW = maxX - minX + 1;
   const cropH = maxY - minY + 1;
   const cropped = new Uint8ClampedArray(cropW * cropH * 4);

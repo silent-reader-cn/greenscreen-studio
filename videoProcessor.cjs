@@ -58,10 +58,6 @@ console.log(`  🎬 ffprobe: ${FFPROBE}`);
 // 动态加载共享算法
 let applyKeying, composeToCanvas, autoCropKeyedWithBounds, cleanupKeyed, drawKeyedToCanvas, findAlphaBounds;
 const AUTO_CROP_ALPHA_THRESHOLD = 10;
-const STABLE_CROP_PADDING = 2;
-const STABLE_ANCHOR_BOTTOM_BAND_RATIO = 0.08;
-const STABLE_ANCHOR_BOTTOM_BAND_MIN = 4;
-const STABLE_ANCHOR_BOTTOM_BAND_MAX = 24;
 
 async function loadAlgorithms() {
   if (!applyKeying) {
@@ -442,70 +438,6 @@ function findAlphaBoundsForData(keyedData, threshold = AUTO_CROP_ALPHA_THRESHOLD
   return found ? { minX, minY, maxX, maxY } : null;
 }
 
-function mergeStableAnchorExtents(current, bounds, anchor) {
-  if (!bounds || !anchor) return current || null;
-  const next = {
-    left: Math.ceil(Math.max(0, anchor.x - bounds.minX)) + STABLE_CROP_PADDING,
-    right: Math.ceil(Math.max(0, bounds.maxX - anchor.x)) + STABLE_CROP_PADDING,
-    top: Math.ceil(Math.max(0, anchor.y - bounds.minY)) + STABLE_CROP_PADDING,
-    bottom: Math.ceil(Math.max(0, bounds.maxY - anchor.y)) + STABLE_CROP_PADDING,
-  };
-  if (!current) return next;
-  return {
-    left: Math.max(current.left, next.left),
-    right: Math.max(current.right, next.right),
-    top: Math.max(current.top, next.top),
-    bottom: Math.max(current.bottom, next.bottom),
-  };
-}
-
-function stableFrameBoxFromExtents(extents) {
-  if (!extents) return null;
-  return {
-    width: extents.left + extents.right + 1,
-    height: extents.top + extents.bottom + 1,
-    anchorX: extents.left,
-    anchorY: extents.top,
-    padding: STABLE_CROP_PADDING,
-  };
-}
-
-function findStableCropAnchor(keyedData, bounds, threshold = AUTO_CROP_ALPHA_THRESHOLD) {
-  if (!bounds) return null;
-  const { data, width } = keyedData;
-  const boundsWidth = bounds.maxX - bounds.minX + 1;
-  const boundsHeight = bounds.maxY - bounds.minY + 1;
-  const fallbackX = bounds.minX + (boundsWidth - 1) / 2;
-  const bandHeight = clamp(
-    Math.round(boundsHeight * STABLE_ANCHOR_BOTTOM_BAND_RATIO),
-    Math.min(STABLE_ANCHOR_BOTTOM_BAND_MIN, boundsHeight),
-    Math.min(STABLE_ANCHOR_BOTTOM_BAND_MAX, boundsHeight)
-  );
-  const startY = Math.max(bounds.minY, bounds.maxY - bandHeight + 1);
-  let sumX = 0;
-  let count = 0;
-
-  for (let y = startY; y <= bounds.maxY; y++) {
-    for (let x = bounds.minX; x <= bounds.maxX; x++) {
-      if (data[(y * width + x) * 4 + 3] > threshold) {
-        sumX += x;
-        count++;
-      }
-    }
-  }
-
-  return {
-    x: count > 0 ? sumX / count : fallbackX,
-    y: bounds.maxY,
-    method: count > 0 ? 'bottom_band_centroid' : 'bounds_bottom_center',
-    bottomBand: {
-      startY,
-      height: bounds.maxY - startY + 1,
-      foregroundPixels: count,
-    },
-  };
-}
-
 function clampAlphaBounds(bounds, width, height) {
   if (!bounds || width <= 0 || height <= 0) return null;
   const minX = clamp(Math.floor(bounds.minX), 0, width - 1);
@@ -565,63 +497,6 @@ function cropKeyedToBounds(keyedData, bounds, threshold = AUTO_CROP_ALPHA_THRESH
   };
 }
 
-function cropKeyedToStableCrop(keyedData, stableCrop, threshold = AUTO_CROP_ALPHA_THRESHOLD, metadata = {}) {
-  const { data, width, height } = keyedData;
-  const frameBox = stableCrop?.frameBox;
-  if (!frameBox) {
-    return cropKeyedToBounds(keyedData, stableCrop?.bounds, threshold, metadata);
-  }
-
-  const bounds = findAlphaBoundsForData(keyedData, threshold);
-  const cropW = Math.max(1, Math.round(frameBox.width));
-  const cropH = Math.max(1, Math.round(frameBox.height));
-  const anchorX = Math.round(frameBox.anchorX);
-  const anchorY = Math.round(frameBox.anchorY);
-  const cropped = new Uint8ClampedArray(cropW * cropH * 4);
-  const anchor = bounds ? findStableCropAnchor(keyedData, bounds, threshold) : null;
-  const sourceX = anchor ? Math.round(anchor.x) - anchorX : 0;
-  const sourceY = anchor ? Math.round(anchor.y) - anchorY : 0;
-
-  const srcStartX = Math.max(0, sourceX);
-  const srcStartY = Math.max(0, sourceY);
-  const dstStartX = Math.max(0, -sourceX);
-  const dstStartY = Math.max(0, -sourceY);
-  const copyW = Math.min(width - srcStartX, cropW - dstStartX);
-  const copyH = Math.min(height - srcStartY, cropH - dstStartY);
-
-  if (copyW > 0 && copyH > 0) {
-    for (let y = 0; y < copyH; y++) {
-      const srcRow = ((srcStartY + y) * width + srcStartX) * 4;
-      const dstRow = ((dstStartY + y) * cropW + dstStartX) * 4;
-      cropped.set(data.subarray(srcRow, srcRow + copyW * 4), dstRow);
-    }
-  }
-
-  return {
-    imageData: { data: cropped, width: cropW, height: cropH },
-    crop: {
-      applied: true,
-      x: sourceX,
-      y: sourceY,
-      width: cropW,
-      height: cropH,
-      sourceWidth: width,
-      sourceHeight: height,
-      alphaThreshold: threshold,
-      reason: bounds ? undefined : 'no_foreground',
-      bounds: boundsToCropBox(bounds),
-      anchor: anchor ? {
-        x: Math.round(anchor.x),
-        y: Math.round(anchor.y),
-        method: anchor.method,
-        bottomBand: anchor.bottomBand,
-      } : null,
-      stableFrame: frameBox,
-      ...metadata,
-    },
-  };
-}
-
 function boundsToCropBox(bounds) {
   if (!bounds) return null;
   return {
@@ -637,9 +512,6 @@ function summarizeStableCrop(stableCrop) {
   return {
     strategy: stableCrop.strategy,
     bounds: boundsToCropBox(stableCrop.bounds),
-    frameBox: stableCrop.frameBox || null,
-    anchorExtents: stableCrop.anchorExtents || null,
-    anchorStrategy: stableCrop.anchorStrategy || null,
     alphaThreshold: stableCrop.alphaThreshold,
     scan: stableCrop.scan,
   };
@@ -659,11 +531,9 @@ function getFrameAlphaBounds(srcBuffer, srcW, srcH, params) {
   let keyed = applyKeying(processingData, keying);
   keyed = cleanupKeyed(keyed, cleanup || {}).imageData;
   const bounds = findAlphaBoundsForData(keyed, AUTO_CROP_ALPHA_THRESHOLD);
-  const anchor = bounds ? findStableCropAnchor(keyed, bounds, AUTO_CROP_ALPHA_THRESHOLD) : null;
 
   return {
     bounds,
-    anchor,
     processingRegion,
   };
 }
@@ -687,17 +557,15 @@ async function scanStableVideoCrop(inputPath, {
   console.log(`  🔎 自动裁剪扫描: ${startFrame}–${endFrame}帧 (${frameCount}帧)`);
 
   let unionBounds = null;
-  let anchorExtents = null;
   let scannedFrameCount = 0;
   let foregroundFrameCount = 0;
   let scanRegion = null;
 
   await scanRawFrames(inputPath, startFrame, fps, frameCount, frameBytes, (frameBuf) => {
-    const { bounds, anchor, processingRegion } = getFrameAlphaBounds(frameBuf, srcW, srcH, params);
+    const { bounds, processingRegion } = getFrameAlphaBounds(frameBuf, srcW, srcH, params);
     if (!scanRegion) scanRegion = processingRegion;
     if (bounds) {
       unionBounds = mergeAlphaBounds(unionBounds, bounds);
-      anchorExtents = mergeStableAnchorExtents(anchorExtents, bounds, anchor);
       foregroundFrameCount++;
     }
     scannedFrameCount++;
@@ -711,11 +579,8 @@ async function scanStableVideoCrop(inputPath, {
   }
 
   const summary = {
-    strategy: 'video_stable_anchor',
+    strategy: 'video_union',
     bounds: unionBounds,
-    frameBox: stableFrameBoxFromExtents(anchorExtents),
-    anchorExtents,
-    anchorStrategy: 'bottom_foreground_center',
     alphaThreshold: AUTO_CROP_ALPHA_THRESHOLD,
     scan: {
       startFrame,
@@ -731,9 +596,7 @@ async function scanStableVideoCrop(inputPath, {
 
   const box = boundsToCropBox(unionBounds);
   const boxDesc = box ? `${box.width}×${box.height}@${box.x},${box.y}` : 'no foreground';
-  const frameBox = summary.frameBox;
-  const frameBoxDesc = frameBox ? `${frameBox.width}×${frameBox.height}, anchor=${frameBox.anchorX},${frameBox.anchorY}` : 'no stable frame';
-  console.log(`  🔎 自动裁剪并集框: ${boxDesc}, stable=${frameBoxDesc}, foreground=${foregroundFrameCount}/${scannedFrameCount}`);
+  console.log(`  🔎 自动裁剪并集框: ${boxDesc}, foreground=${foregroundFrameCount}/${scannedFrameCount}`);
   if (onProgress) onProgress(scannedFrameCount, progressTotal);
 
   return summary;
@@ -775,7 +638,7 @@ function processFrameWithMetadata(srcBuffer, srcW, srcH, params, outputSize) {
   };
   if (layout.autoCrop !== false) {
     const cropResult = stableCrop
-      ? cropKeyedToStableCrop(keyed, stableCrop, stableCrop.alphaThreshold, {
+      ? cropKeyedToBounds(keyed, stableCrop.bounds, stableCrop.alphaThreshold, {
           strategy: stableCrop.strategy,
           scan: stableCrop.scan,
         })
@@ -1574,7 +1437,7 @@ function scanRawFrames(inputPath, startFrame, fps, frameCount, frameBytes, onFra
 
         if (bytesBuffered === frameBytes) {
           try {
-            onFrame(frameBuf, frameIndex);
+            onFrame(Buffer.from(frameBuf), frameIndex);
           } catch (e) {
             pipelineError = e;
             return;
@@ -1984,6 +1847,5 @@ module.exports = {
   buildEncoderArgs,
   mergeAlphaBounds,
   cropKeyedToBounds,
-  cropKeyedToStableCrop,
   createLoopHashLayout,
 };

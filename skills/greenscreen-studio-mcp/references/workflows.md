@@ -29,7 +29,9 @@ If the background should be a non-default key color, set both `keying.keyColor` 
 2. For quick validation, call `process_video` with a short `range`, such as frames 0 to 30.
 3. For final output, remove `range` or set the approved loop range.
 
-Video auto-crop scans the requested frame range and then reuses one stable anchor crop box for every exported frame, so changing silhouettes do not change the per-frame scaling basis.
+Video auto-crop scans the requested frame range and then reuses one stable union crop box for every exported frame, so changing silhouettes do not change the per-frame scaling basis.
+
+If the source contains multiple characters, UI, or effects outside the desired subject, pass `params.region` with source-pixel `{ "x", "y", "width", "height" }`. The region is applied before keying, cleanup, auto-crop, and layout, matching the WebUI video processing-region selector.
 
 Recommended formats:
 

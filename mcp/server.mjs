@@ -114,7 +114,7 @@ Use this MCP when an agent has local image or video file paths and needs the Gre
    - transparent ProRes: \`mode: "transparent"\`, \`format: "mov"\`
    - green-screen H.264: \`mode: "greenscreen"\`, \`format: "mp4"\`
    - looping GIF: \`format: "gif"\` with either transparent or green-screen mode
-3. Call \`process_video\`. Video auto-crop scans the requested \`range\` and reuses one stable anchor crop box for every exported frame. Long videos can exceed some client timeouts; trim with \`range\` first when testing.
+3. Call \`process_video\`. Video auto-crop scans the requested \`range\` and reuses one stable union crop box for every exported frame. Long videos can exceed some client timeouts; trim with \`range\` first when testing.
 
 ## Looping clips and sprites
 
@@ -214,6 +214,17 @@ const PARAM_SCHEMA_RESOURCE = Object.freeze({
         minComponentPixels: { type: 'integer', minimum: 1 },
         alphaThreshold: { type: 'integer', minimum: 0, maximum: 255 },
       },
+    },
+    region: {
+      type: 'object',
+      properties: {
+        x: { type: 'integer', minimum: 0 },
+        y: { type: 'integer', minimum: 0 },
+        width: { type: 'integer', minimum: 1 },
+        height: { type: 'integer', minimum: 1 },
+      },
+      required: ['x', 'y', 'width', 'height'],
+      description: 'Optional source video/image processing region. Coordinates are in source pixels before keying, cleanup, auto-crop, and layout.',
     },
     mode: { enum: ['greenscreen', 'transparent'] },
   },
@@ -485,7 +496,13 @@ export async function exportImageFile(args, options = {}) {
   const srcCtx = srcCanvas.getContext('2d');
   srcCtx.drawImage(image, 0, 0);
 
-  let keyedData = applyKeying(srcCtx.getImageData(0, 0, image.width, image.height), params.keying);
+  const srcImageData = srcCtx.getImageData(0, 0, image.width, image.height);
+  const processingRegion = getProcessingRegionMetadata(params.region, image.width, image.height);
+  const processingData = processingRegion.applied
+    ? cropImageDataToRegion(srcImageData, processingRegion)
+    : srcImageData;
+
+  let keyedData = applyKeying(processingData, params.keying);
   const cleanupResult = cleanupKeyed(keyedData, params.cleanup);
   keyedData = cleanupResult.imageData;
   let crop = {
@@ -538,6 +555,7 @@ export async function exportImageFile(args, options = {}) {
       width: image.width,
       height: image.height,
     },
+    processingRegion,
     keyed: {
       width: keyedData.width,
       height: keyedData.height,
@@ -850,6 +868,7 @@ export function createGreenscreenMcpServer(options = {}) {
         keying: keyingSchema,
         layout: layoutSchema,
         cleanup: cleanupSchema,
+        region: regionSchema.optional(),
         mode: z.enum(['greenscreen', 'transparent']),
       }),
     },
@@ -1317,6 +1336,68 @@ function normalizeProcessingRegion(region) {
     y: Math.max(0, Math.round(y)),
     width: Math.max(1, Math.round(width)),
     height: Math.max(1, Math.round(height)),
+  };
+}
+
+function normalizeRegionForSize(region, width, height) {
+  if (!region || width <= 0 || height <= 0) return null;
+  const rawX = Number(region.x);
+  const rawY = Number(region.y);
+  const rawWidth = Number(region.width);
+  const rawHeight = Number(region.height);
+  if (![rawX, rawY, rawWidth, rawHeight].every(Number.isFinite) || rawWidth <= 0 || rawHeight <= 0) return null;
+
+  const x = Math.max(0, Math.min(width - 1, Math.floor(rawX)));
+  const y = Math.max(0, Math.min(height - 1, Math.floor(rawY)));
+  const regionWidth = Math.max(0, Math.min(width - x, Math.ceil(rawWidth)));
+  const regionHeight = Math.max(0, Math.min(height - y, Math.ceil(rawHeight)));
+  if (regionWidth <= 0 || regionHeight <= 0) return null;
+  return { x, y, width: regionWidth, height: regionHeight };
+}
+
+function isFullRegion(region, width, height) {
+  return (
+    region &&
+    region.x === 0 &&
+    region.y === 0 &&
+    region.width === width &&
+    region.height === height
+  );
+}
+
+function getProcessingRegionMetadata(region, sourceWidth, sourceHeight) {
+  const normalized = normalizeRegionForSize(region, sourceWidth, sourceHeight);
+  if (!normalized || isFullRegion(normalized, sourceWidth, sourceHeight)) {
+    return {
+      applied: false,
+      x: 0,
+      y: 0,
+      width: sourceWidth,
+      height: sourceHeight,
+      sourceWidth,
+      sourceHeight,
+    };
+  }
+
+  return {
+    applied: true,
+    ...normalized,
+    sourceWidth,
+    sourceHeight,
+  };
+}
+
+function cropImageDataToRegion(imageData, region) {
+  const cropped = new Uint8ClampedArray(region.width * region.height * 4);
+  for (let y = 0; y < region.height; y++) {
+    const srcStart = ((region.y + y) * imageData.width + region.x) * 4;
+    const dstStart = y * region.width * 4;
+    cropped.set(imageData.data.subarray(srcStart, srcStart + region.width * 4), dstStart);
+  }
+  return {
+    data: cropped,
+    width: region.width,
+    height: region.height,
   };
 }
 

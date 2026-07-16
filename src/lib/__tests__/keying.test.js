@@ -5,7 +5,7 @@
  * 算法涉及逐像素计算，使用小尺寸合成图验证边界条件。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { applyKeying, autoCropKeyed, cleanupKeyed, composeToCanvas, computePlacement } from '../keying.js'
+import { applyKeying, autoCropKeyed, cleanupKeyed, composeToCanvas, computePlacement, cropKeyedToBounds } from '../keying.js'
 
 // ===== 测试工具函数 =====
 
@@ -315,6 +315,20 @@ describe('autoCropKeyed', () => {
     expect(resultLow.height).toBe(2)
     expect(resultHigh.width).toBe(4)
     expect(resultHigh.height).toBe(4)
+  })
+
+  it('可按视频并集框裁剪，保留当前帧在固定框内的位置', () => {
+    const img = createSolidImage(8, 4, 100, 100, 100, 0)
+    img.data[(1 * 8 + 5) * 4 + 3] = 255
+    img.data[(2 * 8 + 6) * 4 + 3] = 255
+
+    const result = cropKeyedToBounds(img, { minX: 1, minY: 0, maxX: 6, maxY: 3 }, 10)
+
+    expect(result.width).toBe(6)
+    expect(result.height).toBe(4)
+    expect(result.data[(1 * 6 + 4) * 4 + 3]).toBe(255)
+    expect(result.data[(2 * 6 + 5) * 4 + 3]).toBe(255)
+    expect(result.data[(1 * 6 + 0) * 4 + 3]).toBe(0)
   })
 })
 

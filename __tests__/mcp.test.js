@@ -67,6 +67,12 @@ describe('Greenscreen Studio MCP helpers', () => {
       outputPath,
       params: {
         mode: 'transparent',
+        region: {
+          x: 2,
+          y: 1,
+          width: 4,
+          height: 6,
+        },
         layout: {
           canvasWidth: 12,
           canvasHeight: 12,
@@ -81,6 +87,17 @@ describe('Greenscreen Studio MCP helpers', () => {
     expect(result.mode).toBe('transparent')
     expect(result.width).toBe(12)
     expect(result.height).toBe(12)
+    expect(result.processingRegion).toMatchObject({
+      applied: true,
+      x: 2,
+      y: 1,
+      width: 4,
+      height: 6,
+      sourceWidth: 8,
+      sourceHeight: 8,
+    })
+    expect(result.crop.sourceWidth).toBe(4)
+    expect(result.crop.sourceHeight).toBe(6)
     expect(result.placement.scaledW).toBeGreaterThan(0)
 
     const exported = await inspectImageFile(outputPath, { baseDir: tmpDir })
@@ -131,6 +148,9 @@ describe('Greenscreen Studio MCP protocol surface', () => {
         'greenscreen://docs/workflows',
         'greenscreen://schemas/processing-params',
       ]))
+      const schema = await client.readResource({ uri: 'greenscreen://schemas/processing-params' })
+      const schemaJson = JSON.parse(schema.contents[0].text)
+      expect(schemaJson.properties.region.required).toEqual(['x', 'y', 'width', 'height'])
 
       const prompts = await client.listPrompts()
       expect(prompts.prompts.map(prompt => prompt.name)).toContain('standardize_greenscreen_asset')
@@ -138,6 +158,17 @@ describe('Greenscreen Studio MCP protocol surface', () => {
       const info = await client.callTool({ name: 'get_project_info', arguments: {} })
       expect(info.structuredContent.name).toBe('greenscreen-studio')
       expect(info.structuredContent.tools).toContain('process_video')
+
+      const validated = await client.callTool({
+        name: 'validate_processing_params',
+        arguments: {
+          params: {
+            mode: 'transparent',
+            region: { x: 5, y: 6, width: 7, height: 8 },
+          },
+        },
+      })
+      expect(validated.structuredContent.params.region).toEqual({ x: 5, y: 6, width: 7, height: 8 })
     } finally {
       await client.close()
       await server.close()

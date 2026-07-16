@@ -43,6 +43,12 @@ Arguments:
       "minComponentPixels": 64,
       "alphaThreshold": 10
     },
+    "region": {
+      "x": 120,
+      "y": 80,
+      "width": 640,
+      "height": 560
+    },
     "mode": "greenscreen"
   }
 }
@@ -53,6 +59,8 @@ Arguments:
 `layout.anchor` is `center`, `bottom_center`, or `feet`. `feet` aligns the cropped character's bottom to the centered `personWidth` x `personHeight` safe-area bottom, which is useful for Godot sprites.
 
 Cleanup runs after chroma keying and before auto-crop, so removed markers and components do not affect scaling or placement.
+
+`region` is optional and limits processing to a source pixel rectangle before keying, cleanup, auto-crop, and layout. Use it to match the WebUI video processing-region selector.
 
 ## inspect_image
 
@@ -125,6 +133,12 @@ Arguments:
       "personWidth": 760,
       "personHeight": 940,
       "autoCrop": true
+    },
+    "region": {
+      "x": 120,
+      "y": 80,
+      "width": 640,
+      "height": 560
     }
   },
   "range": {
