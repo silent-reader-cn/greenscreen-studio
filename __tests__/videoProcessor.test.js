@@ -316,6 +316,73 @@ describe('pickLoopCandidates', () => {
   })
 })
 
+describe('findLoopEndFrame cache reuse', () => {
+  let findLoopEndFrame
+  let spawnMock
+  let spawnArgs
+
+  beforeEach(async () => {
+    vi.resetModules()
+    spawnArgs = []
+    spawnMock = vi.spyOn(cp, 'spawn').mockImplementation((command, args) => {
+      spawnArgs.push(args)
+
+      const framesIndex = args.indexOf('-frames:v')
+      const frames = framesIndex >= 0 ? Number(args[framesIndex + 1]) : 1
+      const vfIndex = args.indexOf('-vf')
+      const vfArg = vfIndex >= 0 ? String(args[vfIndex + 1]) : ''
+      const scaleMatch = vfArg.match(/scale=(\d+):(\d+)/)
+      const scaleW = scaleMatch ? Number(scaleMatch[1]) : 3
+      const scaleH = scaleMatch ? Number(scaleMatch[2]) : 2
+      const frameBytes = scaleW * scaleH * 4
+      const stdoutBuffer = Buffer.alloc(frameBytes * frames, 0)
+
+      return {
+        stdout: {
+          on: vi.fn((event, cb) => {
+            if (event === 'data') cb(stdoutBuffer)
+          }),
+        },
+        stderr: {
+          on: vi.fn(),
+        },
+        on: vi.fn((event, cb) => {
+          if (event === 'close') cb(0)
+        }),
+      }
+    })
+
+    const mod = await import('../../videoProcessor.cjs')
+    findLoopEndFrame = mod.findLoopEndFrame
+  })
+
+  afterEach(() => {
+    spawnMock.mockRestore()
+  })
+
+  it('reuses cached hash ranges when the loop start moves forward', async () => {
+    const options = {
+      hashSize: 2,
+      maxSearch: 4,
+      minSpacing: 1,
+      earlyFrameExclusion: 1,
+      maxCandidates: 3,
+    }
+
+    const first = await findLoopEndFrame('/fake/video.mp4', 0, 1, 8, options)
+    const second = await findLoopEndFrame('/fake/video.mp4', 1, 1, 8, options)
+
+    expect(first.candidates.length).toBeGreaterThanOrEqual(1)
+    expect(second.candidates.length).toBeGreaterThanOrEqual(1)
+
+    const frameCounts = spawnArgs
+      .filter(args => args.includes('-frames:v'))
+      .map(args => Number(args[args.indexOf('-frames:v') + 1]))
+
+    expect(frameCounts).toEqual([4, 1, 1])
+  })
+})
+
 describe('selectSpriteFrames', () => {
   let selectSpriteFrames
 

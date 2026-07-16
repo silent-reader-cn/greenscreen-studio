@@ -58,6 +58,8 @@ console.log(`  🎬 ffprobe: ${FFPROBE}`);
 // 动态加载共享算法
 let applyKeying, composeToCanvas, autoCropKeyedWithBounds, cleanupKeyed, drawKeyedToCanvas, findAlphaBounds;
 const AUTO_CROP_ALPHA_THRESHOLD = 10;
+const LOOP_HASH_CACHE_LIMIT = 8;
+const loopHashCache = new Map();
 
 async function loadAlgorithms() {
   if (!applyKeying) {
@@ -69,6 +71,149 @@ async function loadAlgorithms() {
     drawKeyedToCanvas = mod.drawKeyedToCanvas;
     findAlphaBounds = mod.findAlphaBounds;
   }
+}
+
+function stableStringify(value) {
+  return JSON.stringify(value, (_, current) => {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) return current;
+    return Object.keys(current).sort().reduce((acc, key) => {
+      acc[key] = current[key];
+      return acc;
+    }, {});
+  });
+}
+
+function getVideoFingerprint(inputPath) {
+  try {
+    const stat = fs.statSync(inputPath);
+    return {
+      size: stat.size,
+      mtimeMs: Math.round(stat.mtimeMs),
+    };
+  } catch (err) {
+    return null;
+  }
+}
+
+function createLoopHashCacheKey({
+  inputPath,
+  totalFrames,
+  fps,
+  hashSize,
+  sourceWidth,
+  sourceHeight,
+  previewParams,
+  mode,
+}) {
+  return stableStringify({
+    inputPath: path.resolve(inputPath),
+    fingerprint: getVideoFingerprint(inputPath),
+    totalFrames,
+    fps,
+    hashSize,
+    sourceWidth: sourceWidth || null,
+    sourceHeight: sourceHeight || null,
+    mode,
+    previewParams: previewParams || null,
+  });
+}
+
+function touchLoopHashCacheEntry(cacheKey, entry) {
+  loopHashCache.delete(cacheKey);
+  loopHashCache.set(cacheKey, entry);
+  entry.lastUsedAt = Date.now();
+}
+
+function trimLoopHashCache() {
+  while (loopHashCache.size > LOOP_HASH_CACHE_LIMIT) {
+    const oldestKey = loopHashCache.keys().next().value;
+    if (oldestKey == null) break;
+    loopHashCache.delete(oldestKey);
+  }
+}
+
+function getLoopHashCacheEntry(cacheKey, meta = {}) {
+  const existing = loopHashCache.get(cacheKey);
+  if (existing) {
+    touchLoopHashCacheEntry(cacheKey, existing);
+    return existing;
+  }
+
+  const entry = {
+    ...meta,
+    hashes: [],
+    pending: Promise.resolve(),
+    lastUsedAt: Date.now(),
+  };
+  loopHashCache.set(cacheKey, entry);
+  trimLoopHashCache();
+  return entry;
+}
+
+function normalizeFrameRanges(ranges, totalFrames) {
+  return ranges
+    .map(({ startFrame, endFrame }) => ({
+      startFrame: Math.max(0, Math.min(totalFrames, Math.floor(Number(startFrame)))),
+      endFrame: Math.max(0, Math.min(totalFrames, Math.ceil(Number(endFrame)))),
+    }))
+    .filter(range => Number.isInteger(range.startFrame) && Number.isInteger(range.endFrame) && range.endFrame > range.startFrame)
+    .sort((a, b) => a.startFrame - b.startFrame || a.endFrame - b.endFrame)
+    .reduce((merged, range) => {
+      const prev = merged[merged.length - 1];
+      if (prev && range.startFrame <= prev.endFrame) {
+        prev.endFrame = Math.max(prev.endFrame, range.endFrame);
+      } else {
+        merged.push({ ...range });
+      }
+      return merged;
+    }, []);
+}
+
+function collectMissingFrameRanges(hashes, ranges) {
+  const missing = [];
+  for (const range of ranges) {
+    let segmentStart = null;
+    for (let frame = range.startFrame; frame < range.endFrame; frame++) {
+      if (!hashes[frame]) {
+        if (segmentStart == null) segmentStart = frame;
+      } else if (segmentStart != null) {
+        missing.push({ startFrame: segmentStart, endFrame: frame });
+        segmentStart = null;
+      }
+    }
+    if (segmentStart != null) {
+      missing.push({ startFrame: segmentStart, endFrame: range.endFrame });
+    }
+  }
+  return missing;
+}
+
+async function ensureLoopHashRanges(entry, ranges, scanRange) {
+  const normalizedRanges = normalizeFrameRanges(ranges, entry.totalFrames);
+  if (normalizedRanges.length === 0) {
+    return { scannedFrameCount: 0, missingRanges: [] };
+  }
+
+  const current = (entry.pending || Promise.resolve())
+    .catch(() => {})
+    .then(async () => {
+      const missingRanges = collectMissingFrameRanges(entry.hashes, normalizedRanges);
+      let scannedFrameCount = 0;
+
+      for (const range of missingRanges) {
+        const scanned = await scanRange(range.startFrame, range.endFrame, (frameIndex, hash) => {
+          entry.hashes[frameIndex] = hash;
+        });
+        scannedFrameCount += scanned;
+      }
+
+      return { scannedFrameCount, missingRanges };
+    });
+
+  entry.pending = current.catch(() => {});
+  const result = await current;
+  entry.lastUsedAt = Date.now();
+  return result;
 }
 
 /**
@@ -1265,78 +1410,81 @@ function getLoopPreviewParams(options = {}) {
   };
 }
 
-async function findLoopEndFrameProcessed(inputPath, startFrame, fps, totalFrames, options = {}, previewParams) {
-  await loadAlgorithms();
-
+async function findLoopEndFrameWithHashCache({
+  startFrame,
+  totalFrames,
+  options = {},
+  cacheKey,
+  scanRange,
+  hashSize = 16,
+  hashMode = 'raw',
+}) {
   const {
     maxSearch = 300,
-    step = 2,
-    hashSize = 16,
     minSpacing = 12,
     earlyFrameExclusion = minSpacing,
     maxCandidates = 5,
     motionWeight = 0.35,
-    suspiciousCloseThreshold = Math.max(minSpacing * 2, 24)
+    suspiciousCloseThreshold = Math.max(minSpacing * 2, 24),
   } = options;
 
   const endSearch = Math.min(startFrame + maxSearch, totalFrames);
   const scanStartFrame = startFrame + 1;
   const searchCount = Math.max(0, endSearch - scanStartFrame);
-  const scaleW = hashSize + 1;
-  const scaleH = hashSize;
-
   if (searchCount <= 0) {
     return {
       candidates: [],
       scores: [],
-      message: '搜索范围过小'
+      message: '搜索范围过小',
     };
   }
 
-  let srcW = Number(options.sourceWidth || options.width || options.srcW || 0);
-  let srcH = Number(options.sourceHeight || options.height || options.srcH || 0);
-  if (!srcW || !srcH) {
-    const info = await probeVideo(inputPath);
-    srcW = info.width;
-    srcH = info.height;
+  const lastFrameIdx = totalFrames - 1;
+  const entry = getLoopHashCacheEntry(cacheKey, {
+    totalFrames,
+    hashMode,
+    hashSize,
+  });
+  entry.totalFrames = totalFrames;
+
+  await ensureLoopHashRanges(entry, [{ startFrame, endFrame: endSearch }], scanRange);
+  if (lastFrameIdx > startFrame && endSearch <= lastFrameIdx) {
+    try {
+      await ensureLoopHashRanges(entry, [{ startFrame: lastFrameIdx, endFrame: lastFrameIdx + 1 }], scanRange);
+    } catch (err) {
+      // 尾帧补扫失败不影响主结果
+    }
   }
 
-  const frameBytes = srcW * srcH * 4;
-  const hashProcessedFrame = createProcessedFrameHasher(previewParams, scaleW, scaleH);
+  const referenceHash = entry.hashes[startFrame];
+  if (!referenceHash) {
+    throw new Error('Unable to determine reference loop hash');
+  }
 
-  const startBuf = await extractRawFrame(inputPath, startFrame, fps, frameBytes);
-  const referenceHash = hashProcessedFrame(startBuf, srcW, srcH);
   const scores = [{ frame: startFrame, score: 0, displayOnly: true }];
-
   const exclusionFrames = Math.max(minSpacing, earlyFrameExclusion);
-  const scanned = await scanRawFrames(inputPath, scanStartFrame, fps, searchCount, frameBytes, (frameBuf, i) => {
-    const candidateHash = hashProcessedFrame(frameBuf, srcW, srcH);
+
+  for (let frame = scanStartFrame; frame < endSearch; frame++) {
+    const candidateHash = entry.hashes[frame];
+    if (!candidateHash) continue;
     const score = hammingDistance(referenceHash, candidateHash);
-    const frameNum = scanStartFrame + i;
     scores.push({
-      frame: frameNum,
+      frame,
       score,
-      ...(frameNum - startFrame < exclusionFrames ? { displayOnly: true, excluded: 'early_frame_exclusion' } : {}),
+      ...(frame - startFrame < exclusionFrames ? { displayOnly: true, excluded: 'early_frame_exclusion' } : {}),
     });
-  });
+  }
 
   const candidateScores = scores.filter(s => !s.displayOnly);
-  const lastFrameIdx = totalFrames - 1;
-  const lastScanned = scanned > 0 ? scanStartFrame + scanned - 1 : startFrame;
-  const needTail = lastScanned < lastFrameIdx && lastFrameIdx > startFrame;
   const searchEndFrame = totalFrames - 1;
-
-  if (needTail) {
-    try {
-      const tailBuf = await extractRawFrame(inputPath, lastFrameIdx, fps, frameBytes);
-      const tailHash = hashProcessedFrame(tailBuf, srcW, srcH);
+  if (lastFrameIdx > startFrame && endSearch <= lastFrameIdx) {
+    const tailHash = entry.hashes[lastFrameIdx];
+    if (tailHash) {
       const tailScore = hammingDistance(referenceHash, tailHash);
       const tailEntry = { frame: lastFrameIdx, score: tailScore };
       scores.push(tailEntry);
       candidateScores.push(tailEntry);
       console.log(`  📌 补提尾帧 #${lastFrameIdx} score=${tailScore}`);
-    } catch (e) {
-      // 尾帧提取失败不影响主结果
     }
   }
 
@@ -1350,6 +1498,56 @@ async function findLoopEndFrameProcessed(inputPath, startFrame, fps, totalFrames
   });
   const warnings = buildLoopWarnings(candidates, startFrame, { minSpacing, earlyFrameExclusion, suspiciousCloseThreshold });
   return { candidates, scores, warnings };
+}
+
+async function findLoopEndFrameProcessed(inputPath, startFrame, fps, totalFrames, options = {}, previewParams) {
+  await loadAlgorithms();
+
+  const {
+    hashSize = 16,
+  } = options;
+
+  let srcW = Number(options.sourceWidth || options.width || options.srcW || 0);
+  let srcH = Number(options.sourceHeight || options.height || options.srcH || 0);
+  if (!srcW || !srcH) {
+    const info = await probeVideo(inputPath);
+    srcW = info.width;
+    srcH = info.height;
+  }
+
+  const scaleW = hashSize + 1;
+  const scaleH = hashSize;
+  const frameBytes = srcW * srcH * 4;
+  const cacheKey = createLoopHashCacheKey({
+    inputPath,
+    totalFrames,
+    fps,
+    hashSize,
+    sourceWidth: srcW,
+    sourceHeight: srcH,
+    previewParams,
+    mode: 'processed',
+  });
+  const hashProcessedFrame = createProcessedFrameHasher(previewParams, scaleW, scaleH);
+
+  return findLoopEndFrameWithHashCache({
+    inputPath,
+    startFrame,
+    totalFrames,
+    fps,
+    options,
+    cacheKey,
+    hashSize,
+    hashMode: 'processed',
+    scanRange: async (rangeStart, rangeEnd, onHash) => {
+      const frameCount = rangeEnd - rangeStart;
+      if (frameCount <= 0) return 0;
+      console.log(`  🔎 循环检测扫描（抠像预览）: ${rangeStart}–${rangeEnd}帧 (${frameCount}帧)`);
+      return scanRawFrames(inputPath, rangeStart, fps, frameCount, frameBytes, (frameBuf, frameIndex) => {
+        onHash(rangeStart + frameIndex, hashProcessedFrame(frameBuf, srcW, srcH));
+      });
+    },
+  });
 }
 
 function createProcessedFrameHasher(previewParams, scaleW, scaleH) {
@@ -1379,32 +1577,6 @@ function createLoopHashLayout(layout) {
     ...layout,
     autoCrop: true,
   };
-}
-
-function extractRawFrame(inputPath, frameNum, fps, frameBytes) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      '-ss', String(frameNum / fps),
-      '-i', inputPath,
-      '-f', 'rawvideo',
-      '-pix_fmt', 'rgba',
-      '-frames:v', '1',
-      '-'
-    ];
-    const proc = spawn(FFMPEG, args);
-    let buf = Buffer.alloc(0);
-    let err = '';
-
-    proc.stdout.on('data', d => { buf = Buffer.concat([buf, d]); });
-    proc.stderr.on('data', d => { err += d.toString(); });
-    proc.on('close', code => {
-      if (code !== 0 || buf.length < frameBytes) {
-        return reject(new Error(`提取帧失败: ${err.slice(0, 200)}`));
-      }
-      resolve(buf.subarray(0, frameBytes));
-    });
-    proc.on('error', reject);
-  });
 }
 
 function scanRawFrames(inputPath, startFrame, fps, frameCount, frameBytes, onFrame) {
@@ -1459,177 +1631,92 @@ function scanRawFrames(inputPath, startFrame, fps, frameCount, frameBytes, onFra
   });
 }
 
-function findLoopEndFrameRaw(inputPath, startFrame, fps, totalFrames, options = {}) {
-  const {
-    maxSearch = 300,
-    step = 2,
-    hashSize = 16,
-    minSpacing = 12,
-    earlyFrameExclusion = minSpacing,
-    maxCandidates = 5,
-    motionWeight = 0.35,
-    suspiciousCloseThreshold = Math.max(minSpacing * 2, 24)
-  } = options;
-  const endSearch = Math.min(startFrame + maxSearch, totalFrames);
-  // 连续提取：从 startFrame + 1 到 endSearch - 1。
-  // startFrame 以及 step 范围内的近邻帧只用于热度展示，不进入候选池。
-  const scanStartFrame = startFrame + 1;
-  const searchCount = Math.max(0, endSearch - scanStartFrame);
-  const scaleW = hashSize + 1;  // 9 for hashSize=8
-  const scaleH = hashSize;       // 8
-  const frameBytes = scaleW * scaleH * 4; // 288 bytes — 极轻量
-  const exclusionFrames = Math.max(minSpacing, earlyFrameExclusion);
-
-  if (searchCount <= 0) {
-    return Promise.resolve({
-      candidates: [],
-      scores: [],
-      message: '搜索范围过小'
-    });
-  }
-
+function scanScaledRawFrames(inputPath, startFrame, fps, frameCount, scaleW, scaleH, frameBytes, onFrame) {
   return new Promise((resolve, reject) => {
-    // 1. 提取起始帧 — 单 -ss 快速定位（17×16 分辨率的微偏几帧可以接受）
-    const startArgs = [
+    const args = [
       '-ss', String(startFrame / fps),
       '-i', inputPath,
       '-vf', `scale=${scaleW}:${scaleH}`,
       '-vsync', '0',
       '-f', 'rawvideo',
       '-pix_fmt', 'rgba',
-      '-frames:v', '1',
+      '-frames:v', String(frameCount),
       '-'
     ];
-    const startProc = spawn(FFMPEG, startArgs);
-    let startBuf = Buffer.alloc(0);
-    let startErr = '';
+    const proc = spawn(FFMPEG, args);
+    const frameBuf = Buffer.alloc(frameBytes);
+    let bytesBuffered = 0;
+    let frameIndex = 0;
+    let pipelineError = null;
+    let err = '';
 
-    startProc.stdout.on('data', d => { startBuf = Buffer.concat([startBuf, d]); });
-    startProc.stderr.on('data', d => { startErr += d.toString(); });
-    startProc.on('close', code => {
-      if (code !== 0 || startBuf.length < frameBytes) {
-        return reject(new Error(`提取起始帧失败: ${startErr.slice(0, 200)}`));
-      }
+    proc.stdout.on('data', chunk => {
+      if (pipelineError) return;
 
-      const referenceHash = dHashRaw(startBuf, scaleW, scaleH);
+      let offset = 0;
+      while (offset < chunk.length) {
+        const remaining = frameBytes - bytesBuffered;
+        const toCopy = Math.min(remaining, chunk.length - offset);
+        chunk.copy(frameBuf, bytesBuffered, offset, offset + toCopy);
+        bytesBuffered += toCopy;
+        offset += toCopy;
 
-      // 2. 扫描后续帧 — 单 -ss 批量提取
-      const scanArgs = [
-        '-ss', String(scanStartFrame / fps),
-        '-i', inputPath,
-        '-vf', `scale=${scaleW}:${scaleH}`,
-        '-vsync', '0',
-        '-f', 'rawvideo',
-        '-pix_fmt', 'rgba',
-        '-frames:v', String(searchCount),
-        '-'
-      ];
-      const scanProc = spawn(FFMPEG, scanArgs);
-      let scanBuf = Buffer.alloc(0);
-      let scanErr = '';
-
-      scanProc.stdout.on('data', d => { scanBuf = Buffer.concat([scanBuf, d]); });
-      scanProc.stderr.on('data', d => { scanErr += d.toString(); });
-      scanProc.on('close', () => {
-        const scores = [{ frame: startFrame, score: 0, displayOnly: true }];
-
-        const total = Math.min(searchCount, Math.floor(scanBuf.length / frameBytes));
-        for (let i = 0; i < total; i++) {
-          const offset = i * frameBytes;
-          const candidateBuf = scanBuf.subarray(offset, offset + frameBytes);
-          const candidateHash = dHashRaw(candidateBuf, scaleW, scaleH);
-          // 汉明距离: 0~256，越低越相似
-          const score = hammingDistance(referenceHash, candidateHash);
-          // ffmpeg -frames:v 输出连续帧，帧号 = scanStartFrame + i
-          const frameNum = scanStartFrame + i;
-          scores.push({
-            frame: frameNum,
-            score,
-            ...(frameNum - startFrame < exclusionFrames ? { displayOnly: true, excluded: 'early_frame_exclusion' } : {}),
-          });
-        }
-
-        const candidateScores = scores.filter(s => !s.displayOnly);
-
-        // 2b. 如果最后一帧（总帧数-1）没有被 step 覆盖到，单独补提
-        const lastFrameIdx = totalFrames - 1;
-        const lastScanned = scores.length > 0 ? scores[scores.length - 1].frame : startFrame;
-        const needTail = lastScanned < lastFrameIdx && lastFrameIdx > startFrame;
-
-        // 搜索范围结束帧号
-        const searchEndFrame = totalFrames - 1;
-
-        if (!needTail) {
-          // 3. 从 scores 中筛选最佳候选
-          const candidates = pickLoopCandidates(candidateScores, {
-            minSpacing,
-            earlyFrameExclusion,
-            maxCandidates,
-            startFrame,
-            endFrame: searchEndFrame,
-            motionWeight,
-          });
-          const warnings = buildLoopWarnings(candidates, startFrame, { minSpacing, earlyFrameExclusion, suspiciousCloseThreshold });
-          return resolve({ candidates, scores, warnings });
-        }
-
-        // 补提最后一帧
-        const tailTime = lastFrameIdx / fps;
-        const tailArgs = [
-          '-ss', String(tailTime),
-          '-i', inputPath,
-          '-vf', `scale=${scaleW}:${scaleH}`,
-          '-vsync', '0',
-          '-f', 'rawvideo',
-          '-pix_fmt', 'rgba',
-          '-frames:v', '1',
-          '-'
-        ];
-        const tailProc = spawn(FFMPEG, tailArgs);
-        let tailBuf = Buffer.alloc(0);
-        let tailErr = '';
-        tailProc.stdout.on('data', d => { tailBuf = Buffer.concat([tailBuf, d]); });
-        tailProc.stderr.on('data', d => { tailErr += d.toString(); });
-        tailProc.on('close', () => {
-          const finalCandidateScores = [...candidateScores];
-          if (tailBuf.length >= frameBytes) {
-            const tailHash = dHashRaw(tailBuf.subarray(0, frameBytes), scaleW, scaleH);
-            const tailScore = hammingDistance(referenceHash, tailHash);
-            const tailEntry = { frame: lastFrameIdx, score: tailScore };
-            scores.push(tailEntry);
-            finalCandidateScores.push(tailEntry);
-            console.log(`  📌 补提尾帧 #${lastFrameIdx} score=${tailScore}`);
+        if (bytesBuffered === frameBytes) {
+          try {
+            onFrame(Buffer.from(frameBuf), frameIndex);
+          } catch (e) {
+            pipelineError = e;
+            return;
           }
-
-          // 3. 从 scores 中筛选最佳候选
-          const candidates = pickLoopCandidates(finalCandidateScores, {
-            minSpacing,
-            earlyFrameExclusion,
-            maxCandidates,
-            startFrame,
-            endFrame: searchEndFrame,
-            motionWeight,
-          });
-          const warnings = buildLoopWarnings(candidates, startFrame, { minSpacing, earlyFrameExclusion, suspiciousCloseThreshold });
-          resolve({ candidates, scores, warnings });
-        });
-        tailProc.on('error', () => {
-          // 尾帧提取失败不影响主结果
-          const candidates = pickLoopCandidates(candidateScores, {
-            minSpacing,
-            earlyFrameExclusion,
-            maxCandidates,
-            startFrame,
-            endFrame: searchEndFrame,
-            motionWeight,
-          });
-          const warnings = buildLoopWarnings(candidates, startFrame, { minSpacing, earlyFrameExclusion, suspiciousCloseThreshold });
-          resolve({ candidates, scores, warnings });
-        });
-      });
-      scanProc.on('error', reject);
+          bytesBuffered = 0;
+          frameIndex++;
+        }
+      }
     });
-    startProc.on('error', reject);
+    proc.stderr.on('data', d => { err += d.toString(); });
+    proc.on('close', code => {
+      if (pipelineError) return reject(pipelineError);
+      if (code !== 0 && frameIndex === 0) {
+        return reject(new Error(`扫描帧失败: ${err.slice(0, 200)}`));
+      }
+      resolve(frameIndex);
+    });
+    proc.on('error', reject);
+  });
+}
+
+function findLoopEndFrameRaw(inputPath, startFrame, fps, totalFrames, options = {}) {
+  const {
+    hashSize = 16,
+  } = options;
+  const scaleW = hashSize + 1;
+  const scaleH = hashSize;
+  const frameBytes = scaleW * scaleH * 4;
+  const cacheKey = createLoopHashCacheKey({
+    inputPath,
+    totalFrames,
+    fps,
+    hashSize,
+    mode: 'raw',
+  });
+
+  return findLoopEndFrameWithHashCache({
+    inputPath,
+    startFrame,
+    totalFrames,
+    fps,
+    options,
+    cacheKey,
+    hashSize,
+    hashMode: 'raw',
+    scanRange: async (rangeStart, rangeEnd, onHash) => {
+      const frameCount = rangeEnd - rangeStart;
+      if (frameCount <= 0) return 0;
+      console.log(`  🔎 循环检测扫描（原始）: ${rangeStart}–${rangeEnd}帧 (${frameCount}帧)`);
+      return scanScaledRawFrames(inputPath, rangeStart, fps, frameCount, scaleW, scaleH, frameBytes, (frameBuf, frameIndex) => {
+        onHash(rangeStart + frameIndex, dHashRaw(frameBuf, scaleW, scaleH));
+      });
+    },
   });
 }
 

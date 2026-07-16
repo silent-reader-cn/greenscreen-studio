@@ -106,6 +106,7 @@ export default function VideoPreview({
   const autoDetectTimerRef = useRef(null)
   const playbackRef = useRef({ playing: false, rafId: null, loopSeekPending: false })
   const stableCropRequestRef = useRef(0)
+  const stableCropFrameCacheRef = useRef({ key: '', sourceWidth: 0, sourceHeight: 0, frames: new Map() })
 
   const duration = videoInfo?.duration || videoRef.current?.duration || 0
   const fps = videoInfo?.fps || 30
@@ -135,14 +136,12 @@ export default function VideoPreview({
     () => JSON.stringify(loopDetectionParams),
     [loopDetectionParams]
   )
-  const stablePreviewCropKey = useMemo(() => JSON.stringify({
+  const stablePreviewFrameCacheKey = useMemo(() => JSON.stringify({
     jobId: videoInfo?.jobId || '',
-    startFrame,
-    endFrame,
     keying: keyingParams,
     layoutAutoCrop: layoutParams.autoCrop !== false,
     region,
-  }), [endFrame, keyingParams, layoutParams.autoCrop, region, startFrame, videoInfo?.jobId])
+  }), [keyingParams, layoutParams.autoCrop, region, videoInfo?.jobId])
 
   useEffect(() => {
     rangeRef.current = range
@@ -486,11 +485,26 @@ export default function VideoPreview({
       const scanStart = Math.max(0, Math.min(startFrame, Math.max(0, totalFrames - 1)))
       const scanEnd = Math.max(scanStart + 1, Math.min(endFrame || totalFrames, totalFrames))
       const frames = frameIndexesInRange(scanStart, scanEnd)
-      let bounds = null
-      let scannedFrameCount = 0
-      let foregroundFrameCount = 0
 
-      for (const frame of frames) {
+      let frameCache = stableCropFrameCacheRef.current
+      if (
+        frameCache.key !== stablePreviewFrameCacheKey ||
+        frameCache.sourceWidth !== sourceWidth ||
+        frameCache.sourceHeight !== sourceHeight
+      ) {
+        frameCache = {
+          key: stablePreviewFrameCacheKey,
+          sourceWidth,
+          sourceHeight,
+          frames: new Map(),
+        }
+        stableCropFrameCacheRef.current = frameCache
+      }
+
+      const missingFrames = frames.filter(frame => !frameCache.frames.has(frame))
+      let newlyScannedFrameCount = 0
+
+      for (const frame of missingFrames) {
         if (cancelled || requestId !== stableCropRequestRef.current) return
         const time = Math.min(frame / currentFps, scanVideo.duration || frame / currentFps)
         await seekVideoToTime(scanVideo, time)
@@ -501,9 +515,20 @@ export default function VideoPreview({
         imageData = cropImageData(imageData, region)
         const keyed = applyKeying(imageData, keyingParams)
         const frameBounds = findAlphaBounds(keyed, PREVIEW_STABLE_CROP_ALPHA_THRESHOLD)
-        bounds = mergeAlphaBounds(bounds, frameBounds)
+        frameCache.frames.set(frame, { bounds: frameBounds })
+        newlyScannedFrameCount += 1
+      }
+
+      let bounds = null
+      let scannedFrameCount = 0
+      let foregroundFrameCount = 0
+
+      for (const frame of frames) {
+        const cached = frameCache.frames.get(frame)
+        if (!cached) continue
+        bounds = mergeAlphaBounds(bounds, cached.bounds)
         scannedFrameCount += 1
-        if (frameBounds) foregroundFrameCount += 1
+        if (cached.bounds) foregroundFrameCount += 1
       }
 
       if (!cancelled && requestId === stableCropRequestRef.current) {
@@ -515,6 +540,8 @@ export default function VideoPreview({
             endFrame: scanEnd,
             scannedFrameCount,
             foregroundFrameCount,
+            cachedFrameCount: scannedFrameCount - newlyScannedFrameCount,
+            newlyScannedFrameCount,
           },
         })
       }
@@ -537,7 +564,7 @@ export default function VideoPreview({
       scanVideo.load()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [endFrame, keyingParams, layoutParams.autoCrop, previewMode, region, stablePreviewCropKey, startFrame, videoFile, videoInfo])
+  }, [endFrame, keyingParams, layoutParams.autoCrop, previewMode, region, stablePreviewFrameCacheKey, startFrame, videoFile, videoInfo])
 
   // ===== 实时抠像预览（参数变化时重新渲染）=====
   useEffect(() => {
