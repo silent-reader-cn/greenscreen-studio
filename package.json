@@ -1,6 +1,6 @@
 {
   "name": "greenscreen-studio",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "绿幕人物素材标准化工具 — 抠像 + 等比缩放 + 居中重排 + 导出",
   "main": "electron/main.cjs",
   "author": "柚子",
@@ -102,10 +102,10 @@
             "x64"
           ]
         }
-      ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      ]
     },
     "nsis": {
+      "artifactName": "greenscreen-studio-setup-${version}.${ext}",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
@@ -114,7 +114,7 @@
       "deleteAppDataOnUninstall": false
     },
     "portable": {
-      "artifactName": "${productName}-${version}-portable.${ext}"
+      "artifactName": "greenscreen-studio-${version}-portable.${ext}"
     }
   }
 }
