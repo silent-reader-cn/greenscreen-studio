@@ -4,6 +4,7 @@ release/
 electron-dev.log
 *.png
 !docs/images/*.png
+!electron/assets/*.png
 test-*.png
 gen-test*.cjs
 .DS_Store
