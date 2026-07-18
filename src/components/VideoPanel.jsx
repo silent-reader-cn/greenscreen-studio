@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react'
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import CollapsiblePanel from './CollapsiblePanel.jsx'
 import { formatBytes, t } from '../i18n.js'
@@ -71,8 +71,31 @@ export default function VideoPanel({
   const [errorMsg, setErrorMsg] = useState('')
   const [downloadUrl, setDownloadUrl] = useState('')
   const [spriteSheetBlob, setSpriteSheetBlob] = useState(null)
+  const [completedExportSignature, setCompletedExportSignature] = useState('')
 
   const pollTimerRef = useRef(null)
+
+  const exportSignature = useMemo(() => JSON.stringify({
+    jobId: videoInfo?.jobId || '',
+    keyingParams,
+    layoutParams,
+    mode,
+    format,
+    exportMode,
+    spriteParams,
+    range: range ? { startFrame: range.startFrame, endFrame: range.endFrame } : null,
+    region,
+  }), [
+    videoInfo?.jobId,
+    keyingParams,
+    layoutParams,
+    mode,
+    format,
+    exportMode,
+    spriteParams,
+    range,
+    region,
+  ])
 
   const updateVideoParams = useCallback((patch) => {
     const nextParams = {
@@ -123,6 +146,21 @@ export default function VideoPanel({
     }
   }, [downloadUrl])
 
+  useEffect(() => {
+    if (status !== 'done' || !completedExportSignature) return
+    if (exportSignature === completedExportSignature) return
+
+    setStatus('uploaded')
+    setProgress({ current: 0, total: 0, percent: 0 })
+    setErrorMsg('')
+    setSpriteSheetBlob(null)
+  }, [completedExportSignature, exportSignature, status])
+
+  const cleanupVideoJob = useCallback((jobId) => {
+    if (!jobId) return
+    fetch(`/api/video/${encodeURIComponent(jobId)}`, { method: 'DELETE' }).catch(() => {})
+  }, [])
+
   const resetForNewFile = useCallback(() => {
     if (pollTimerRef.current) {
       clearInterval(pollTimerRef.current)
@@ -134,16 +172,20 @@ export default function VideoPanel({
     setErrorMsg('')
     setDownloadUrl('')
     setSpriteSheetBlob(null)
+    setCompletedExportSignature('')
   }, [])
 
   const handleFile = useCallback(async (file) => {
     if (!isVideoFile(file)) return
+    const previousJobId = videoInfo?.jobId
     setUploading(true)
     setErrorMsg('')
     setStatus('idle')
     setVideoInfo(null)
     setDownloadUrl('')
     setSpriteSheetBlob(null)
+    setCompletedExportSignature('')
+    cleanupVideoJob(previousJobId)
 
     const formData = new FormData()
     formData.append('video', file)
@@ -161,7 +203,7 @@ export default function VideoPanel({
     } finally {
       setUploading(false)
     }
-  }, [onVideoUpload])
+  }, [cleanupVideoJob, onVideoUpload, videoInfo?.jobId])
 
   useEffect(() => {
     if (isVideoFile(droppedFile)) {
@@ -172,12 +214,14 @@ export default function VideoPanel({
 
   const handleProcess = async () => {
     if (!videoInfo) return
+    const currentExportSignature = exportSignature
     setProcessing(true)
     setStatus('processing')
     setProgress({ current: 0, total: 0, percent: 0 })
     setErrorMsg('')
     setDownloadUrl('')
     setSpriteSheetBlob(null)
+    setCompletedExportSignature('')
 
     if (exportMode === 'spritesheet') {
       try {
@@ -199,6 +243,7 @@ export default function VideoPanel({
         }
         const blob = await resp.blob()
         setSpriteSheetBlob(blob)
+        setCompletedExportSignature(currentExportSignature)
         setProcessing(false)
         setStatus('done')
       } catch (err) {
@@ -237,6 +282,7 @@ export default function VideoPanel({
           if (pData.status === 'done') {
             clearInterval(pollTimerRef.current)
             pollTimerRef.current = null
+            setCompletedExportSignature(currentExportSignature)
             setProcessing(false)
             setStatus('done')
           } else if (pData.status === 'error') {
@@ -283,7 +329,9 @@ export default function VideoPanel({
   }
 
   const handleReset = () => {
+    const jobId = videoInfo?.jobId
     resetForNewFile()
+    cleanupVideoJob(jobId)
     onVideoUpload?.(null, null)
   }
 

@@ -48,7 +48,7 @@ app.use(express.json({ limit: '50mb' }));
 // CORS（开发环境 vite 在 5174）
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
@@ -151,6 +151,24 @@ app.post('/api/export', upload.single('image'), async (req, res) => {
 // 视频任务状态存储（内存，进程级）
 const videoJobs = new Map();
 
+function safeUnlink(filePath) {
+  if (!filePath) return;
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch (err) {
+    console.warn(`  ⚠️ 临时文件清理失败: ${filePath}`, err.message);
+  }
+}
+
+function cleanupVideoJob(jobId) {
+  const job = videoJobs.get(jobId);
+  if (!job) return false;
+  safeUnlink(job.outputPath);
+  safeUnlink(job.inputPath);
+  videoJobs.delete(jobId);
+  return true;
+}
+
 /**
  * POST /api/video/upload
  * 上传视频文件，返回 jobId + 视频信息（尺寸、fps、时长、是否有音轨）
@@ -201,6 +219,7 @@ app.post('/api/video/process', express.json({ limit: '10mb' }), (req, res) => {
   const taskId = `task_${Date.now()}`;
   const ext = String(format || (params.mode === 'transparent' ? 'webm' : 'mp4')).toLowerCase();
   const outputPath = path.join(tmpDir, `output_${taskId}.${ext}`).replace(/\\/g, '/');
+  const previousOutputPath = job.outputPath;
 
   // 计算帧范围（用于初始进度显示）
   const info = job.info;
@@ -216,6 +235,7 @@ app.post('/api/video/process', express.json({ limit: '10mb' }), (req, res) => {
   job.outputFormat = ext;
   job.error = null;
   job.range = range || null;
+  safeUnlink(previousOutputPath);
 
   // 如果有 range，合并到 params 中传给 processVideo
   if (range) {
@@ -292,16 +312,19 @@ app.get('/api/video/download/:jobId', (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   const stream = fs.createReadStream(job.outputPath);
   stream.pipe(res);
-  stream.on('close', () => {
-    // 下载完后清理（延迟，避免文件被删太快）
-    setTimeout(() => {
-      try {
-        fs.unlinkSync(job.outputPath);
-        fs.unlinkSync(job.inputPath);
-        videoJobs.delete(req.params.jobId);
-      } catch (e) {}
-    }, 5000);
-  });
+});
+
+/**
+ * DELETE /api/video/:jobId
+ * 用户明确换视频/重置时清理该视频会话的临时文件。
+ */
+app.delete('/api/video/:jobId', (req, res) => {
+  const job = videoJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'job not found' });
+  if (job.status === 'processing') return res.status(409).json({ error: 'job is processing' });
+
+  cleanupVideoJob(req.params.jobId);
+  res.json({ ok: true });
 });
 
 /**
