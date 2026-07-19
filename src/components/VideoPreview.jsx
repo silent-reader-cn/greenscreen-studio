@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { applyKeying, composeToCanvas, cropKeyedToBounds, findAlphaBounds } from '../lib/keying.js'
-import { clamp, cropImageData, getRegionOverlayStyle, makeRegionFromPoints } from '../lib/region.js'
+import { applyKeying, composeToCanvas, cropKeyedToBounds, expandBoundsToSourceCenter, findAlphaBounds } from '../lib/keying.js'
+import { clamp, cropImageData, getRegionOverlayStyle, makeRegionFromPoints, normalizeRegion } from '../lib/region.js'
 import { t } from '../i18n.js'
 
 const AUTO_LOOP_DETECT_KEY = 'greenscreen-studio-auto-loop-detect'
@@ -15,6 +15,14 @@ function mergeAlphaBounds(current, next) {
     minY: Math.min(current.minY, next.minY),
     maxX: Math.max(current.maxX, next.maxX),
     maxY: Math.max(current.maxY, next.maxY),
+  }
+}
+
+function getStableCropCenterAxes(layout = {}) {
+  const anchor = layout.anchor || 'center'
+  return {
+    x: true,
+    y: anchor === 'center',
   }
 }
 
@@ -477,6 +485,9 @@ export default function VideoPreview({
 
       const sourceWidth = scanVideo.videoWidth
       const sourceHeight = scanVideo.videoHeight
+      const normalizedRegion = normalizeRegion(region, { width: sourceWidth, height: sourceHeight })
+      const processingWidth = normalizedRegion?.width || sourceWidth
+      const processingHeight = normalizedRegion?.height || sourceHeight
       scanCanvas.width = sourceWidth
       scanCanvas.height = sourceHeight
       const ctx = scanCanvas.getContext('2d')
@@ -530,11 +541,14 @@ export default function VideoPreview({
         scannedFrameCount += 1
         if (cached.bounds) foregroundFrameCount += 1
       }
+      const displayBounds = layoutParams.sourceCenterAnchor !== false
+        ? expandBoundsToSourceCenter(bounds, processingWidth, processingHeight, getStableCropCenterAxes(layoutParams))
+        : bounds
 
       if (!cancelled && requestId === stableCropRequestRef.current) {
         setStablePreviewCrop({
           status: 'ready',
-          bounds,
+          bounds: displayBounds,
           scan: {
             startFrame: scanStart,
             endFrame: scanEnd,
@@ -542,6 +556,13 @@ export default function VideoPreview({
             foregroundFrameCount,
             cachedFrameCount: scannedFrameCount - newlyScannedFrameCount,
             newlyScannedFrameCount,
+            rawBounds: bounds,
+            sourceCenterAnchor: {
+              enabled: layoutParams.sourceCenterAnchor !== false,
+              axes: getStableCropCenterAxes(layoutParams),
+              sourceWidth: processingWidth,
+              sourceHeight: processingHeight,
+            },
           },
         })
       }
@@ -564,7 +585,7 @@ export default function VideoPreview({
       scanVideo.load()
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [endFrame, keyingParams, layoutParams.autoCrop, previewMode, region, stablePreviewFrameCacheKey, startFrame, videoFile, videoInfo])
+  }, [endFrame, keyingParams, layoutParams.anchor, layoutParams.autoCrop, layoutParams.sourceCenterAnchor, previewMode, region, stablePreviewFrameCacheKey, startFrame, videoFile, videoInfo])
 
   // ===== 实时抠像预览（参数变化时重新渲染）=====
   useEffect(() => {

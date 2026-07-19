@@ -565,6 +565,8 @@ describe('stable video auto-crop helpers', () => {
   let mergeAlphaBounds
   let cropKeyedToBounds
   let createLoopHashLayout
+  let applyStableCropLayout
+  let loadAlgorithms
 
   beforeEach(async () => {
     vi.resetModules()
@@ -572,6 +574,9 @@ describe('stable video auto-crop helpers', () => {
     mergeAlphaBounds = mod.mergeAlphaBounds
     cropKeyedToBounds = mod.cropKeyedToBounds
     createLoopHashLayout = mod.createLoopHashLayout
+    applyStableCropLayout = mod.applyStableCropLayout
+    loadAlgorithms = mod.loadAlgorithms
+    await loadAlgorithms()
   })
 
   it('merges per-frame alpha bounds into one union box', () => {
@@ -641,6 +646,34 @@ describe('stable video auto-crop helpers', () => {
       width: 2,
       height: 2,
     })
+  })
+
+  it('expands stable video crops around the source center by default', () => {
+    const result = applyStableCropLayout(
+      { minX: 60, minY: 10, maxX: 80, maxY: 20 },
+      { width: 100, height: 80 },
+      {}
+    )
+
+    expect(result.bounds).toEqual({ minX: 19, minY: 10, maxX: 80, maxY: 69 })
+    expect(result.sourceCenterAnchor).toMatchObject({
+      enabled: true,
+      axes: { x: true, y: true },
+      sourceWidth: 100,
+      sourceHeight: 80,
+    })
+  })
+
+  it('preserves the old stable union crop when source center anchoring is disabled', () => {
+    const union = { minX: 60, minY: 10, maxX: 80, maxY: 20 }
+    const result = applyStableCropLayout(
+      union,
+      { width: 100, height: 80 },
+      { sourceCenterAnchor: false }
+    )
+
+    expect(result.bounds).toBe(union)
+    expect(result.sourceCenterAnchor.enabled).toBe(false)
   })
 
   it('keeps loop-detection hashes foreground-focused when export auto-crop is off', () => {

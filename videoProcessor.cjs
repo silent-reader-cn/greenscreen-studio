@@ -60,7 +60,7 @@ if (!IS_VIDEO_FRAME_WORKER) {
 }
 
 // 动态加载共享算法
-let applyKeying, composeToCanvas, autoCropKeyedWithBounds, cleanupKeyed, drawKeyedToCanvas, findAlphaBounds;
+let applyKeying, composeToCanvas, autoCropKeyedWithBounds, cleanupKeyed, drawKeyedToCanvas, findAlphaBounds, expandBoundsToSourceCenter;
 const AUTO_CROP_ALPHA_THRESHOLD = 10;
 const LOOP_HASH_CACHE_LIMIT = 8;
 const STABLE_CROP_CACHE_LIMIT = 8;
@@ -76,6 +76,7 @@ async function loadAlgorithms() {
     cleanupKeyed = mod.cleanupKeyed;
     drawKeyedToCanvas = mod.drawKeyedToCanvas;
     findAlphaBounds = mod.findAlphaBounds;
+    expandBoundsToSourceCenter = mod.expandBoundsToSourceCenter;
   }
 }
 
@@ -581,6 +582,7 @@ async function processVideo(inputPath, outputPath, params, onProgress) {
         srcW,
         srcH,
         params: { keying, cleanup, region },
+        layout,
         onProgress,
         progressTotal,
       })
@@ -1026,11 +1028,39 @@ function boundsToCropBox(bounds) {
   };
 }
 
+function getStableCropCenterAxes(layout = {}) {
+  const anchor = layout.anchor || 'center';
+  return {
+    x: true,
+    y: anchor === 'center',
+  };
+}
+
+function applyStableCropLayout(unionBounds, scanRegion, layout = {}) {
+  const enabled = layout.sourceCenterAnchor !== false;
+  const axes = enabled ? getStableCropCenterAxes(layout) : { x: false, y: false };
+  const sourceWidth = scanRegion?.width || 0;
+  const sourceHeight = scanRegion?.height || 0;
+
+  return {
+    bounds: enabled && unionBounds
+      ? expandBoundsToSourceCenter(unionBounds, sourceWidth, sourceHeight, axes)
+      : unionBounds,
+    sourceCenterAnchor: {
+      enabled,
+      axes,
+      sourceWidth,
+      sourceHeight,
+    },
+  };
+}
+
 function summarizeStableCrop(stableCrop) {
   if (!stableCrop) return null;
   return {
     strategy: stableCrop.strategy,
     bounds: boundsToCropBox(stableCrop.bounds),
+    sourceCenterAnchor: stableCrop.sourceCenterAnchor,
     alphaThreshold: stableCrop.alphaThreshold,
     scan: stableCrop.scan,
   };
@@ -1203,6 +1233,7 @@ async function scanStableVideoCrop(inputPath, {
   srcW,
   srcH,
   params,
+  layout = {},
   onProgress,
   progressTotal,
 }) {
@@ -1284,9 +1315,11 @@ async function scanStableVideoCrop(inputPath, {
     scanRegion = getProcessingRegionMetadata(params.region, srcW, srcH);
   }
 
+  const laidOutCrop = applyStableCropLayout(unionBounds, scanRegion, layout);
   const summary = {
     strategy: 'video_union',
-    bounds: unionBounds,
+    bounds: laidOutCrop.bounds,
+    sourceCenterAnchor: laidOutCrop.sourceCenterAnchor,
     alphaThreshold: AUTO_CROP_ALPHA_THRESHOLD,
     scan: {
       startFrame,
@@ -1299,12 +1332,14 @@ async function scanStableVideoCrop(inputPath, {
       sourceWidth: scanRegion.width,
       sourceHeight: scanRegion.height,
       processingRegion: scanRegion,
+      rawBounds: boundsToCropBox(unionBounds),
     },
   };
 
-  const box = boundsToCropBox(unionBounds);
+  const box = boundsToCropBox(summary.bounds);
   const boxDesc = box ? `${box.width}×${box.height}@${box.x},${box.y}` : 'no foreground';
-  console.log(`  🔎 自动裁剪并集框: ${boxDesc}, foreground=${foregroundFrameCount}/${scannedFrameCount}, cached=${summary.scan.cachedFrameCount}, scanned=${summary.scan.newlyScannedFrameCount}`);
+  const centerDesc = summary.sourceCenterAnchor.enabled ? `, sourceCenter=${summary.sourceCenterAnchor.axes.x ? 'x' : '-'}${summary.sourceCenterAnchor.axes.y ? 'y' : '-'}` : '';
+  console.log(`  🔎 自动裁剪并集框: ${boxDesc}${centerDesc}, foreground=${foregroundFrameCount}/${scannedFrameCount}, cached=${summary.scan.cachedFrameCount}, scanned=${summary.scan.newlyScannedFrameCount}`);
   if (onProgress) onProgress(frameCount, progressTotal);
 
   return summary;
@@ -1723,6 +1758,7 @@ async function renderFrameJobsToAtlas({
             cleanup: params.cleanup,
             region: params.region,
           },
+          layout: params.layout,
         })
       : null;
 
@@ -2499,6 +2535,7 @@ module.exports = {
   mergeAlphaBounds,
   cropKeyedToBounds,
   createLoopHashLayout,
+  applyStableCropLayout,
   scanStableVideoCrop,
   getVideoWorkerCount,
   getFrameAlphaBounds,

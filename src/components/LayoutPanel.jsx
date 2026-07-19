@@ -67,6 +67,19 @@ export default function LayoutPanel({ params, onChange, imageSize }) {
         <p className="toggle-hint">{t('layout.autoCropHint')}</p>
       </div>
 
+      <div className="toggle-row">
+        <label className="toggle-label">
+          <input
+            type="checkbox"
+            checked={params.sourceCenterAnchor !== false}
+            disabled={params.autoCrop === false}
+            onChange={(e) => update('sourceCenterAnchor', e.target.checked)}
+          />
+          <span>{t('layout.sourceCenterAnchor')}</span>
+        </label>
+        <p className="toggle-hint">{t('layout.sourceCenterAnchorHint')}</p>
+      </div>
+
       {imageSize.w > 0 && (
         <div className="info-box">
           <p>{t('layout.input')}: {imageSize.w}×{imageSize.h}</p>
@@ -80,6 +93,9 @@ export default function LayoutPanel({ params, onChange, imageSize }) {
           </p>
           {params.autoCrop !== false && (
             <p className="calc-result" style={{color: '#666'}}>{t('layout.autoCropOn')}</p>
+          )}
+          {params.autoCrop !== false && params.sourceCenterAnchor !== false && (
+            <p className="calc-result" style={{color: '#666'}}>{t('layout.sourceCenterAnchorOn')}</p>
           )}
         </div>
       )}

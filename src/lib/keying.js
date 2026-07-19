@@ -158,6 +158,48 @@ export function cropKeyedToBounds(keyedData, bounds, threshold = 10) {
   return cropKeyedToBoundsWithMetadata(keyedData, bounds, threshold).imageData;
 }
 
+export function expandBoundsToSourceCenter(bounds, sourceWidth, sourceHeight, axes = {}) {
+  if (!bounds) return null;
+  const width = Math.round(Number(sourceWidth));
+  const height = Math.round(Number(sourceHeight));
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    return { ...bounds };
+  }
+
+  const normalized = {
+    minX: Math.max(0, Math.min(width - 1, Math.floor(bounds.minX))),
+    minY: Math.max(0, Math.min(height - 1, Math.floor(bounds.minY))),
+    maxX: Math.max(0, Math.min(width - 1, Math.ceil(bounds.maxX))),
+    maxY: Math.max(0, Math.min(height - 1, Math.ceil(bounds.maxY))),
+  };
+  if (normalized.maxX < normalized.minX || normalized.maxY < normalized.minY) return null;
+
+  const useX = axes.x !== false;
+  const useY = axes.y !== false;
+  const centeredX = useX
+    ? expandAxisBoundsToCenter(normalized.minX, normalized.maxX, width)
+    : { min: normalized.minX, max: normalized.maxX };
+  const centeredY = useY
+    ? expandAxisBoundsToCenter(normalized.minY, normalized.maxY, height)
+    : { min: normalized.minY, max: normalized.maxY };
+
+  return {
+    minX: centeredX.min,
+    minY: centeredY.min,
+    maxX: centeredX.max,
+    maxY: centeredY.max,
+  };
+}
+
+function expandAxisBoundsToCenter(min, max, size) {
+  const center = (size - 1) / 2;
+  const radius = Math.max(center - min, max - center);
+  return {
+    min: Math.max(0, Math.floor(center - radius)),
+    max: Math.min(size - 1, Math.ceil(center + radius)),
+  };
+}
+
 /**
  * 自动裁剪并返回裁剪边界元数据。
  *

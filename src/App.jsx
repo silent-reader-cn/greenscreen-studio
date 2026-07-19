@@ -26,6 +26,7 @@ const DEFAULT_LAYOUT = {
   personHeight: 540,
   bgColor: [0, 255, 0],
   autoCrop: true,
+  sourceCenterAnchor: true,
 }
 
 const DEFAULT_SPRITE_PARAMS = {

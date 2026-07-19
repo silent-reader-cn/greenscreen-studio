@@ -5,7 +5,7 @@
  * 算法涉及逐像素计算，使用小尺寸合成图验证边界条件。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { applyKeying, autoCropKeyed, cleanupKeyed, composeToCanvas, computePlacement, cropKeyedToBounds } from '../keying.js'
+import { applyKeying, autoCropKeyed, cleanupKeyed, composeToCanvas, computePlacement, cropKeyedToBounds, expandBoundsToSourceCenter } from '../keying.js'
 
 // ===== 测试工具函数 =====
 
@@ -329,6 +329,29 @@ describe('autoCropKeyed', () => {
     expect(result.data[(1 * 6 + 4) * 4 + 3]).toBe(255)
     expect(result.data[(2 * 6 + 5) * 4 + 3]).toBe(255)
     expect(result.data[(1 * 6 + 0) * 4 + 3]).toBe(0)
+  })
+})
+
+describe('expandBoundsToSourceCenter', () => {
+  it('将偏离画面中心的包围盒扩展成中心对称框', () => {
+    const result = expandBoundsToSourceCenter(
+      { minX: 60, minY: 10, maxX: 80, maxY: 20 },
+      100,
+      80
+    )
+
+    expect(result).toEqual({ minX: 19, minY: 10, maxX: 80, maxY: 69 })
+  })
+
+  it('可只在 X 轴按源中心补齐，保留 Y 轴旧边界', () => {
+    const result = expandBoundsToSourceCenter(
+      { minX: 60, minY: 10, maxX: 80, maxY: 20 },
+      100,
+      80,
+      { x: true, y: false }
+    )
+
+    expect(result).toEqual({ minX: 19, minY: 10, maxX: 80, maxY: 20 })
   })
 })
 

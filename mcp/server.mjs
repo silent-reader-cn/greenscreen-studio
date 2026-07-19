@@ -30,6 +30,7 @@ const DEFAULT_LAYOUT = Object.freeze({
   personWidth: 760,
   personHeight: 940,
   autoCrop: true,
+  sourceCenterAnchor: true,
   anchor: 'center',
   anchorOffset: { x: 0, y: 0 },
 });
@@ -114,7 +115,7 @@ Use this MCP when an agent has local image or video file paths and needs the Gre
    - transparent ProRes: \`mode: "transparent"\`, \`format: "mov"\`
    - green-screen H.264: \`mode: "greenscreen"\`, \`format: "mp4"\`
    - looping GIF: \`format: "gif"\` with either transparent or green-screen mode
-3. Call \`process_video\`. Video auto-crop scans the requested \`range\` and reuses one stable union crop box for every exported frame. Long videos can exceed some client timeouts; trim with \`range\` first when testing.
+3. Call \`process_video\`. Video auto-crop scans the requested \`range\`, reuses one stable union crop box for every exported frame, and by default pads it around the source frame center through \`layout.sourceCenterAnchor\`. Long videos can exceed some client timeouts; trim with \`range\` first when testing.
 
 ## Looping clips and sprites
 
@@ -193,6 +194,7 @@ const PARAM_SCHEMA_RESOURCE = Object.freeze({
         personWidth: { type: 'integer', minimum: 1 },
         personHeight: { type: 'integer', minimum: 1 },
         autoCrop: { type: 'boolean' },
+        sourceCenterAnchor: { type: 'boolean' },
         bgColor: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'integer', minimum: 0, maximum: 255 } },
         anchor: { enum: ['center', 'bottom_center', 'feet'] },
         anchorOffset: {
@@ -253,6 +255,7 @@ const layoutSchema = z.object({
   personWidth: z.number().int().positive().optional(),
   personHeight: z.number().int().positive().optional(),
   autoCrop: z.boolean().optional(),
+  sourceCenterAnchor: z.boolean().optional(),
   bgColor: colorSchema.optional(),
   anchor: z.enum(['center', 'bottom_center', 'feet']).optional(),
   anchorOffset: z.object({
@@ -421,6 +424,7 @@ export function normalizeProcessingParams(input = {}) {
       personWidth: positiveInt(layout.personWidth, DEFAULT_LAYOUT.personWidth),
       personHeight: positiveInt(layout.personHeight, DEFAULT_LAYOUT.personHeight),
       autoCrop: layout.autoCrop !== false,
+      sourceCenterAnchor: layout.sourceCenterAnchor !== false,
       anchor: ['center', 'bottom_center', 'feet'].includes(layout.anchor) ? layout.anchor : DEFAULT_LAYOUT.anchor,
       anchorOffset: {
         x: Number.isFinite(Number(anchorOffset.x)) ? Math.round(Number(anchorOffset.x)) : 0,
