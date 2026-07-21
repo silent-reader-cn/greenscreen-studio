@@ -54,8 +54,19 @@ describe('Greenscreen Studio MCP helpers', () => {
     expect(params.layout.personHeight).toBe(940)
     expect(params.layout.autoCrop).toBe(false)
     expect(params.layout.sourceCenterAnchor).toBe(true)
+    expect(params.layout.sourceCharacterHeight).toBe(0)
     expect(params.region).toEqual({ x: 3, y: 0, width: 21, height: 10 })
     expect(params.mode).toBe('transparent')
+  })
+
+  it('keeps sourceCharacterHeight when provided', () => {
+    const params = normalizeProcessingParams({
+      layout: {
+        sourceCharacterHeight: 520.6,
+      },
+    })
+
+    expect(params.layout.sourceCharacterHeight).toBe(521)
   })
 
   it('exports a keyed PNG image and reports the generated file', async () => {

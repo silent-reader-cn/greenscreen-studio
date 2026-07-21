@@ -19,7 +19,7 @@ const { processVideo, probeVideo, findLoopEndFrame, exportSpriteSheet } = requir
 require('./src/lib/canvas-polyfill.js');
 
 // keying.js 是 ES module，需要动态 import
-let applyKeying, composeToCanvas, autoCropKeyed;
+let applyKeying, composeToCanvas, autoCropKeyed, drawKeyedToCanvas;
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 20003;
@@ -69,6 +69,7 @@ app.post('/api/export', upload.single('image'), async (req, res) => {
       applyKeying = mod.applyKeying;
       composeToCanvas = mod.composeToCanvas;
       autoCropKeyed = mod.autoCropKeyed;
+      drawKeyedToCanvas = mod.drawKeyedToCanvas;
     }
 
     if (!req.file) {
@@ -100,46 +101,23 @@ app.post('/api/export', upload.single('image'), async (req, res) => {
     const outCanvas = createCanvas(canvasWidth, canvasHeight);
     const outCtx = outCanvas.getContext('2d');
 
-    // 5. 合成（抠像人物 → 绿幕画布）
-    const tempCanvas = createCanvas(100, 100); // 临时画布（composeToCanvas 会 resize）
-    const result = composeToCanvas(outCtx, keyedData, params.layout, tempCanvas, params.keying?.keyColor);
-
-    // 6. 根据 mode 决定输出
+    // 5. 合成（抠像人物 → 画布；透明/绿幕共用同一 placement 逻辑）
+    const tempCanvas = createCanvas(100, 100);
     const mode = params.mode || 'greenscreen'; // 'greenscreen' | 'transparent'
-
-    let outputBuffer;
+    let result;
     if (mode === 'transparent') {
-      // 透明模式：只输出抠像后的人物（等比缩放到 personWidth×personHeight，居中于画布）
-      const transCanvas = createCanvas(canvasWidth, canvasHeight);
-      const transCtx = transCanvas.getContext('2d');
-      // 临时画布放抠像结果
-      tempCanvas.width = keyedData.width;
-      tempCanvas.height = keyedData.height;
-      const tempCtx2 = tempCanvas.getContext('2d');
-      const transImgData = tempCtx2.createImageData(keyedData.width, keyedData.height);
-      transImgData.data.set(keyedData.data);
-      tempCtx2.putImageData(transImgData, 0, 0);
-      // 等比缩放 + 居中
-      const scaleX = params.layout.personWidth / keyedData.width;
-      const scaleY = params.layout.personHeight / keyedData.height;
-      const scale = Math.min(scaleX, scaleY);
-      const sw = Math.round(keyedData.width * scale);
-      const sh = Math.round(keyedData.height * scale);
-      const ox = Math.round((canvasWidth - sw) / 2);
-      const oy = Math.round((canvasHeight - sh) / 2);
-      transCtx.drawImage(tempCanvas, ox, oy, sw, sh);
-      outputBuffer = transCanvas.toBuffer('image/png');
+      result = drawKeyedToCanvas(outCtx, keyedData, params.layout, tempCanvas);
     } else {
-      // 绿幕合成模式
-      outputBuffer = outCanvas.toBuffer('image/png');
+      result = composeToCanvas(outCtx, keyedData, params.layout, tempCanvas, params.keying?.keyColor);
     }
 
-    // 7. 返回
+    // 6. 返回 PNG
+    const outputBuffer = outCanvas.toBuffer('image/png');
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('Content-Disposition', `attachment; filename="export_${Date.now()}.png"`);
     res.send(outputBuffer);
 
-    console.log(`✓ 导出成功: ${canvasWidth}×${canvasHeight} ${mode} | 缩放: ${result.scaledW}×${result.scaledH}`);
+    console.log(`✓ 导出成功: ${canvasWidth}×${canvasHeight} ${mode} | 缩放: ${result.scaledW}×${result.scaledH} (${result.scaleMode || 'fit_box'})`);
   } catch (err) {
     console.error('导出失败:', err);
     res.status(500).json({ error: err.message });

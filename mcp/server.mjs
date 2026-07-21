@@ -31,6 +31,7 @@ const DEFAULT_LAYOUT = Object.freeze({
   personHeight: 940,
   autoCrop: true,
   sourceCenterAnchor: true,
+  sourceCharacterHeight: 0,
   anchor: 'center',
   anchorOffset: { x: 0, y: 0 },
 });
@@ -195,6 +196,7 @@ const PARAM_SCHEMA_RESOURCE = Object.freeze({
         personHeight: { type: 'integer', minimum: 1 },
         autoCrop: { type: 'boolean' },
         sourceCenterAnchor: { type: 'boolean' },
+        sourceCharacterHeight: { type: 'integer', minimum: 0 },
         bgColor: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'integer', minimum: 0, maximum: 255 } },
         anchor: { enum: ['center', 'bottom_center', 'feet'] },
         anchorOffset: {
@@ -256,6 +258,7 @@ const layoutSchema = z.object({
   personHeight: z.number().int().positive().optional(),
   autoCrop: z.boolean().optional(),
   sourceCenterAnchor: z.boolean().optional(),
+  sourceCharacterHeight: z.number().int().min(0).optional(),
   bgColor: colorSchema.optional(),
   anchor: z.enum(['center', 'bottom_center', 'feet']).optional(),
   anchorOffset: z.object({
@@ -425,6 +428,7 @@ export function normalizeProcessingParams(input = {}) {
       personHeight: positiveInt(layout.personHeight, DEFAULT_LAYOUT.personHeight),
       autoCrop: layout.autoCrop !== false,
       sourceCenterAnchor: layout.sourceCenterAnchor !== false,
+      sourceCharacterHeight: Math.max(0, Math.round(Number(layout.sourceCharacterHeight) || 0)),
       anchor: ['center', 'bottom_center', 'feet'].includes(layout.anchor) ? layout.anchor : DEFAULT_LAYOUT.anchor,
       anchorOffset: {
         x: Number.isFinite(Number(anchorOffset.x)) ? Math.round(Number(anchorOffset.x)) : 0,

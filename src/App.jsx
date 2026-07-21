@@ -27,6 +27,8 @@ const DEFAULT_LAYOUT = {
   bgColor: [0, 255, 0],
   autoCrop: true,
   sourceCenterAnchor: true,
+  // 0 = 自动 fit 人物框；>0 = 源画面人物站立身高（px），跨段统一 scale
+  sourceCharacterHeight: 0,
 }
 
 const DEFAULT_SPRITE_PARAMS = {
@@ -75,6 +77,7 @@ function normalizeParams(params = {}) {
       ...DEFAULT_LAYOUT,
       ...layout,
       bgColor: cloneArray(layout.bgColor, DEFAULT_LAYOUT.bgColor),
+      sourceCharacterHeight: Math.max(0, Math.round(Number(layout.sourceCharacterHeight) || 0)),
     },
     video: {
       ...DEFAULT_VIDEO_PARAMS,

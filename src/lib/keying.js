@@ -512,6 +512,12 @@ export function drawKeyedToCanvas(ctx, keyedImageData, layout, tempCanvas) {
  *   - center: 保持旧行为，人物居中于整张输出画布
  *   - bottom_center: 人物底部贴齐输出画布底部，水平居中
  *   - feet: 人物脚底贴齐居中安全区底部，适合游戏角色统一基准线
+ *
+ * scale:
+ *   - 默认 fit_box：scale = min(personW/srcW, personH/srcH)，随裁切框尺寸变化
+ *   - sourceCharacterHeight > 0：scale = personHeight / sourceCharacterHeight
+ *     用户填写源画面中「人物站立身高」像素，跨段视频共用同一尺度；
+ *     裁切框 padding / Y 轴漂浮只改变位置与出框，不改变人物身高
  */
 export function computePlacement(srcW, srcH, layout) {
   const {
@@ -521,8 +527,15 @@ export function computePlacement(srcW, srcH, layout) {
     personHeight = canvasHeight,
     anchor = 'center',
     anchorOffset = {},
+    sourceCharacterHeight = 0,
   } = layout;
-  const scale = Math.min(personWidth / srcW, personHeight / srcH);
+  const { scale, scaleMode, sourceCharacterHeight: lockedHeight } = resolveLayoutScale(
+    srcW,
+    srcH,
+    personWidth,
+    personHeight,
+    sourceCharacterHeight,
+  );
   const scaledW = Math.round(srcW * scale);
   const scaledH = Math.round(srcH * scale);
   const safeArea = {
@@ -558,9 +571,34 @@ export function computePlacement(srcW, srcH, layout) {
     offsetX,
     offsetY,
     scale,
+    scaleMode,
+    sourceCharacterHeight: lockedHeight,
     anchor: ['center', 'bottom_center', 'feet'].includes(anchor) ? anchor : 'center',
     anchorOffset: offset,
     safeArea,
+  };
+}
+
+/**
+ * 解析布局缩放倍率。
+ * sourceCharacterHeight > 0 时按源人物身高锁定；否则 fit 进 person 框。
+ */
+export function resolveLayoutScale(srcW, srcH, personWidth, personHeight, sourceCharacterHeight = 0) {
+  const lockedHeight = Number(sourceCharacterHeight);
+  if (Number.isFinite(lockedHeight) && lockedHeight > 0 && personHeight > 0) {
+    return {
+      scale: personHeight / lockedHeight,
+      scaleMode: 'source_character_height',
+      sourceCharacterHeight: lockedHeight,
+    };
+  }
+
+  const safeSrcW = Math.max(1, Number(srcW) || 1);
+  const safeSrcH = Math.max(1, Number(srcH) || 1);
+  return {
+    scale: Math.min(personWidth / safeSrcW, personHeight / safeSrcH),
+    scaleMode: 'fit_box',
+    sourceCharacterHeight: 0,
   };
 }
 

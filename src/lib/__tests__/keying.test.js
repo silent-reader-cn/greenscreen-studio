@@ -5,7 +5,7 @@
  * 算法涉及逐像素计算，使用小尺寸合成图验证边界条件。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { applyKeying, autoCropKeyed, cleanupKeyed, composeToCanvas, computePlacement, cropKeyedToBounds, expandBoundsToSourceCenter } from '../keying.js'
+import { applyKeying, autoCropKeyed, cleanupKeyed, composeToCanvas, computePlacement, cropKeyedToBounds, expandBoundsToSourceCenter, resolveLayoutScale } from '../keying.js'
 
 // ===== 测试工具函数 =====
 
@@ -504,5 +504,34 @@ describe('composeToCanvas', () => {
     expect(placement.scaledH).toBe(160)
     expect(placement.offsetX).toBe(88)
     expect(placement.offsetY).toBe(48)
+    expect(placement.scaleMode).toBe('fit_box')
+  })
+
+  it('sourceCharacterHeight 按源人物身高锁定 scale，裁切框变大不影响人物身高', () => {
+    // 两段：人物真高同为 100，但裁切框分别 120 和 200（多了 padding）
+    const layout = {
+      canvasWidth: 256,
+      canvasHeight: 256,
+      personWidth: 160,
+      personHeight: 110,
+      sourceCharacterHeight: 100,
+      anchor: 'feet',
+    }
+
+    const tight = computePlacement(80, 120, layout)
+    const padded = computePlacement(120, 200, layout)
+
+    expect(tight.scale).toBeCloseTo(1.1)
+    expect(padded.scale).toBeCloseTo(1.1)
+    expect(tight.scaleMode).toBe('source_character_height')
+    expect(padded.scaledH).toBe(220) // 200 * 1.1
+    expect(tight.scaledH).toBe(132)  // 120 * 1.1 — crop 高不同，但 scale 相同
+    // 人物真高 100 * 1.1 = 110，对齐 personHeight
+  })
+
+  it('sourceCharacterHeight=0 时保持旧 fit_box 行为', () => {
+    const result = resolveLayoutScale(100, 200, 160, 110, 0)
+    expect(result.scaleMode).toBe('fit_box')
+    expect(result.scale).toBeCloseTo(Math.min(160 / 100, 110 / 200))
   })
 })
