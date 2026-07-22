@@ -659,6 +659,18 @@ body {
   margin-bottom: 6px;
 }
 
+.group-label.dblclick-label {
+  cursor: pointer;
+  user-select: none;
+  text-decoration: underline dotted #aaa;
+  text-underline-offset: 3px;
+}
+
+.group-label.dblclick-label:hover {
+  color: #1a1a1a;
+  text-decoration-color: #555;
+}
+
 .dual-input {
   display: flex;
   align-items: flex-end;

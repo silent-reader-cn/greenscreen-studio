@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { applyKeying, composeToCanvas, autoCropKeyed } from './lib/keying.js'
+import { applyKeying, composeToCanvas, autoCropKeyed, measureAlphaHeight } from './lib/keying.js'
 import { clamp, cropImageData, getRegionOverlayStyle, makeRegionFromPoints } from './lib/region.js'
 import KeyingPanel from './components/KeyingPanel.jsx'
 import LayoutPanel from './components/LayoutPanel.jsx'
@@ -370,6 +370,65 @@ function readMediaIntrinsicMetadata(file, kind = getMediaKind(file)) {
   if (kind === 'image') return readImageIntrinsicMetadata(file)
   if (kind === 'video') return readVideoIntrinsicMetadata(file)
   return Promise.resolve({})
+}
+
+function captureVideoFirstFrame(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const video = document.createElement('video')
+    let settled = false
+
+    const cleanup = () => {
+      video.removeAttribute('src')
+      video.load()
+      URL.revokeObjectURL(url)
+    }
+    const settle = (fn, value) => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeoutId)
+      cleanup()
+      fn(value)
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      settle(reject, new Error(t('layout.autoDetectHeightFailed')))
+    }, 5000)
+
+    const capture = () => {
+      try {
+        if (!video.videoWidth || !video.videoHeight) {
+          throw new Error(t('layout.autoDetectHeightFailed'))
+        }
+        const canvas = document.createElement('canvas')
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(video, 0, 0)
+        settle(resolve, ctx.getImageData(0, 0, canvas.width, canvas.height))
+      } catch (err) {
+        settle(reject, err)
+      }
+    }
+
+    video.preload = 'auto'
+    video.muted = true
+    video.playsInline = true
+    // 始终测真实视频首帧（第 0 秒），不要使用用户设置的 startFrame / 当前预览帧。
+    video.currentTime = 0
+    video.addEventListener('loadeddata', () => capture(), { once: true })
+    video.addEventListener('error', () => settle(reject, new Error(t('layout.autoDetectHeightFailed'))), { once: true })
+    video.src = url
+    video.load()
+  })
+}
+
+function measureSourceCharacterHeight(imageData, keyingParams, region) {
+  const processingData = cropImageData(imageData, region)
+  if (!processingData) return 0
+
+  const keyed = applyKeying(processingData, keyingParams)
+  return measureAlphaHeight(keyed, 10)
 }
 
 function sortProfilesByUsage(profiles) {
@@ -852,6 +911,24 @@ export default function App() {
     setResultVideoFormat(null)
   }, [])
 
+  const handleAutoDetectSourceCharacterHeight = useCallback(async () => {
+    if (mediaMode !== 'video' || !videoFile) return
+
+    try {
+      // 始终基于真实视频首帧测量，不读取 frameRange.startFrame / 当前预览帧。
+      const firstFrame = await captureVideoFirstFrame(videoFile)
+      const height = measureSourceCharacterHeight(firstFrame, keyingParams, videoRegion)
+
+      if (height <= 0) {
+        alert(t('layout.autoDetectHeightNoForeground'))
+        return
+      }
+      setLayoutParams(prev => ({ ...prev, sourceCharacterHeight: height }))
+    } catch (err) {
+      alert(`${t('layout.autoDetectHeightFailed')}: ${err.message}`)
+    }
+  }, [keyingParams, mediaMode, videoFile, videoRegion])
+
   const renderPreview = useCallback(() => {
     if (!processingImageData) return
     const canvas = previewRef.current
@@ -1104,7 +1181,13 @@ export default function App() {
               />
             )}
             <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
-            <LayoutPanel params={layoutParams} onChange={setLayoutParams} imageSize={layoutInputSize} />
+            <LayoutPanel
+              params={layoutParams}
+              onChange={setLayoutParams}
+              imageSize={layoutInputSize}
+              canAutoDetectSourceCharacterHeight={mediaMode === 'video' && Boolean(videoFile)}
+              onAutoDetectSourceCharacterHeight={handleAutoDetectSourceCharacterHeight}
+            />
           </div>
 
           <div className="sidebar-dock">

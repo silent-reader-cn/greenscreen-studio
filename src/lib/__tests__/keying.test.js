@@ -5,7 +5,7 @@
  * 算法涉及逐像素计算，使用小尺寸合成图验证边界条件。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { applyKeying, autoCropKeyed, cleanupKeyed, composeToCanvas, computePlacement, cropKeyedToBounds, expandBoundsToSourceCenter, resolveLayoutScale } from '../keying.js'
+import { applyKeying, autoCropKeyed, cleanupKeyed, composeToCanvas, computePlacement, cropKeyedToBounds, expandBoundsToSourceCenter, measureAlphaHeight, resolveLayoutScale } from '../keying.js'
 
 // ===== 测试工具函数 =====
 
@@ -32,6 +32,22 @@ function createCheckerImage(w, h) {
       data[i + 1] = isEven ? 255 : 0 // G
       data[i + 2] = 0                // B
       data[i + 3] = 255              // A
+    }
+  }
+  return { data, width: w, height: h }
+}
+
+/** 创建自定义像素图案 */
+function createPatternImage(w, h, getPixel) {
+  const data = new Uint8ClampedArray(w * h * 4)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4
+      const [r, g, b, a] = getPixel(x, y)
+      data[i] = r
+      data[i + 1] = g
+      data[i + 2] = b
+      data[i + 3] = a
     }
   }
   return { data, width: w, height: h }
@@ -352,6 +368,25 @@ describe('expandBoundsToSourceCenter', () => {
     )
 
     expect(result).toEqual({ minX: 19, minY: 10, maxX: 80, maxY: 20 })
+  })
+})
+
+// ===== cleanupKeyed 测试 =====
+describe('measureAlphaHeight', () => {
+  it('按残留 alpha 像素最高点和最低点计算 Y 轴高度', () => {
+    const img = createPatternImage(4, 6, (x, y) => {
+      if (x === 1 && y === 2) return [255, 0, 0, 255]
+      if (x === 2 && y === 4) return [255, 0, 0, 255]
+      return [0, 255, 0, 0]
+    })
+
+    expect(measureAlphaHeight(img, 10)).toBe(3)
+  })
+
+  it('没有前景像素时返回 0', () => {
+    const img = createPatternImage(4, 6, () => [0, 255, 0, 0])
+
+    expect(measureAlphaHeight(img, 10)).toBe(0)
   })
 })
 

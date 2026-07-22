@@ -27,7 +27,13 @@ const NumberInput = ({ label, value, onChange, min = 1, max = 9999 }) => (
   </div>
 )
 
-export default function LayoutPanel({ params, onChange, imageSize }) {
+export default function LayoutPanel({
+  params,
+  onChange,
+  imageSize,
+  canAutoDetectSourceCharacterHeight = false,
+  onAutoDetectSourceCharacterHeight,
+}) {
   const update = (key, val) => onChange({ ...params, [key]: val })
   const summary = `${params.canvasWidth}×${params.canvasHeight}`
   const sourceCharacterHeight = Math.max(0, Math.round(Number(params.sourceCharacterHeight) || 0))
@@ -76,7 +82,13 @@ export default function LayoutPanel({ params, onChange, imageSize }) {
       </div>
 
       <div className="layout-group">
-        <p className="group-label">{t('layout.sourceCharacterHeight')}</p>
+        <p
+          className={`group-label ${canAutoDetectSourceCharacterHeight ? 'dblclick-label' : ''}`}
+          title={canAutoDetectSourceCharacterHeight ? t('layout.sourceCharacterHeightAutoDetectTitle') : undefined}
+          onDoubleClick={canAutoDetectSourceCharacterHeight ? onAutoDetectSourceCharacterHeight : undefined}
+        >
+          {t('layout.sourceCharacterHeight')}
+        </p>
         <NumberInput
           label={t('layout.px')}
           value={sourceCharacterHeight}

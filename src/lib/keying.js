@@ -292,6 +292,14 @@ export function findAlphaBounds(keyedData, threshold = 10) {
 }
 
 /**
+ * 计算抠像后残留前景像素的 Y 轴高度。
+ */
+export function measureAlphaHeight(keyedData, threshold = 10) {
+  const bounds = findAlphaBounds(keyedData, threshold);
+  return bounds ? bounds.maxY - bounds.minY + 1 : 0;
+}
+
+/**
  * 清理抠像后残留的标记点和孤立前景组件。
  *
  * 默认不启用任何破坏性清理；调用方需要显式开启对应选项。
