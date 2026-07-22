@@ -29,7 +29,7 @@ If the background should be a non-default key color, set both `keying.keyColor` 
 2. For quick validation, call `process_video` with a short `range`, such as frames 0 to 30.
 3. For final output, remove `range` or set the approved loop range.
 
-Video auto-crop scans the requested frame range and then reuses one stable union crop box for every exported frame, so changing silhouettes do not change the per-frame scaling basis. By default `layout.sourceCenterAnchor` pads that stable box around the source frame center to keep separate clips aligned; set it to `false` for the previous tight union crop behavior.
+Video auto-crop scans the requested frame range and then reuses one stable union crop box for every exported frame, so changing silhouettes do not change the per-frame **crop** basis. By default `layout.sourceCenterAnchor` pads that stable box around the source frame center (helps horizontal clip-to-clip alignment); set it to `false` for the previous tight union crop. Under default fit_box, different union sizes still change **scale** — for matched character height across clips, set `layout.sourceCharacterHeight` (standing head→foot in source px) so `scale = personHeight / sourceCharacterHeight`.
 
 If the source contains multiple characters, UI, or effects outside the desired subject, pass `params.region` with source-pixel `{ "x", "y", "width", "height" }`. The region is applied before keying, cleanup, auto-crop, and layout, matching the WebUI video processing-region selector.
 
@@ -124,6 +124,7 @@ Use exact frames when an animation clip needs selected poses, for example `idle`
       "canvasHeight": 256,
       "personWidth": 160,
       "personHeight": 160,
+      "sourceCharacterHeight": 520,
       "anchor": "feet"
     },
     "cleanup": {
@@ -141,6 +142,8 @@ Use exact frames when an animation clip needs selected poses, for example `idle`
   }
 }
 ```
+
+`sourceCharacterHeight` is optional (`0` = fit box). When set, reuse the **same** standing source-pixel height for every direction/clip of that character so atlas cell heights match.
 
 Frame metadata is returned in ascending source-frame order and includes each atlas region, source video frame index, crop, placement, cleanup stats, and warnings.
 
@@ -228,13 +231,23 @@ Use:
 - `removeSmallComponents: true` with `minComponentPixels` around 32 to 96 for dust, marker fragments, or detached specks.
 - Higher `minComponentPixels` only after verifying it does not remove small character parts such as hands, weapon tips, or hair.
 
+## Cross-clip height lock (skill packs)
+
+When idle / walk / skill clips of one character must share on-canvas height:
+
+1. Measure idle standing head→foot once in **source** pixels (or processing-region pixels if region is used).
+2. Set `layout.personHeight` to the target safe-area / person box height.
+3. Set `layout.sourceCharacterHeight` to the measured value on **every** export for that character.
+4. Prefer `layout.anchor: "feet"` plus consistent `sourceCenterAnchor` for placement; do not re-measure per action (raised arms inflate bbox height).
+
 ## Verification Checklist
 
 - Output path exists and has nonzero size.
 - Image outputs report expected canvas dimensions.
 - Video outputs report completed progress and a plausible `result.frameCount`.
 - Chosen mode and format are compatible.
-- If a user supplied explicit dimensions, the returned `params.layout` preserves them after normalization.
+- If a user supplied explicit dimensions, the returned `params.layout` preserves them after normalization (including `sourceCharacterHeight` when set).
 - Sprite and Godot exports report expected `frameCount`, `atlasDimensions`, per-frame regions, and source frame indexes.
+- Multi-clip packs: compare `placement.scale` / `scaleMode` when available — height-lock should report `source_character_height` and matching scales.
 - Check `cleanup` stats to confirm marker/component removal happened when enabled.
 - Check warnings for suspicious loop candidates, empty foregrounds, out-of-canvas placement, or remaining foreground components.

@@ -41,17 +41,18 @@ Read `references/client-config.md` when the user asks how to connect this MCP se
 - Existing output files are protected by default. Pass `overwrite: true` only when the user asked to replace a file or the path is clearly scratch output.
 - Transparent video supports `webm`, `mov`, and looping `gif`; green-screen video supports `mp4`, `webm`, `mov`, and looping `gif`; GIF exports have no audio.
 - Long video calls can exceed client request timeouts. For tests or previews, pass a small `range` such as `{ "startFrame": 0, "endFrame": 30 }`.
-- Video auto-crop scans the requested frame range, then uses one stable union crop box for every frame; by default `layout.sourceCenterAnchor` pads that box around the source frame center for steadier clip-to-clip alignment. When no range is provided, it scans the full video.
-- Prefer preserving the same `params` across preview, loop detection, final export, and sprite sheet generation so results match.
+- Video auto-crop scans the requested frame range, then uses one stable union crop box for every frame; by default `layout.sourceCenterAnchor` pads that box around the source frame center for steadier clip-to-clip **horizontal** alignment. When no range is provided, it scans the full video. Source-center alone does **not** lock character height across clips.
+- For **same person height across skill clips**, set `layout.sourceCharacterHeight` to standing head→foot height in **source pixels** (idle pose once per character). Scale becomes `personHeight / sourceCharacterHeight`. `0` (default) keeps fit-to-crop-box. Reuse the same number + same `personHeight` for the whole pack.
+- Prefer preserving the same `params` (including `sourceCharacterHeight`) across preview, loop detection, final export, and sprite sheet generation so results match.
 - For game sprites, prefer `mode: "transparent"` and set `layout.anchor: "feet"` or `"bottom_center"` when a stable baseline matters. The default anchor remains `"center"` for backward compatibility.
 - For exact clips such as `idle`, `walk_start`, `walk_loop`, and `walk_stop`, pass `spriteParams.frames` or Godot clip `frames` explicitly instead of relying on `sampleEvery`.
 - Enable cleanup before auto-crop when tracking marks or dust expand the bounding box: `removePaleGreenMarkers`, `keepLargestComponent`, `removeSmallComponents`, and a suitable `minComponentPixels`.
 
 ## Parameter Defaults
 
-Default keying targets bright green `[0, 255, 0]` with moderate tolerance, spill suppression, and feathering. Default layout exports a 1024 x 1024 canvas with a centered 760 x 940 person box and auto-crop enabled.
+Default keying targets bright green `[0, 255, 0]` with moderate tolerance, spill suppression, and feathering. Default layout exports a 1024 x 1024 canvas with a centered 760 x 940 person box, auto-crop enabled, and `sourceCharacterHeight: 0` (fit_box).
 
-For a simple first pass, omit `params` and let the MCP defaults apply. Tune `keying.tolerance`, `keying.spillSuppression`, `keying.feather`, and `layout.personWidth/personHeight` after inspecting the first output.
+For a simple first pass, omit `params` and let the MCP defaults apply. Tune `keying.tolerance`, `keying.spillSuppression`, `keying.feather`, and `layout.personWidth/personHeight` after inspecting the first output. For multi-clip character packs, add a shared `layout.sourceCharacterHeight` after measuring idle standing height.
 
 ## Godot SpriteFrames Defaults
 
