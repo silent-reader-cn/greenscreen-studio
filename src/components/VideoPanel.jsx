@@ -234,6 +234,33 @@ export default function VideoPanel({
     setErrorMsg('')
   }, [])
 
+  const handleMirrorGodotClip = useCallback((sourceClip) => {
+    const name = String(godotParams.animationName || '').trim()
+    if (!name) {
+      setErrorMsg(t('videoPanel.clipNameRequired'))
+      return
+    }
+    if (godotClips.some(clip => clip.name === name)) {
+      setErrorMsg(t('videoPanel.clipNameDuplicate', { name }))
+      return
+    }
+    if (name === sourceClip.name) {
+      setErrorMsg(t('videoPanel.clipMirrorSameName'))
+      return
+    }
+
+    const clip = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name,
+      fps: sourceClip.fps,
+      loop: sourceClip.loop,
+      mirrorOf: sourceClip.name,
+      selectionMode: 'mirror',
+    }
+    setGodotClips(clips => [...clips, clip])
+    setErrorMsg('')
+  }, [godotClips, godotParams.animationName])
+
   const availableFormats = FMT_OPTIONS.filter(f => f.modes.includes(mode))
 
   useEffect(() => {
@@ -391,7 +418,17 @@ export default function VideoPanel({
             godot: {
               ...godotParams,
               animations: godotClips.length > 0
-                ? godotClips.map(({ id, selectionMode, ...clip }) => clip)
+                ? godotClips.map(({ id, selectionMode, ...clip }) => {
+                    if (clip.mirrorOf) {
+                      return {
+                        name: clip.name,
+                        fps: clip.fps,
+                        loop: clip.loop,
+                        mirrorOf: clip.mirrorOf,
+                      }
+                    }
+                    return clip
+                  })
                 : undefined,
             },
           }),
@@ -801,14 +838,20 @@ export default function VideoPanel({
                           <div className="godot-clip-main">
                             <strong>{clip.name}</strong>
                             <span>
-                              {t('videoPanel.clipRange', {
-                                start: clip.range?.startFrame ?? 0,
-                                end: Math.max(0, (clip.range?.endFrame ?? 0) - 1),
-                              })}
-                              {' · '}
-                              {clip.selectionMode === 'exact'
-                                ? t('videoPanel.clipExactFrames', { count: clip.frames?.length || 0 })
-                                : t('videoPanel.clipSample', { every: clip.sampleEvery, max: clip.maxFrames })}
+                              {clip.mirrorOf
+                                ? t('videoPanel.clipMirrorOf', { name: clip.mirrorOf })
+                                : (
+                                  <>
+                                    {t('videoPanel.clipRange', {
+                                      start: clip.range?.startFrame ?? 0,
+                                      end: Math.max(0, (clip.range?.endFrame ?? 0) - 1),
+                                    })}
+                                    {' · '}
+                                    {clip.selectionMode === 'exact'
+                                      ? t('videoPanel.clipExactFrames', { count: clip.frames?.length || 0 })
+                                      : t('videoPanel.clipSample', { every: clip.sampleEvery, max: clip.maxFrames })}
+                                  </>
+                                )}
                               {' · '}
                               {t('videoPanel.clipFpsLoop', {
                                 fps: clip.fps,
@@ -816,13 +859,26 @@ export default function VideoPanel({
                               })}
                             </span>
                           </div>
-                          <button
-                            className="godot-clip-delete"
-                            type="button"
-                            onClick={() => handleRemoveGodotClip(clip.id)}
-                            disabled={processing}
-                            aria-label={t('videoPanel.deleteGodotClip', { name: clip.name })}
-                          >×</button>
+                          <div className="godot-clip-actions">
+                            {!clip.mirrorOf && (
+                              <button
+                                className="godot-clip-mirror"
+                                type="button"
+                                onClick={() => handleMirrorGodotClip(clip)}
+                                disabled={processing}
+                                title={t('videoPanel.mirrorGodotClipHint')}
+                              >
+                                {t('videoPanel.mirrorGodotClip')}
+                              </button>
+                            )}
+                            <button
+                              className="godot-clip-delete"
+                              type="button"
+                              onClick={() => handleRemoveGodotClip(clip.id)}
+                              disabled={processing}
+                              aria-label={t('videoPanel.deleteGodotClip', { name: clip.name })}
+                            >×</button>
+                          </div>
                         </div>
                       ))}
                     </div>

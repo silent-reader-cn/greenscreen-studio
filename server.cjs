@@ -466,13 +466,24 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
     const animations = [];
     const selections = [];
     const usedAnimationNames = new Set();
+    const jobsByAnimation = new Map();
+    const sourceAnimations = [];
+    const mirrorAnimations = [];
 
     for (const rawAnimation of requestedAnimations) {
       const name = String(rawAnimation?.name || '').trim();
       if (!name) return res.status(400).json({ error: 'Every Godot animation requires a name' });
       if (usedAnimationNames.has(name)) return res.status(400).json({ error: `Duplicate Godot animation name: ${name}` });
       usedAnimationNames.add(name);
+      if (rawAnimation?.mirrorOf) {
+        mirrorAnimations.push({ ...rawAnimation, name });
+      } else {
+        sourceAnimations.push({ ...rawAnimation, name });
+      }
+    }
 
+    for (const rawAnimation of sourceAnimations) {
+      const name = rawAnimation.name;
       const animationFps = Math.max(1, Math.round(Number(rawAnimation.fps) || fps));
       const selection = selectSpriteFrames({
         frames: rawAnimation.frames,
@@ -483,17 +494,53 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
       if (selection.frames.length === 0) {
         return res.status(400).json({ error: `Godot animation "${name}" has no valid source frames` });
       }
+      const flipH = rawAnimation.flipH === true;
       const atlasStart = frameJobs.length;
-      frameJobs.push(...selection.frames.map((sourceFrameIndex, animationFrameIndex) => ({
+      const jobs = selection.frames.map((sourceFrameIndex, animationFrameIndex) => ({
         atlasIndex: atlasStart + animationFrameIndex,
         animationName: name,
         animationFrameIndex,
         inputPath: job.inputPath,
         sourceFrameIndex,
-        flipH: false,
-      })));
+        flipH,
+      }));
+      frameJobs.push(...jobs);
       animations.push({ name, fps: animationFps, loop: rawAnimation.loop !== false });
-      selections.push({ animationName: name, selection });
+      selections.push({ animationName: name, selection, flipH, mirroredFrom: null });
+      jobsByAnimation.set(name, jobs);
+    }
+
+    for (const rawAnimation of mirrorAnimations) {
+      const name = rawAnimation.name;
+      const mirrorOf = String(rawAnimation.mirrorOf || '').trim();
+      const sourceJobs = jobsByAnimation.get(mirrorOf);
+      if (!sourceJobs || sourceJobs.length === 0) {
+        return res.status(400).json({ error: `Mirror animation "${name}" references missing source "${mirrorOf}"` });
+      }
+      const animationFps = Math.max(1, Math.round(Number(rawAnimation.fps) || fps));
+      const atlasStart = frameJobs.length;
+      const jobs = sourceJobs.map((sourceJob, animationFrameIndex) => ({
+        atlasIndex: atlasStart + animationFrameIndex,
+        animationName: name,
+        animationFrameIndex,
+        inputPath: sourceJob.inputPath,
+        sourceFrameIndex: sourceJob.sourceFrameIndex,
+        flipH: sourceJob.flipH !== true,
+      }));
+      frameJobs.push(...jobs);
+      animations.push({ name, fps: animationFps, loop: rawAnimation.loop !== false });
+      selections.push({
+        animationName: name,
+        selection: {
+          mode: 'mirror',
+          frames: sourceJobs.map(item => item.sourceFrameIndex),
+          frameCount: sourceJobs.length,
+          ordering: 'source_animation_order',
+        },
+        flipH: true,
+        mirroredFrom: mirrorOf,
+      });
+      jobsByAnimation.set(name, jobs);
     }
     const exportParams = {
       ...params,

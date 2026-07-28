@@ -188,6 +188,10 @@ const dictionaries = {
       clipFpsLoop: '{fps} FPS · loop: {loop}',
       clipNameRequired: 'Enter an animation name before saving',
       clipNameDuplicate: 'Animation "{name}" already exists',
+      clipMirrorOf: 'mirror of {name}',
+      clipMirrorSameName: 'Mirror animation name must differ from the source',
+      mirrorGodotClip: 'Mirror',
+      mirrorGodotClipHint: 'Create a horizontal mirror using the animation name above',
     },
     preview: {
       emptyImage: 'Drop or paste an image to preview it here',
@@ -402,6 +406,10 @@ const dictionaries = {
       clipFpsLoop: '{fps} FPS · 循环：{loop}',
       clipNameRequired: '保存前请输入动画名称',
       clipNameDuplicate: '动画「{name}」已存在',
+      clipMirrorOf: '镜像自 {name}',
+      clipMirrorSameName: '镜像动画名不能与源动画相同',
+      mirrorGodotClip: '镜像',
+      mirrorGodotClipHint: '用上方动画名称创建水平镜像版本',
     },
     preview: {
       emptyImage: '拖入或粘贴图片后在此预览',

@@ -492,14 +492,64 @@ describe('POST /api/video/export-godot-spriteframes', () => {
       { name: 'attack', fps: 16, loop: false },
     ])
 
+    const mirrorExportRes = await request(freshApp)
+      .post('/api/video/export-godot-spriteframes')
+      .send({
+        jobId: uploadRes.body.jobId,
+        params: { keying: {}, layout: { sourceCharacterHeight: 520 } },
+        spriteParams: { frameWidth: 256, frameHeight: 256, framesPerRow: 8 },
+        godot: {
+          safeAreaWidth: 160,
+          safeAreaHeight: 160,
+          fps: 12,
+          animations: [
+            { name: 'walk_SE', frames: [0, 3, 6], fps: 10, loop: true },
+            { name: 'walk_SW', mirrorOf: 'walk_SE', fps: 10, loop: true },
+          ],
+        },
+      })
+
+    expect(mirrorExportRes.status).toBe(200)
+    expect(mirrorExportRes.body.frameCount).toBe(6)
+    expect(mirrorExportRes.body.animations).toEqual([
+      expect.objectContaining({ name: 'walk_SE', fps: 10, loop: true, frameCount: 3 }),
+      expect.objectContaining({ name: 'walk_SW', fps: 10, loop: true, frameCount: 3 }),
+    ])
+    const mirrorCall = fakeVideoProcessor.exportGodotSpriteFrames.mock.calls.at(-1)
+    expect(mirrorCall[0].map(job => ({
+      atlasIndex: job.atlasIndex,
+      animationName: job.animationName,
+      animationFrameIndex: job.animationFrameIndex,
+      sourceFrameIndex: job.sourceFrameIndex,
+      flipH: job.flipH,
+    }))).toEqual([
+      { atlasIndex: 0, animationName: 'walk_SE', animationFrameIndex: 0, sourceFrameIndex: 0, flipH: false },
+      { atlasIndex: 1, animationName: 'walk_SE', animationFrameIndex: 1, sourceFrameIndex: 3, flipH: false },
+      { atlasIndex: 2, animationName: 'walk_SE', animationFrameIndex: 2, sourceFrameIndex: 6, flipH: false },
+      { atlasIndex: 3, animationName: 'walk_SW', animationFrameIndex: 0, sourceFrameIndex: 0, flipH: true },
+      { atlasIndex: 4, animationName: 'walk_SW', animationFrameIndex: 1, sourceFrameIndex: 3, flipH: true },
+      { atlasIndex: 5, animationName: 'walk_SW', animationFrameIndex: 2, sourceFrameIndex: 6, flipH: true },
+    ])
+    expect(mirrorCall[3].animations).toEqual([
+      { name: 'walk_SE', fps: 10, loop: true },
+      { name: 'walk_SW', fps: 10, loop: true },
+    ])
+
     const metadataRes = await request(freshApp)
       .get(`/api/video/godot-artifact/${uploadRes.body.jobId}/metadata`)
     expect(metadataRes.status).toBe(200)
     const metadata = JSON.parse(metadataRes.text)
-    expect(metadata.animationNames).toEqual(['idle', 'attack'])
-    expect(metadata.selections.map(item => item.animationName)).toEqual(['idle', 'attack'])
+    expect(metadata.animationNames).toEqual(['walk_SE', 'walk_SW'])
+    expect(metadata.selections.map(item => ({
+      animationName: item.animationName,
+      mirroredFrom: item.mirroredFrom,
+      flipH: item.flipH,
+    }))).toEqual([
+      { animationName: 'walk_SE', mirroredFrom: null, flipH: false },
+      { animationName: 'walk_SW', mirroredFrom: 'walk_SE', flipH: true },
+    ])
     expect(metadata.scene).toEqual(expect.objectContaining({
-      defaultAnimation: 'idle',
+      defaultAnimation: 'walk_SE',
       anchor: 'feet',
     }))
 
@@ -519,9 +569,9 @@ describe('POST /api/video/export-godot-spriteframes', () => {
         res.on('end', () => callback(null, Buffer.concat(chunks)))
       })
     expect(bundleRes.body.subarray(0, 2).toString('utf8')).toBe('PK')
-    expect(bundleRes.body.includes(Buffer.from(multiExportRes.body.artifacts.scene.filename))).toBe(true)
-    expect(bundleRes.body.includes(Buffer.from(multiExportRes.body.artifacts.spriteframes.filename))).toBe(true)
-    expect(multiExportRes.body.artifacts.bundle.filename).toMatch(/\.zip$/)
+    expect(bundleRes.body.includes(Buffer.from(mirrorExportRes.body.artifacts.scene.filename))).toBe(true)
+    expect(bundleRes.body.includes(Buffer.from(mirrorExportRes.body.artifacts.spriteframes.filename))).toBe(true)
+    expect(mirrorExportRes.body.artifacts.bundle.filename).toMatch(/\.zip$/)
 
     const sceneRes = await request(freshApp)
       .get(`/api/video/godot-artifact/${uploadRes.body.jobId}/scene`)
