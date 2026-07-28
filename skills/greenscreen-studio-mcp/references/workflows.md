@@ -149,7 +149,7 @@ Frame metadata is returned in ascending source-frame order and includes each atl
 
 ## Godot SpriteFrames
 
-Use `export_godot_spriteframes` when the desired result is a Godot `SpriteFrames` resource rather than a standalone PNG.
+Use `export_godot_spriteframes` when the desired result is a Godot-ready character pack rather than a standalone PNG.
 
 Recommended settings for a top-down character:
 
@@ -158,18 +158,30 @@ Recommended settings for a top-down character:
 - `layout.anchor: "feet"` to keep a stable baseline.
 - `mode: "transparent"`.
 - Cleanup enabled before auto-crop when pale-green tracking dots or isolated pixels are present.
+- Optional `layout.sourceCharacterHeight` to lock person height across clips.
 
-Example:
+The tool writes:
+
+- atlas PNG
+- `.tres` SpriteFrames
+- feet-anchored `.tscn` AnimatedSprite2D scene
+- metadata JSON
+- ZIP bundle with those sibling files
+
+Example SE/NE pack:
 
 ```json
 {
-  "outputPath": "C:/godot/project/characters/hero_spriteframes.tres",
-  "atlasPath": "C:/godot/project/characters/hero_atlas.png",
-  "metadataPath": "C:/godot/project/characters/hero_metadata.json",
+  "outputPath": "C:/godot/project/characters/wenning_walk.tres",
+  "atlasPath": "C:/godot/project/characters/wenning_walk_atlas.png",
+  "scenePath": "C:/godot/project/characters/wenning_walk.tscn",
+  "metadataPath": "C:/godot/project/characters/wenning_walk_metadata.json",
+  "bundlePath": "C:/godot/project/characters/wenning_walk.zip",
   "params": {
     "mode": "transparent",
     "layout": {
-      "anchor": "feet"
+      "anchor": "feet",
+      "sourceCharacterHeight": 520
     },
     "cleanup": {
       "removePaleGreenMarkers": true,
@@ -179,6 +191,8 @@ Example:
     }
   },
   "godot": {
+    "characterName": "wenning",
+    "actionName": "walk",
     "frameWidth": 256,
     "frameHeight": 256,
     "safeAreaWidth": 160,
@@ -188,20 +202,16 @@ Example:
     "godotProjectRoot": "C:/godot/project",
     "animationGroups": [
       {
-        "name": "walk_loop",
+        "name": "walk",
         "fps": 12,
         "loop": true,
         "directions": {
-          "down": { "inputPath": "C:/captures/down.mp4", "frames": [0, 6, 12, 18] },
-          "down_right": { "inputPath": "C:/captures/down_right.mp4", "frames": [0, 6, 12, 18] },
-          "right": { "inputPath": "C:/captures/right.mp4", "frames": [0, 6, 12, 18] },
-          "up_right": { "inputPath": "C:/captures/up_right.mp4", "frames": [0, 6, 12, 18] },
-          "up": { "inputPath": "C:/captures/up.mp4", "frames": [0, 6, 12, 18] }
+          "SE": { "inputPath": "C:/captures/walk_SE.mp4", "frames": [0, 6, 12, 18] },
+          "NE": { "inputPath": "C:/captures/walk_NE.mp4", "frames": [0, 6, 12, 18] }
         },
         "mirror": {
-          "down_left": "down_right",
-          "left": "right",
-          "up_left": "up_right"
+          "SW": "SE",
+          "NW": "NE"
         }
       }
     ]
@@ -209,7 +219,7 @@ Example:
 }
 ```
 
-For five source directions, capture or generate `down`, `down_right`, `right`, `up_right`, and `up`. Mirror `left` from `right`, `down_left` from `down_right`, and `up_left` from `up_right`. Keep `up` and `down` unmirrored unless the source art is symmetric enough for that to be intentional.
+For SE/NE style packs, capture or generate `SE` and `NE`, then mirror `SW`/`NW`. For five-source eight-direction sets, capture or generate `down`, `down_right`, `right`, `up_right`, and `up`. Mirror `left` from `right`, `down_left` from `down_right`, and `up_left` from `up_right`. Keep `up` and `down` unmirrored unless the source art is symmetric enough for that to be intentional.
 
 For full movement sets, use animation group names such as:
 
@@ -218,7 +228,13 @@ For full movement sets, use animation group names such as:
 - `walk_loop` or `walk`
 - `walk_stop`
 
-The tool will produce Godot animation names such as `idle_down`, `walk_start_right`, `walk_loop_up_left`, and `walk_stop_down`.
+The tool will produce Godot animation names such as `idle_SE`, `walk_start_NE`, `walk_loop_SW`, and `walk_stop_NW`.
+
+Naming defaults:
+
+- multi-direction pack: `character_action`
+- single animation: `character_action_direction`
+- explicit override: `godot.exportName`
 
 ## Artifact Cleanup
 
@@ -248,6 +264,8 @@ When idle / walk / skill clips of one character must share on-canvas height:
 - Chosen mode and format are compatible.
 - If a user supplied explicit dimensions, the returned `params.layout` preserves them after normalization (including `sourceCharacterHeight` when set).
 - Sprite and Godot exports report expected `frameCount`, `atlasDimensions`, per-frame regions, and source frame indexes.
+- Godot exports also provide `.tscn`, metadata, and ZIP siblings; prefer verifying the ZIP contents when handing assets to a Godot project.
 - Multi-clip packs: compare `placement.scale` / `scaleMode` when available — height-lock should report `source_character_height` and matching scales.
 - Check `cleanup` stats to confirm marker/component removal happened when enabled.
 - Check warnings for suspicious loop candidates, empty foregrounds, out-of-canvas placement, or remaining foreground components.
+- Confirm export basename matches the intended `character_action` / `character_action_direction` convention.

@@ -47,7 +47,19 @@ It is useful for:
 - Range-based sampling with `range`, `sampleEvery`, and `maxFrames`.
 - Improved loop-end detection with early-frame exclusion, strict spacing, motion-aware ranking, and warnings.
 - Optional cleanup for pale-green tracking marks and isolated foreground components before auto-crop.
-- Godot export: atlas PNG, Godot 4 `.tres` `SpriteFrames`, and metadata JSON.
+- Desktop Godot export from the video panel:
+  - exact frames or interval sampling
+  - multi-clip packs from one or more uploaded videos
+  - one-click `SE → SE+SW` and `SE/NE → SE/NE/SW/NW` direction packs
+  - horizontal mirror clips for opposite directions
+  - first-frame thumbnails for saved clips before export
+  - shared naming: `character_action` packs or `character_action_direction` single clips
+- Godot artifacts:
+  - atlas PNG
+  - Godot 4 `.tres` `SpriteFrames`
+  - feet-anchored `.tscn` `AnimatedSprite2D` scene
+  - metadata JSON
+  - ZIP bundle for one-drop import
 - Five-source-direction to eight-direction workflow through mirrored directions.
 
 ### MCP Automation
@@ -111,6 +123,24 @@ Manual server start:
 npm run mcp
 ```
 
+## Desktop Godot Workflow
+
+1. Drop a green-screen action video into the app.
+2. Open **Video Settings** and switch export type to **Godot SpriteFrames**.
+3. Set character name / action name (for example `wenning` + `walk`).
+4. Select exact frames or a range, then either:
+   - save the current clip, or
+   - click `SE → SE+SW` / `SE/NE pack` / `Expand mirrors`.
+5. Review the saved-clip thumbnails before export.
+6. Generate Godot files and download the ZIP bundle.
+
+Typical SE/NE pack:
+
+1. Name the action `walk` or `walk_SE`.
+2. Drop the SE video → `SE → SE+SW`.
+3. Drop the NE video → `SE/NE pack`.
+4. Export once. Result files use basename `wenning_walk` when character/action are filled.
+
 ## Godot SpriteFrames Example
 
 Recommended character frame setup:
@@ -122,13 +152,16 @@ Recommended character frame setup:
 
 ```json
 {
-  "outputPath": "C:/godot/project/characters/hero_spriteframes.tres",
-  "atlasPath": "C:/godot/project/characters/hero_atlas.png",
-  "metadataPath": "C:/godot/project/characters/hero_metadata.json",
+  "outputPath": "C:/godot/project/characters/wenning_walk.tres",
+  "atlasPath": "C:/godot/project/characters/wenning_walk_atlas.png",
+  "scenePath": "C:/godot/project/characters/wenning_walk.tscn",
+  "metadataPath": "C:/godot/project/characters/wenning_walk_metadata.json",
+  "bundlePath": "C:/godot/project/characters/wenning_walk.zip",
   "params": {
     "mode": "transparent",
     "layout": {
-      "anchor": "feet"
+      "anchor": "feet",
+      "sourceCharacterHeight": 520
     },
     "cleanup": {
       "removePaleGreenMarkers": true,
@@ -138,6 +171,8 @@ Recommended character frame setup:
     }
   },
   "godot": {
+    "characterName": "wenning",
+    "actionName": "walk",
     "frameWidth": 256,
     "frameHeight": 256,
     "safeAreaWidth": 160,
@@ -147,25 +182,35 @@ Recommended character frame setup:
     "godotProjectRoot": "C:/godot/project",
     "animationGroups": [
       {
-        "name": "walk_loop",
+        "name": "walk",
         "loop": true,
         "directions": {
-          "down": { "inputPath": "C:/captures/down.mp4", "frames": [0, 6, 12, 18] },
-          "down_right": { "inputPath": "C:/captures/down_right.mp4", "frames": [0, 6, 12, 18] },
-          "right": { "inputPath": "C:/captures/right.mp4", "frames": [0, 6, 12, 18] },
-          "up_right": { "inputPath": "C:/captures/up_right.mp4", "frames": [0, 6, 12, 18] },
-          "up": { "inputPath": "C:/captures/up.mp4", "frames": [0, 6, 12, 18] }
+          "SE": { "inputPath": "C:/captures/walk_SE.mp4", "frames": [0, 6, 12, 18] },
+          "NE": { "inputPath": "C:/captures/walk_NE.mp4", "frames": [0, 6, 12, 18] }
         },
         "mirror": {
-          "down_left": "down_right",
-          "left": "right",
-          "up_left": "up_right"
+          "SW": "SE",
+          "NW": "NE"
         }
       }
     ]
   }
 }
 ```
+
+`export_godot_spriteframes` writes:
+
+- atlas PNG
+- `.tres` SpriteFrames
+- feet-anchored `.tscn` AnimatedSprite2D scene
+- metadata JSON
+- ZIP bundle with the sibling files above
+
+Naming defaults:
+
+- multi-direction pack: `character_action`
+- single animation: `character_action_direction`
+- explicit override: `godot.exportName`
 
 ## Project Structure
 
@@ -174,11 +219,13 @@ greenscreen-studio/
 ├── electron/                    # Electron main/preload
 ├── src/
 │   ├── components/              # React panels
-│   ├── lib/keying.js            # Shared keying, crop, cleanup, layout logic
+│   ├── lib/                     # Shared frontend helpers (keying, naming, direction packs)
 │   ├── App.jsx
 │   └── main.jsx
 ├── server.cjs                   # Express API
 ├── videoProcessor.cjs           # ffmpeg video and atlas pipeline
+├── godotBundle.cjs              # Shared ZIP packaging
+├── godotNaming.cjs              # Shared export basename rules
 ├── mcp/server.mjs               # stdio MCP server
 ├── skills/greenscreen-studio-mcp/
 └── docs/images/                 # README screenshots

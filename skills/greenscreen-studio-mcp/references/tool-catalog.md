@@ -238,19 +238,22 @@ The output reports `frameCount`, `sheetWidth`, `sheetHeight`, `cols`, `rows`, `a
 
 ## export_godot_spriteframes
 
-Export a Godot-ready atlas PNG, SpriteFrames `.tres`, and metadata JSON.
+Export a Godot-ready atlas PNG, SpriteFrames `.tres`, feet-anchored AnimatedSprite2D `.tscn`, metadata JSON, and ZIP bundle.
 
 Arguments:
 
 ```json
 {
-  "outputPath": "C:/godot/project/characters/hero_spriteframes.tres",
-  "atlasPath": "C:/godot/project/characters/hero_atlas.png",
-  "metadataPath": "C:/godot/project/characters/hero_metadata.json",
+  "outputPath": "C:/godot/project/characters/wenning_walk.tres",
+  "atlasPath": "C:/godot/project/characters/wenning_walk_atlas.png",
+  "scenePath": "C:/godot/project/characters/wenning_walk.tscn",
+  "metadataPath": "C:/godot/project/characters/wenning_walk_metadata.json",
+  "bundlePath": "C:/godot/project/characters/wenning_walk.zip",
   "params": {
     "mode": "transparent",
     "layout": {
-      "anchor": "feet"
+      "anchor": "feet",
+      "sourceCharacterHeight": 520
     },
     "cleanup": {
       "removePaleGreenMarkers": true,
@@ -260,6 +263,8 @@ Arguments:
     }
   },
   "godot": {
+    "characterName": "wenning",
+    "actionName": "walk",
     "frameWidth": 256,
     "frameHeight": 256,
     "safeAreaWidth": 160,
@@ -273,16 +278,12 @@ Arguments:
         "fps": 12,
         "loop": true,
         "directions": {
-          "down": { "inputPath": "C:/captures/walk_down.mp4", "frames": [0, 6, 12, 18] },
-          "down_right": { "inputPath": "C:/captures/walk_down_right.mp4", "frames": [0, 6, 12, 18] },
-          "right": { "inputPath": "C:/captures/walk_right.mp4", "frames": [0, 6, 12, 18] },
-          "up_right": { "inputPath": "C:/captures/walk_up_right.mp4", "frames": [0, 6, 12, 18] },
-          "up": { "inputPath": "C:/captures/walk_up.mp4", "frames": [0, 6, 12, 18] }
+          "SE": { "inputPath": "C:/captures/walk_SE.mp4", "frames": [0, 6, 12, 18] },
+          "NE": { "inputPath": "C:/captures/walk_NE.mp4", "frames": [0, 6, 12, 18] }
         },
         "mirror": {
-          "down_left": "down_right",
-          "left": "right",
-          "up_left": "up_right"
+          "SW": "SE",
+          "NW": "NE"
         }
       }
     ]
@@ -291,6 +292,12 @@ Arguments:
 }
 ```
 
-Flat `animations` are also supported for clips named exactly as desired, such as `idle_down`, `walk_start_right`, `walk_loop_up`, and `walk_stop_down_left`. Use `mirrorOf` on a flat animation to generate a horizontally flipped copy of an earlier animation.
+Flat `animations` are also supported for clips named exactly as desired, such as `idle_SE`, `walk_start_NE`, `walk_loop_SE`, and `walk_stop_NW`. Use `mirrorOf` on a flat animation to generate a horizontally flipped copy of an earlier animation.
 
-The returned metadata includes atlas dimensions, animation names, per-frame regions, per-frame source video frame indexes, flip flags, keying/layout params used, crop/placement information, cleanup statistics, and warnings.
+When `outputPath` is omitted, the tool chooses a basename from:
+
+- multi-direction pack: `character_action`
+- single animation: `character_action_direction`
+- explicit override: `godot.exportName`
+
+The returned metadata includes basename, atlas dimensions, animation names, scene defaults, per-frame regions, per-frame source video frame indexes, flip flags, keying/layout params used, crop/placement information, cleanup statistics, and warnings. The ZIP contains the atlas, `.tres`, `.tscn`, and metadata as sibling files.

@@ -63,7 +63,8 @@ For top-down or eight-direction Godot characters, a useful starting point is a 2
   "params": {
     "mode": "transparent",
     "layout": {
-      "anchor": "feet"
+      "anchor": "feet",
+      "sourceCharacterHeight": 520
     },
     "cleanup": {
       "removePaleGreenMarkers": true,
@@ -73,6 +74,8 @@ For top-down or eight-direction Godot characters, a useful starting point is a 2
     }
   },
   "godot": {
+    "characterName": "wenning",
+    "actionName": "walk",
     "frameWidth": 256,
     "frameHeight": 256,
     "safeAreaWidth": 160,
@@ -82,4 +85,18 @@ For top-down or eight-direction Godot characters, a useful starting point is a 2
 }
 ```
 
-For five source directions, provide `down`, `down_right`, `right`, `up_right`, and `up`, then mirror `left`, `down_left`, and `up_left` from their right-facing counterparts in `animationGroups[].mirror`.
+`export_godot_spriteframes` writes five sibling artifacts:
+
+- atlas PNG
+- Godot 4 `.tres` SpriteFrames
+- feet-anchored `.tscn` AnimatedSprite2D scene
+- metadata JSON
+- ZIP bundle for one-drop import
+
+Naming defaults:
+
+- multi-direction pack: `character_action`
+- single animation: `character_action_direction`
+- explicit override: `godot.exportName`
+
+For SE/NE style packs, provide source directions such as `SE` and `NE`, then mirror `SW`/`NW`. For five-source eight-direction sets, provide `down`, `down_right`, `right`, `up_right`, and `up`, then mirror `left`, `down_left`, and `up_left` from their right-facing counterparts in `animationGroups[].mirror`.

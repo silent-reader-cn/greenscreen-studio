@@ -49,7 +49,19 @@ Greenscreen Studio 是一个面向绿幕人物素材的桌面工具和本地 MCP
 - 范围采样：`range + sampleEvery + maxFrames`，可稳定控制预览或最终精灵图。
 - 循环检测：结合视觉相似度、局部运动/姿态可用性、早期帧排除和可疑候选警告。
 - 杂点清理：可移除浅绿色跟踪点、小型孤立组件，或只保留最大前景组件。
-- Godot 导出：生成 atlas PNG、Godot 4 `.tres` `SpriteFrames`、metadata JSON。
+- 桌面端 Godot 导出（视频面板）：
+  - 精确帧 / 间隔采样
+  - 同源或多源视频多动画打包
+  - 一键 `SE → SE+SW`、`SE/NE → SE/NE/SW/NW` 方向包
+  - 水平镜像生成反向
+  - 导出前方向片段首帧缩略图预览
+  - 统一命名：多向包 `角色_动作`，单动画 `角色_动作_方向`
+- Godot 产物：
+  - atlas PNG
+  - Godot 4 `.tres` `SpriteFrames`
+  - 脚底锚点 `.tscn` `AnimatedSprite2D` 场景
+  - metadata JSON
+  - ZIP 一键导入包
 - 八方向工作流：可用五个源方向生成八方向，镜像 `left/down_left/up_left`。
 
 ### MCP 自动化
@@ -113,6 +125,24 @@ npm run start
 npm run mcp
 ```
 
+## 桌面端 Godot 工作流
+
+1. 把绿幕动作视频拖进应用。
+2. 打开 **视频参数**，导出类型切到 **Godot SpriteFrames**。
+3. 填写角色名 / 动作名（例如 `温宁` + `walk`）。
+4. 选择精确帧或区间，然后：
+   - 保存当前片段，或
+   - 点 `SE → SE+SW` / `SE/NE 四向包` / `补齐镜像`。
+5. 先看已保存片段缩略图，确认方向和镜像。
+6. 生成 Godot 文件，优先下载 ZIP 包。
+
+常见 SE/NE 流程：
+
+1. 动画名填 `walk` 或 `walk_SE`。
+2. 拖入 SE 视频 → `SE → SE+SW`。
+3. 拖入 NE 视频 → `SE/NE 四向包`。
+4. 一次导出。填了角色/动作后，文件基名类似 `温宁_walk`。
+
 ## Godot SpriteFrames 示例
 
 推荐角色帧设置：
@@ -124,13 +154,16 @@ npm run mcp
 
 ```json
 {
-  "outputPath": "C:/godot/project/characters/hero_spriteframes.tres",
-  "atlasPath": "C:/godot/project/characters/hero_atlas.png",
-  "metadataPath": "C:/godot/project/characters/hero_metadata.json",
+  "outputPath": "C:/godot/project/characters/wenning_walk.tres",
+  "atlasPath": "C:/godot/project/characters/wenning_walk_atlas.png",
+  "scenePath": "C:/godot/project/characters/wenning_walk.tscn",
+  "metadataPath": "C:/godot/project/characters/wenning_walk_metadata.json",
+  "bundlePath": "C:/godot/project/characters/wenning_walk.zip",
   "params": {
     "mode": "transparent",
     "layout": {
-      "anchor": "feet"
+      "anchor": "feet",
+      "sourceCharacterHeight": 520
     },
     "cleanup": {
       "removePaleGreenMarkers": true,
@@ -140,6 +173,8 @@ npm run mcp
     }
   },
   "godot": {
+    "characterName": "wenning",
+    "actionName": "walk",
     "frameWidth": 256,
     "frameHeight": 256,
     "safeAreaWidth": 160,
@@ -149,25 +184,35 @@ npm run mcp
     "godotProjectRoot": "C:/godot/project",
     "animationGroups": [
       {
-        "name": "walk_loop",
+        "name": "walk",
         "loop": true,
         "directions": {
-          "down": { "inputPath": "C:/captures/down.mp4", "frames": [0, 6, 12, 18] },
-          "down_right": { "inputPath": "C:/captures/down_right.mp4", "frames": [0, 6, 12, 18] },
-          "right": { "inputPath": "C:/captures/right.mp4", "frames": [0, 6, 12, 18] },
-          "up_right": { "inputPath": "C:/captures/up_right.mp4", "frames": [0, 6, 12, 18] },
-          "up": { "inputPath": "C:/captures/up.mp4", "frames": [0, 6, 12, 18] }
+          "SE": { "inputPath": "C:/captures/walk_SE.mp4", "frames": [0, 6, 12, 18] },
+          "NE": { "inputPath": "C:/captures/walk_NE.mp4", "frames": [0, 6, 12, 18] }
         },
         "mirror": {
-          "down_left": "down_right",
-          "left": "right",
-          "up_left": "up_right"
+          "SW": "SE",
+          "NW": "NE"
         }
       }
     ]
   }
 }
 ```
+
+`export_godot_spriteframes` 会写出：
+
+- atlas PNG
+- `.tres` SpriteFrames
+- 脚底锚点 `.tscn` AnimatedSprite2D 场景
+- metadata JSON
+- 包含上述同级文件的 ZIP 包
+
+命名默认规则：
+
+- 多向包：`角色_动作`
+- 单动画：`角色_动作_方向`
+- 显式覆盖：`godot.exportName`
 
 ## 项目结构
 
@@ -176,11 +221,13 @@ greenscreen-studio/
 ├── electron/                    # Electron 主进程与 preload
 ├── src/
 │   ├── components/              # React UI 面板
-│   ├── lib/keying.js            # 前后端共享抠像、裁剪、清理、布局算法
+│   ├── lib/                     # 前端共享逻辑（抠像、命名、方向包）
 │   ├── App.jsx
 │   └── main.jsx
 ├── server.cjs                   # Express API
 ├── videoProcessor.cjs           # ffmpeg 视频与图集管线
+├── godotBundle.cjs              # 共享 ZIP 打包
+├── godotNaming.cjs              # 共享导出命名规则
 ├── mcp/server.mjs               # stdio MCP 服务器
 ├── skills/greenscreen-studio-mcp/
 └── docs/images/                 # README 截图
