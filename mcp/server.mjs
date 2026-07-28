@@ -15,6 +15,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, '..');
 const packageJson = require('../package.json');
+const { createGodotBundle } = require('../godotBundle.cjs');
 
 const DEFAULT_KEYING = Object.freeze({
   keyColor: [0, 255, 0],
@@ -143,7 +144,9 @@ Use \`export_godot_spriteframes\` for Godot-ready 2D character resources. It wri
 
 - atlas PNG
 - Godot 4 \`.tres\` SpriteFrames resource
+- Godot 4 \`.tscn\` AnimatedSprite2D scene (feet-anchored, autoplay first animation)
 - metadata JSON with frame regions, source video frame indexes, crop/placement, cleanup stats, and warnings
+- ZIP bundle containing all sibling files for one-drop import
 
 Recommended 2D character settings:
 
@@ -736,10 +739,22 @@ export async function exportGodotSpriteFramesFile(args, options = {}) {
     defaultPrefix: 'greenscreen_spriteframes_atlas',
     overwrite: args.overwrite === true,
   });
+  const scenePath = await resolveOutputPath(args.scenePath || siblingPath(outputPath, '', 'tscn'), {
+    baseDir: options.baseDir,
+    defaultExt: 'tscn',
+    defaultPrefix: 'greenscreen_spriteframes_scene',
+    overwrite: args.overwrite === true,
+  });
   const metadataPath = await resolveOutputPath(args.metadataPath || siblingPath(outputPath, '_metadata', 'json'), {
     baseDir: options.baseDir,
     defaultExt: 'json',
     defaultPrefix: 'greenscreen_spriteframes_metadata',
+    overwrite: args.overwrite === true,
+  });
+  const bundlePath = await resolveOutputPath(args.bundlePath || siblingPath(outputPath, '', 'zip'), {
+    baseDir: options.baseDir,
+    defaultExt: 'zip',
+    defaultPrefix: 'greenscreen_spriteframes_bundle',
     overwrite: args.overwrite === true,
   });
 
@@ -755,16 +770,24 @@ export async function exportGodotSpriteFramesFile(args, options = {}) {
       canvasHeight: frameHeight,
       personWidth: safeAreaWidth,
       personHeight: safeAreaHeight,
+      anchor: 'feet',
     },
   };
 
-  const { exportGodotSpriteFrames, probeVideo, selectSpriteFrames } = loadVideoProcessor(options.projectRoot);
+  const {
+    exportGodotSpriteFrames,
+    probeVideo,
+    selectSpriteFrames,
+    buildGodotAnimatedSpriteScene,
+  } = loadVideoProcessor(options.projectRoot);
   const buildResult = await buildGodotFrameJobs(godot, {
     baseDir: options.baseDir,
     probeVideo,
     selectSpriteFrames,
   });
   const atlasResourcePath = godot.atlasResourcePath || godotResourcePathForAtlas(atlasPath, godot.godotProjectRoot);
+  const spriteFramesResourcePath = godot.spriteFramesResourcePath
+    || godotResourcePathForAtlas(outputPath, godot.godotProjectRoot);
   const result = await exportGodotSpriteFrames(
     buildResult.frameJobs,
     params,
@@ -775,18 +798,29 @@ export async function exportGodotSpriteFramesFile(args, options = {}) {
       animations: buildResult.animations,
     }
   );
+  const defaultAnimation = result.animations?.[0]?.name || buildResult.animations?.[0]?.name || 'animation';
+  const sceneText = buildGodotAnimatedSpriteScene({
+    spriteFramesResourcePath,
+    animationName: defaultAnimation,
+    frameHeight,
+  });
   const statTargets = [];
 
   await fs.writeFile(atlasPath, result.buffer);
   statTargets.push(atlasPath);
   await fs.writeFile(outputPath, result.tres, 'utf8');
   statTargets.push(outputPath);
+  await fs.writeFile(scenePath, sceneText, 'utf8');
+  statTargets.push(scenePath);
 
   const metadata = {
     outputPath,
     atlasPath,
+    scenePath,
     metadataPath,
+    bundlePath,
     atlasResourcePath,
+    spriteFramesResourcePath,
     frameCount: result.frameCount,
     atlasDimensions: result.atlasDimensions,
     cols: result.cols,
@@ -795,12 +829,19 @@ export async function exportGodotSpriteFramesFile(args, options = {}) {
     frames: result.frames,
     keyingLayoutParams: params,
     spriteParams: { frameWidth, frameHeight, safeAreaWidth, safeAreaHeight, framesPerRow },
+    scene: {
+      resourcePath: spriteFramesResourcePath,
+      defaultAnimation,
+      anchor: 'feet',
+    },
     cleanup: result.cleanup,
     selections: buildResult.selections,
     warnings: [...buildResult.warnings, ...(result.warnings || [])],
   };
   await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
   statTargets.push(metadataPath);
+  await createGodotBundle(bundlePath, [atlasPath, outputPath, scenePath, metadataPath]);
+  statTargets.push(bundlePath);
 
   const stats = Object.fromEntries(await Promise.all(statTargets.map(async (target) => {
     const stat = await fs.stat(target);
@@ -811,10 +852,14 @@ export async function exportGodotSpriteFramesFile(args, options = {}) {
     ...metadata,
     outputUri: pathToFileURL(outputPath).href,
     atlasUri: pathToFileURL(atlasPath).href,
+    sceneUri: pathToFileURL(scenePath).href,
     metadataUri: pathToFileURL(metadataPath).href,
+    bundleUri: pathToFileURL(bundlePath).href,
     outputSize: stats[outputPath],
     atlasSize: stats[atlasPath],
+    sceneSize: stats[scenePath],
     metadataSize: stats[metadataPath],
+    bundleSize: stats[bundlePath],
   };
 }
 
@@ -997,11 +1042,13 @@ export function createGreenscreenMcpServer(options = {}) {
 
   server.registerTool('export_godot_spriteframes', {
     title: 'Export Godot SpriteFrames',
-    description: 'Export a Godot-ready atlas PNG, SpriteFrames .tres resource, and metadata JSON from exact video frame clips, direction groups, and mirrored directions.',
+    description: 'Export a Godot-ready atlas PNG, SpriteFrames .tres, AnimatedSprite2D .tscn, metadata JSON, and ZIP bundle from exact video frame clips, direction groups, and mirrored directions.',
     inputSchema: {
       outputPath: z.string().optional().describe('SpriteFrames .tres output path. If omitted, a temp file is created.'),
       atlasPath: z.string().optional().describe('Atlas PNG output path. Defaults to a sibling *_atlas.png file.'),
+      scenePath: z.string().optional().describe('AnimatedSprite2D .tscn output path. Defaults to a sibling .tscn file.'),
       metadataPath: z.string().optional().describe('Metadata JSON output path. Defaults to a sibling *_metadata.json file.'),
+      bundlePath: z.string().optional().describe('ZIP bundle output path. Defaults to a sibling .zip file.'),
       params: processingParamsSchema.optional().describe('Keying/layout/cleanup parameters. The Godot frame size overrides layout canvas dimensions.'),
       godot: godotSpriteFramesSchema.describe('Godot atlas, animation, direction, and mirroring options.'),
       overwrite: z.boolean().optional().describe('Allow replacing output files when they already exist. Defaults to false.'),

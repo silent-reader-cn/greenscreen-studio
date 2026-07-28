@@ -8,10 +8,16 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import {
   createGreenscreenMcpServer,
+  exportGodotSpriteFramesFile,
   exportImageFile,
   inspectImageFile,
   normalizeProcessingParams,
 } from '../mcp/server.mjs'
+import { createRequire } from 'node:module'
+import { spawnSync } from 'node:child_process'
+
+const require = createRequire(import.meta.url)
+const ffmpegPath = require('ffmpeg-static')
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -128,6 +134,63 @@ describe('Greenscreen Studio MCP helpers', () => {
       outputPath,
     }, { projectRoot, baseDir: tmpDir })).rejects.toThrow('already exists')
   })
+
+  it('exports Godot scene + ZIP bundle alongside SpriteFrames artifacts', async () => {
+    const inputPath = path.join(tmpDir, 'walk_SE.mp4')
+    const outputPath = path.join(tmpDir, 'walk.tres')
+    await writeSampleGreenscreenMp4(inputPath)
+
+    const result = await exportGodotSpriteFramesFile({
+      outputPath,
+      overwrite: true,
+      params: {
+        mode: 'transparent',
+        keying: { keyColor: [0, 255, 0], tolerance: 40 },
+      },
+      godot: {
+        frameWidth: 64,
+        frameHeight: 64,
+        safeAreaWidth: 64,
+        safeAreaHeight: 64,
+        fps: 6,
+        animations: [
+          {
+            name: 'walk_SE',
+            inputPath,
+            frames: [0, 2],
+            fps: 6,
+            loop: true,
+          },
+          {
+            name: 'walk_SW',
+            mirrorOf: 'walk_SE',
+            fps: 6,
+            loop: true,
+          },
+        ],
+      },
+    }, { projectRoot, baseDir: tmpDir })
+
+    expect(result.frameCount).toBe(4)
+    expect(result.animations.map(item => item.name)).toEqual(['walk_SE', 'walk_SW'])
+    expect(result.scene.defaultAnimation).toBe('walk_SE')
+    expect(result.scene.anchor).toBe('feet')
+
+    for (const filePath of [result.outputPath, result.atlasPath, result.scenePath, result.metadataPath, result.bundlePath]) {
+      const stat = await fs.stat(filePath)
+      expect(stat.size).toBeGreaterThan(0)
+    }
+
+    const sceneText = await fs.readFile(result.scenePath, 'utf8')
+    expect(sceneText).toContain('[node name="AnimatedSprite2D" type="AnimatedSprite2D"]')
+    expect(sceneText).toContain(`path="${result.spriteFramesResourcePath}"`)
+    expect(sceneText).toContain('offset = Vector2(0, -32)')
+
+    const bundle = await fs.readFile(result.bundlePath)
+    expect(bundle.subarray(0, 2).toString('utf8')).toBe('PK')
+    expect(bundle.includes(Buffer.from(path.basename(result.scenePath)))).toBe(true)
+    expect(bundle.includes(Buffer.from(path.basename(result.outputPath)))).toBe(true)
+  })
 })
 
 describe('Greenscreen Studio MCP protocol surface', () => {
@@ -152,6 +215,7 @@ describe('Greenscreen Studio MCP protocol surface', () => {
         'process_video',
         'find_loop_end',
         'export_spritesheet',
+        'export_godot_spriteframes',
       ]))
 
       const resources = await client.listResources()
@@ -196,4 +260,18 @@ async function writeSampleGreenscreenPng(filePath) {
   ctx.fillStyle = 'rgb(20, 60, 220)'
   ctx.fillRect(2, 1, 4, 6)
   await fs.writeFile(filePath, canvas.toBuffer('image/png'))
+}
+
+async function writeSampleGreenscreenMp4(filePath) {
+  const result = spawnSync(ffmpegPath, [
+    '-y',
+    '-f', 'lavfi',
+    '-i', 'color=c=0x00ff00:s=64x64:r=6:d=1',
+    '-vf', 'drawbox=x=24:y=8:w=16:h=48:color=red:t=fill',
+    '-an',
+    filePath,
+  ], { encoding: 'utf8' })
+  if (result.status !== 0) {
+    throw new Error(result.stderr || 'failed to create sample greenscreen mp4')
+  }
 }
