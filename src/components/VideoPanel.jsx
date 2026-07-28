@@ -3,12 +3,15 @@ import { createPortal } from 'react-dom'
 import CollapsiblePanel from './CollapsiblePanel.jsx'
 import { formatBytes, t } from '../i18n.js'
 import { parseExplicitFrameList } from '../lib/frameSelection.js'
-import { shouldHandleDroppedVideo } from '../lib/droppedVideo.js'
+import { shouldHandleDroppedVideo, shouldHandleDroppedVideos, droppedVideosKey } from '../lib/droppedVideo.js'
 import {
   buildDirectionMirrorsFromSaved,
   buildSeNeQuadPack,
   buildSePairPack,
+  buildSourceClip,
+  parseAnimationBaseName,
 } from '../lib/directionPack.js'
+import { classifyDirectionVideos } from '../lib/directionImport.js'
 import { buildGodotExportBasename } from '../lib/godotNaming.js'
 
 const FMT_OPTIONS = [
@@ -77,7 +80,7 @@ export default function VideoPanel({
   range,
   onRangeChange,
   region,
-  droppedFile,
+  droppedFiles,
   dockTarget,
 }) {
   const safeVideoParams = normalizeVideoParams(videoParams)
@@ -561,7 +564,7 @@ export default function VideoPanel({
   }, [])
 
   const handleFile = useCallback(async (file) => {
-    if (!isVideoFile(file)) return
+    if (!isVideoFile(file)) return null
     const previousJobId = activeJobIdRef.current
     const previousStillNeeded = godotClips.some(clip => clip.jobId === previousJobId)
     setUploading(true)
@@ -590,8 +593,9 @@ export default function VideoPanel({
       if (!resp.ok) throw new Error(t('videoPanel.uploadFailed'))
       const data = await resp.json()
       const label = file.name || data.originalName || data.filename || data.jobId
+      const info = { ...data, originalName: label }
       activeJobIdRef.current = data.jobId
-      setVideoInfo({ ...data, originalName: label })
+      setVideoInfo(info)
       setSourceVideos(prev => ({
         ...prev,
         [data.jobId]: {
@@ -602,20 +606,205 @@ export default function VideoPanel({
       }))
       setStatus('uploaded')
       onVideoUpload?.(file, data)
+      return info
+    } catch (err) {
+      setErrorMsg(err.message)
+      setStatus('error')
+      return null
+    } finally {
+      setUploading(false)
+    }
+  }, [cleanupVideoJob, godotClips, onVideoUpload])
+
+  const uploadVideoQuiet = useCallback(async (file) => {
+    if (!isVideoFile(file)) return null
+    const formData = new FormData()
+    formData.append('video', file)
+    const resp = await fetch('/api/video/upload', { method: 'POST', body: formData })
+    if (!resp.ok) throw new Error(t('videoPanel.uploadFailed'))
+    const data = await resp.json()
+    const label = file.name || data.originalName || data.filename || data.jobId
+    return { ...data, originalName: label }
+  }, [])
+
+  const handleDroppedVideos = useCallback(async (files) => {
+    const list = Array.from(files || []).filter(isVideoFile)
+    if (list.length === 0) return
+
+    if (list.length === 1) {
+      await handleFile(list[0])
+      return
+    }
+
+    const classified = classifyDirectionVideos(list)
+    setUploading(true)
+    setErrorMsg('')
+    setStatus('idle')
+    setDownloadUrl('')
+    setSpriteSheetBlob(null)
+    setGodotExport(null)
+    setCompletedExportSignature('')
+
+    try {
+      // Prefer source-direction videos for auto packs; fall back to all videos.
+      const uploadList = classified.sourceItems.length > 0
+        ? classified.sourceItems
+        : classified.items.map(item => ({ ...item, direction: item.direction || null }))
+
+      const uploaded = []
+      for (const item of uploadList) {
+        const info = await uploadVideoQuiet(item.file)
+        if (!info) continue
+        uploaded.push({ ...item, info })
+        setSourceVideos(prev => ({
+          ...prev,
+          [info.jobId]: {
+            jobId: info.jobId,
+            label: info.originalName,
+            frameCount: info.frameCount || Math.round((info.fps || 0) * (info.duration || 0)),
+          },
+        }))
+      }
+
+      if (uploaded.length === 0) {
+        throw new Error(t('videoPanel.uploadFailed'))
+      }
+
+      // Keep the last uploaded video as the active preview/source.
+      const active = uploaded[uploaded.length - 1]
+      activeJobIdRef.current = active.info.jobId
+      setVideoInfo(active.info)
+      setStatus('uploaded')
+      onVideoUpload?.(active.file, active.info)
+
+      // Auto-fill action name when empty or still default.
+      const inferredAction = classified.actionBase
+        || detectActionFromUploaded(uploaded)
+      if (inferredAction) {
+        const currentAction = String(godotParams.actionName || '').trim()
+        const currentAnim = String(godotParams.animationName || '').trim()
+        const shouldSetAction = !currentAction
+        const shouldSetAnim = !currentAnim || currentAnim === 'animation' || currentAnim === DEFAULT_GODOT_PARAMS.animationName
+        if (shouldSetAction || shouldSetAnim) {
+          onVideoParamsChange?.({
+            ...safeVideoParams,
+            godotParams: {
+              ...safeVideoParams.godotParams,
+              actionName: shouldSetAction ? inferredAction : safeVideoParams.godotParams.actionName,
+              animationName: shouldSetAnim ? inferredAction : safeVideoParams.godotParams.animationName,
+            },
+          })
+        }
+      }
+
+      // Build Godot clips for directed sources and expand mirrors when SE+NE are both present.
+      const directedUploads = uploaded.filter(item => item.direction && item.isSourceDirection !== false && ['SE', 'NE', 'S', 'N', 'E', 'W'].includes(item.direction))
+      if (directedUploads.length > 0) {
+        // Ensure Godot export mode so the pack is immediately visible/exportable.
+        if (exportMode !== 'godot') {
+          onVideoParamsChange?.({
+            ...safeVideoParams,
+            exportMode: 'godot',
+            godotParams: {
+              ...safeVideoParams.godotParams,
+              actionName: inferredAction || safeVideoParams.godotParams.actionName,
+              animationName: inferredAction || safeVideoParams.godotParams.animationName,
+            },
+          })
+        }
+
+        const actionBase = inferredAction || parseAnimationBaseName(godotParams.animationName).base || 'animation'
+        let nextClips = [...godotClips]
+        const added = []
+
+        for (const item of directedUploads) {
+          const clipName = `${actionBase}_${item.direction}`
+          if (nextClips.some(clip => clip.name === clipName)) continue
+          const frameCount = item.info.frameCount || Math.round((item.info.fps || 0) * (item.info.duration || 0))
+          const clip = buildSourceClip({
+            name: clipName,
+            jobId: item.info.jobId,
+            sourceLabel: item.info.originalName,
+            fps: godotParams.fps,
+            loop: godotParams.loop,
+            range: { startFrame: 0, endFrame: frameCount },
+            frames: undefined,
+            sampleEvery: spriteParams.sampleEvery,
+            maxFrames: spriteParams.maxFrames,
+            selectionMode: 'sample',
+          })
+          nextClips = [...nextClips, clip]
+          added.push(clipName)
+        }
+
+        const hasSe = nextClips.some(clip => clip.name === `${actionBase}_SE`)
+        const hasNe = nextClips.some(clip => clip.name === `${actionBase}_NE`)
+        if (hasSe || hasNe) {
+          const mirrored = buildDirectionMirrorsFromSaved({
+            existingClips: nextClips,
+            baseName: actionBase,
+          })
+          if (mirrored.ok) {
+            nextClips = mirrored.clips
+            added.push(...(mirrored.added || []))
+          }
+        }
+
+        setGodotClips(nextClips)
+      }
+
+      if (classified.withoutDirection.length > 0 && classified.sourceItems.length > 0) {
+        // Non-blocking hint: some files lacked direction tokens.
+        setErrorMsg(t('videoPanel.batchImportPartial', {
+          count: classified.sourceItems.length,
+          skipped: classified.withoutDirection.length,
+        }))
+      }
     } catch (err) {
       setErrorMsg(err.message)
       setStatus('error')
     } finally {
       setUploading(false)
     }
-  }, [cleanupVideoJob, godotClips, onVideoUpload])
+  }, [
+    exportMode,
+    godotClips,
+    godotParams.actionName,
+    godotParams.animationName,
+    godotParams.fps,
+    godotParams.loop,
+    handleFile,
+    onVideoParamsChange,
+    onVideoUpload,
+    safeVideoParams,
+    spriteParams.maxFrames,
+    spriteParams.sampleEvery,
+    uploadVideoQuiet,
+  ])
+
+  function detectActionFromUploaded(uploaded) {
+    for (const item of uploaded) {
+      if (item.actionBase) return item.actionBase
+    }
+    return null
+  }
 
   useEffect(() => {
-    if (!isVideoFile(droppedFile) || !shouldHandleDroppedVideo(droppedFile, handledDroppedFileRef.current)) return
-    handledDroppedFileRef.current = droppedFile
-    resetForNewFile()
-    handleFile(droppedFile)
-  }, [droppedFile, handleFile, resetForNewFile])
+    const files = Array.isArray(droppedFiles)
+      ? droppedFiles
+      : droppedFiles
+        ? [droppedFiles]
+        : []
+    if (!shouldHandleDroppedVideos(files, handledDroppedFileRef.current)) return
+    handledDroppedFileRef.current = droppedVideosKey(files)
+    if (files.length === 1) {
+      resetForNewFile()
+      handleFile(files[0])
+      return
+    }
+    // Multi-file drops keep existing directed clips so SE/NE packs can accumulate.
+    handleDroppedVideos(files)
+  }, [droppedFiles, handleDroppedVideos, handleFile, resetForNewFile])
 
   const handleProcess = async () => {
     if (!videoInfo) return

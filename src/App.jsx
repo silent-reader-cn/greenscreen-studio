@@ -567,7 +567,7 @@ export default function App() {
 
   // 全局拖放状态
   const [dragOver, setDragOver] = useState(false)
-  const [droppedVideoFile, setDroppedVideoFile] = useState(null)
+  const [droppedVideoFiles, setDroppedVideoFiles] = useState(null)
 
   // 视频帧范围
   const [frameRange, setFrameRange] = useState(initialParams.frameRange)
@@ -1091,17 +1091,28 @@ export default function App() {
       event.preventDefault()
       setDragOver(false)
 
-      const droppedFile = event.dataTransfer?.files?.[0]
-      const kind = getMediaKind(droppedFile)
-      const file = normalizeMediaFile(droppedFile, kind)
-      if (!file || !kind) return
+      const rawFiles = Array.from(event.dataTransfer?.files || [])
+      if (rawFiles.length === 0) return
 
-      if (kind === 'image') {
-        switchMode('image')
-        handleFileLoad(file)
-      } else if (kind === 'video') {
+      const videos = []
+      const images = []
+      for (const raw of rawFiles) {
+        const kind = getMediaKind(raw)
+        const file = normalizeMediaFile(raw, kind)
+        if (!file || !kind) continue
+        if (kind === 'video') videos.push(file)
+        else if (kind === 'image') images.push(file)
+      }
+
+      if (videos.length > 0) {
         switchMode('video')
-        setDroppedVideoFile(file)
+        setDroppedVideoFiles(videos)
+        return
+      }
+
+      if (images.length > 0) {
+        switchMode('image')
+        handleFileLoad(images[0])
       }
     }
 
@@ -1194,10 +1205,11 @@ export default function App() {
                 range={frameRange}
                 onRangeChange={handleRangeChange}
                 region={videoRegion}
-                droppedFile={droppedVideoFile}
+                droppedFiles={droppedVideoFiles}
                 dockTarget={videoDockTarget}
               />
             )}
+
             <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
             <LayoutPanel
               params={layoutParams}
@@ -1305,6 +1317,7 @@ export default function App() {
             <span className="drop-overlay-icon">📁</span>
             <p className="drop-overlay-text">{t('app.dropText')}</p>
             <p className="drop-overlay-hint">{t('app.dropHint')}</p>
+            <p className="drop-overlay-hint">{t('app.dropMultiHint')}</p>
           </div>
         </div>
       )}

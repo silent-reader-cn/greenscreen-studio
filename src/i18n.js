@@ -14,6 +14,7 @@ const dictionaries = {
       exportTransparent: 'Save Transparent PNG',
       dropText: 'Release to load file',
       dropHint: 'Supports PNG/JPG/WebP images or MP4/MOV/WebM/AVI videos',
+      dropMultiHint: 'Drop multiple walk_SE / walk_NE videos together to auto-build a direction pack',
       exportFailed: 'Export failed',
     },
     common: {
@@ -203,6 +204,7 @@ const dictionaries = {
       mirrorGodotClip: 'Mirror',
       mirrorGodotClipHint: 'Create a horizontal mirror using the animation name above',
       multiSourceHint: 'Saved animations keep their source videos. Drop another direction video to build SE/NE packs, then mirror SW/NW.',
+      batchImportPartial: 'Imported {count} direction video(s); skipped {skipped} file(s) without direction tokens.',
       packSePair: 'SE → SE+SW',
       packSePairHint: 'Save current selection as base_SE and auto-add base_SW mirror',
       packSeNe: 'SE/NE pack',
@@ -255,6 +257,7 @@ const dictionaries = {
       exportTransparent: '导出透明 PNG',
       dropText: '放开鼠标以加载文件',
       dropHint: '支持图片 PNG/JPG/WebP 或视频 MP4/MOV/WebM/AVI',
+      dropMultiHint: '可一次拖入多个 walk_SE / walk_NE 视频，自动组成方向包',
       exportFailed: '导出失败',
     },
     common: {
@@ -444,6 +447,7 @@ const dictionaries = {
       mirrorGodotClip: '镜像',
       mirrorGodotClipHint: '用上方动画名称创建水平镜像版本',
       multiSourceHint: '已保存动画会保留各自源视频。可继续拖入其他方向视频组成 SE/NE 包，再镜像 SW/NW。',
+      batchImportPartial: '已导入 {count} 个方向视频；跳过 {skipped} 个无法识别方向的文件。',
       packSePair: 'SE → SE+SW',
       packSePairHint: '把当前选帧保存为 base_SE，并自动加 base_SW 镜像',
       packSeNe: 'SE/NE 四向包',
