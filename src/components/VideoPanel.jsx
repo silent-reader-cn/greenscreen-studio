@@ -4,6 +4,11 @@ import CollapsiblePanel from './CollapsiblePanel.jsx'
 import { formatBytes, t } from '../i18n.js'
 import { parseExplicitFrameList } from '../lib/frameSelection.js'
 import { shouldHandleDroppedVideo } from '../lib/droppedVideo.js'
+import {
+  buildDirectionMirrorsFromSaved,
+  buildSeNeQuadPack,
+  buildSePairPack,
+} from '../lib/directionPack.js'
 
 const FMT_OPTIONS = [
   { value: 'webm', labelKey: 'videoPanel.transparentWebm', modes: ['transparent'] },
@@ -291,6 +296,85 @@ export default function VideoPanel({
     setGodotClips(clips => [...clips, clip])
     setErrorMsg('')
   }, [godotClips, godotParams.animationName])
+
+  const currentDraftClip = useMemo(() => {
+    if (!videoInfo?.jobId) return null
+    return {
+      jobId: videoInfo.jobId,
+      sourceLabel: videoInfo.originalName || videoInfo.filename || videoInfo.jobId,
+      fps: godotParams.fps,
+      loop: godotParams.loop,
+      range: range ? { startFrame: range.startFrame, endFrame: range.endFrame } : undefined,
+      frames: usesExactFrames ? [...explicitFrameSelection.frames] : undefined,
+      sampleEvery: usesExactFrames ? undefined : spriteParams.sampleEvery,
+      maxFrames: usesExactFrames ? undefined : spriteParams.maxFrames,
+      selectionMode: usesExactFrames ? 'exact' : 'sample',
+      error: explicitFrameError || '',
+    }
+  }, [
+    explicitFrameError,
+    explicitFrameSelection.frames,
+    godotParams.fps,
+    godotParams.loop,
+    range,
+    spriteParams.maxFrames,
+    spriteParams.sampleEvery,
+    usesExactFrames,
+    videoInfo,
+  ])
+
+  const applyDirectionPackResult = useCallback((result) => {
+    if (!result.ok) {
+      if (result.error === 'name_required') setErrorMsg(t('videoPanel.clipNameRequired'))
+      else if (result.error === 'source_required') setErrorMsg(t('videoPanel.clipSourceRequired'))
+      else if (result.error === 'name_conflict') {
+        setErrorMsg(t('videoPanel.packNameConflict', {
+          names: (result.conflict || []).join(', '),
+        }))
+      } else if (result.error === 'se_required') setErrorMsg(t('videoPanel.packSeRequired'))
+      else if (result.error === 'nothing_to_add') setErrorMsg(t('videoPanel.packNothingToAdd'))
+      else if (result.error === 'se_ne_exist') setErrorMsg(t('videoPanel.packSeNeExist'))
+      else if (typeof result.error === 'string' && result.error) setErrorMsg(result.error)
+      else setErrorMsg(t('videoPanel.packFailed'))
+      return
+    }
+
+    setGodotClips(result.clips)
+    if (videoInfo?.jobId) {
+      setSourceVideos(prev => ({
+        ...prev,
+        [videoInfo.jobId]: {
+          jobId: videoInfo.jobId,
+          label: videoInfo.originalName || videoInfo.filename || videoInfo.jobId,
+          frameCount: totalFrames,
+        },
+      }))
+    }
+    setErrorMsg('')
+  }, [totalFrames, videoInfo])
+
+  const handleSePairPack = useCallback(() => {
+    applyDirectionPackResult(buildSePairPack({
+      existingClips: godotClips,
+      animationName: godotParams.animationName,
+      draft: currentDraftClip,
+    }))
+  }, [applyDirectionPackResult, currentDraftClip, godotClips, godotParams.animationName])
+
+  const handleSeNeQuadPack = useCallback(() => {
+    applyDirectionPackResult(buildSeNeQuadPack({
+      existingClips: godotClips,
+      animationName: godotParams.animationName,
+      draft: currentDraftClip,
+    }))
+  }, [applyDirectionPackResult, currentDraftClip, godotClips, godotParams.animationName])
+
+  const handleExpandDirectionMirrors = useCallback(() => {
+    applyDirectionPackResult(buildDirectionMirrorsFromSaved({
+      existingClips: godotClips,
+      baseName: godotParams.animationName,
+    }))
+  }, [applyDirectionPackResult, godotClips, godotParams.animationName])
 
   const availableFormats = FMT_OPTIONS.filter(f => f.modes.includes(mode))
 
@@ -889,6 +973,35 @@ export default function VideoPanel({
                   >
                     {t('videoPanel.saveGodotClip')}
                   </button>
+                  <div className="godot-pack-actions">
+                    <button
+                      className="godot-pack-btn"
+                      type="button"
+                      onClick={handleSePairPack}
+                      disabled={processing || Boolean(explicitFrameError) || !videoInfo}
+                      title={t('videoPanel.packSePairHint')}
+                    >
+                      {t('videoPanel.packSePair')}
+                    </button>
+                    <button
+                      className="godot-pack-btn"
+                      type="button"
+                      onClick={handleSeNeQuadPack}
+                      disabled={processing || Boolean(explicitFrameError) || !videoInfo}
+                      title={t('videoPanel.packSeNeHint')}
+                    >
+                      {t('videoPanel.packSeNe')}
+                    </button>
+                    <button
+                      className="godot-pack-btn"
+                      type="button"
+                      onClick={handleExpandDirectionMirrors}
+                      disabled={processing || godotClips.length === 0}
+                      title={t('videoPanel.packExpandMirrorsHint')}
+                    >
+                      {t('videoPanel.packExpandMirrors')}
+                    </button>
+                  </div>
                   <span className="sprite-hint">
                     {godotClips.length > 0
                       ? t('videoPanel.savedClipCount', { count: godotClips.length })
@@ -897,6 +1010,7 @@ export default function VideoPanel({
                   {godotClips.length > 0 && (
                     <span className="sprite-hint">{t('videoPanel.multiSourceHint')}</span>
                   )}
+                  <span className="sprite-hint">{t('videoPanel.packWorkflowHint')}</span>
                   {godotClips.length > 0 && (
                     <div className="godot-clip-list">
                       {godotClips.map(clip => (
