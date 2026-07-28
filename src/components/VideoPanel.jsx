@@ -18,11 +18,20 @@ const DEFAULT_SPRITE_PARAMS = {
   sampleEvery: 1,
 }
 
+const DEFAULT_GODOT_PARAMS = {
+  animationName: 'animation',
+  safeAreaWidth: 160,
+  safeAreaHeight: 160,
+  fps: 12,
+  loop: true,
+}
+
 const DEFAULT_VIDEO_PARAMS = {
   mode: 'transparent',
   format: 'webm',
   exportMode: 'video',
   spriteParams: DEFAULT_SPRITE_PARAMS,
+  godotParams: DEFAULT_GODOT_PARAMS,
 }
 
 function isVideoFile(file) {
@@ -38,6 +47,10 @@ function normalizeVideoParams(videoParams = {}) {
     spriteParams: {
       ...DEFAULT_SPRITE_PARAMS,
       ...(source.spriteParams || {}),
+    },
+    godotParams: {
+      ...DEFAULT_GODOT_PARAMS,
+      ...(source.godotParams || {}),
     },
   }
 }
@@ -55,13 +68,15 @@ export default function VideoPanel({
   dockTarget,
 }) {
   const safeVideoParams = normalizeVideoParams(videoParams)
-  const { mode, format, exportMode, spriteParams } = safeVideoParams
+  const { mode, format, exportMode, spriteParams, godotParams } = safeVideoParams
   const summary = exportMode === 'spritesheet'
     ? t('videoPanel.spriteSummary', { width: spriteParams.frameWidth, height: spriteParams.frameHeight })
-    : t('videoPanel.videoSummary', {
-        format: format.toUpperCase(),
-        mode: mode === 'transparent' ? t('videoPanel.transparent') : t('videoPanel.greenscreen'),
-      })
+    : exportMode === 'godot'
+      ? t('videoPanel.godotSummary', { width: spriteParams.frameWidth, height: spriteParams.frameHeight, name: godotParams.animationName })
+      : t('videoPanel.videoSummary', {
+          format: format.toUpperCase(),
+          mode: mode === 'transparent' ? t('videoPanel.transparent') : t('videoPanel.greenscreen'),
+        })
 
   const [videoInfo, setVideoInfo] = useState(null)       // {jobId, width, height, fps, duration, hasAudio}
   const [uploading, setUploading] = useState(false)
@@ -71,6 +86,7 @@ export default function VideoPanel({
   const [errorMsg, setErrorMsg] = useState('')
   const [downloadUrl, setDownloadUrl] = useState('')
   const [spriteSheetBlob, setSpriteSheetBlob] = useState(null)
+  const [godotExport, setGodotExport] = useState(null)
   const [completedExportSignature, setCompletedExportSignature] = useState('')
 
   const pollTimerRef = useRef(null)
@@ -83,6 +99,7 @@ export default function VideoPanel({
     format,
     exportMode,
     spriteParams,
+    godotParams,
     range: range ? { startFrame: range.startFrame, endFrame: range.endFrame } : null,
     region,
   }), [
@@ -93,6 +110,7 @@ export default function VideoPanel({
     format,
     exportMode,
     spriteParams,
+    godotParams,
     range,
     region,
   ])
@@ -106,6 +124,12 @@ export default function VideoPanel({
       nextParams.spriteParams = {
         ...DEFAULT_SPRITE_PARAMS,
         ...patch.spriteParams,
+      }
+    }
+    if (patch.godotParams) {
+      nextParams.godotParams = {
+        ...DEFAULT_GODOT_PARAMS,
+        ...patch.godotParams,
       }
     }
     onVideoParamsChange?.(nextParams)
@@ -129,6 +153,13 @@ export default function VideoPanel({
       : updater
     updateVideoParams({ spriteParams: nextSpriteParams })
   }, [spriteParams, updateVideoParams])
+
+  const setGodotParams = useCallback((updater) => {
+    const nextGodotParams = typeof updater === 'function'
+      ? updater(godotParams)
+      : updater
+    updateVideoParams({ godotParams: nextGodotParams })
+  }, [godotParams, updateVideoParams])
 
   const availableFormats = FMT_OPTIONS.filter(f => f.modes.includes(mode))
 
@@ -154,6 +185,7 @@ export default function VideoPanel({
     setProgress({ current: 0, total: 0, percent: 0 })
     setErrorMsg('')
     setSpriteSheetBlob(null)
+    setGodotExport(null)
   }, [completedExportSignature, exportSignature, status])
 
   const cleanupVideoJob = useCallback((jobId) => {
@@ -172,6 +204,7 @@ export default function VideoPanel({
     setErrorMsg('')
     setDownloadUrl('')
     setSpriteSheetBlob(null)
+    setGodotExport(null)
     setCompletedExportSignature('')
   }, [])
 
@@ -184,6 +217,7 @@ export default function VideoPanel({
     setVideoInfo(null)
     setDownloadUrl('')
     setSpriteSheetBlob(null)
+    setGodotExport(null)
     setCompletedExportSignature('')
     cleanupVideoJob(previousJobId)
 
@@ -221,6 +255,7 @@ export default function VideoPanel({
     setErrorMsg('')
     setDownloadUrl('')
     setSpriteSheetBlob(null)
+    setGodotExport(null)
     setCompletedExportSignature('')
 
     if (exportMode === 'spritesheet') {
@@ -243,6 +278,37 @@ export default function VideoPanel({
         }
         const blob = await resp.blob()
         setSpriteSheetBlob(blob)
+        setCompletedExportSignature(currentExportSignature)
+        setProcessing(false)
+        setStatus('done')
+      } catch (err) {
+        setProcessing(false)
+        setStatus('error')
+        setErrorMsg(err.message)
+      }
+      return
+    }
+
+    if (exportMode === 'godot') {
+      try {
+        const resp = await fetch('/api/video/export-godot-spriteframes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jobId: videoInfo.jobId,
+            params: { keying: keyingParams, layout: layoutParams, region },
+            spriteParams: {
+              ...spriteParams,
+              range: range ? { startFrame: range.startFrame, endFrame: range.endFrame } : undefined,
+            },
+            godot: godotParams,
+          }),
+        })
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}))
+          throw new Error(errData.error || t('videoPanel.godotExportFailed'))
+        }
+        setGodotExport(await resp.json())
         setCompletedExportSignature(currentExportSignature)
         setProcessing(false)
         setStatus('done')
@@ -328,6 +394,23 @@ export default function VideoPanel({
     }
   }
 
+  const handleDownloadGodotArtifact = async (artifact) => {
+    if (!videoInfo || !godotExport?.artifacts?.[artifact]) return
+    try {
+      const resp = await fetch(`/api/video/godot-artifact/${videoInfo.jobId}/${artifact}`)
+      if (!resp.ok) throw new Error(t('videoPanel.godotDownloadFailed'))
+      const blob = await resp.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = godotExport.artifacts[artifact].filename
+      anchor.click()
+      setTimeout(() => URL.revokeObjectURL(url), 10000)
+    } catch (err) {
+      setErrorMsg(err.message)
+    }
+  }
+
   const handleReset = () => {
     const jobId = videoInfo?.jobId
     resetForNewFile()
@@ -364,18 +447,29 @@ export default function VideoPanel({
           ✅ {t('videoPanel.spriteDone', { size: formatBytes(spriteSheetBlob.size) })}
         </div>
       )}
+      {videoInfo && status === 'done' && exportMode === 'godot' && godotExport && (
+        <div className="dock-message success-msg">
+          {t('videoPanel.godotDone', { frames: godotExport.frameCount })}
+        </div>
+      )}
 
       {videoInfo ? (
         <>
           {status === 'done' ? (
             exportMode === 'spritesheet' ? (
               <button className="dock-btn dock-btn-primary" onClick={handleDownload}>⬇ {t('videoPanel.downloadSprite')}</button>
+            ) : exportMode === 'godot' && godotExport ? (
+              <div className="godot-downloads">
+                <button className="dock-btn dock-btn-primary" onClick={() => handleDownloadGodotArtifact('atlas')}>{t('videoPanel.downloadGodotAtlas')}</button>
+                <button className="dock-btn dock-btn-primary" onClick={() => handleDownloadGodotArtifact('spriteframes')}>{t('videoPanel.downloadGodotSpriteFrames')}</button>
+                <button className="dock-btn dock-btn-secondary" onClick={() => handleDownloadGodotArtifact('metadata')}>{t('videoPanel.downloadGodotMetadata')}</button>
+              </div>
             ) : (
               <button className="dock-btn dock-btn-primary" onClick={handleDownload}>⬇ {t('videoPanel.downloadVideo', { format: format.toUpperCase() })}</button>
             )
           ) : (
             <button className="dock-btn dock-btn-primary" onClick={handleProcess} disabled={processing}>
-              {processing ? t('videoPanel.processing') : exportMode === 'spritesheet' ? `🖼️ ${t('videoPanel.generateSprite')}` : `🚀 ${t('videoPanel.start')}`}
+              {processing ? t('videoPanel.processing') : exportMode === 'spritesheet' ? t('videoPanel.generateSprite') : exportMode === 'godot' ? t('videoPanel.generateGodot') : t('videoPanel.start')}
             </button>
           )}
           <button className="dock-btn dock-btn-secondary" onClick={handleReset} disabled={processing}>🔁 {t('videoPanel.chooseAgain')}</button>
@@ -405,6 +499,10 @@ export default function VideoPanel({
                   className={`opt-btn ${exportMode === 'spritesheet' ? 'active' : ''}`}
                   onClick={() => setExportMode('spritesheet')}
                 >{t('videoPanel.spriteExport')}</button>
+                <button
+                  className={`opt-btn ${exportMode === 'godot' ? 'active' : ''}`}
+                  onClick={() => setExportMode('godot')}
+                >{t('videoPanel.godotExport')}</button>
               </div>
             </div>
 
@@ -485,7 +583,7 @@ export default function VideoPanel({
                   </div>
                 </div>
               </>
-            ) : (
+            ) : exportMode === 'spritesheet' ? (
               <div className="sprite-params">
                 <div className="sprite-param-row">
                   <label>{t('videoPanel.frameWidth')}</label>
@@ -503,6 +601,38 @@ export default function VideoPanel({
                   <label>{t('videoPanel.sampleEvery')}</label>
                   <input type="number" min="1" max="1000" value={spriteParams.sampleEvery} onChange={e => setSpriteParams(p => ({ ...p, sampleEvery: parseInt(e.target.value) || 1 }))} />
                   <span className="sprite-hint">{t('videoPanel.sampleHint')}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="sprite-params">
+                <div className="sprite-param-row">
+                  <label>{t('videoPanel.frameWidth')}</label>
+                  <input type="number" min="8" max="2048" value={spriteParams.frameWidth} onChange={e => setSpriteParams(p => ({ ...p, frameWidth: parseInt(e.target.value) || 256 }))} />
+                  <label>{t('videoPanel.frameHeight')}</label>
+                  <input type="number" min="8" max="2048" value={spriteParams.frameHeight} onChange={e => setSpriteParams(p => ({ ...p, frameHeight: parseInt(e.target.value) || 256 }))} />
+                </div>
+                <div className="sprite-param-row">
+                  <label>{t('videoPanel.safeAreaWidth')}</label>
+                  <input type="number" min="1" max={spriteParams.frameWidth} value={godotParams.safeAreaWidth} onChange={e => setGodotParams(p => ({ ...p, safeAreaWidth: parseInt(e.target.value) || 160 }))} />
+                  <label>{t('videoPanel.safeAreaHeight')}</label>
+                  <input type="number" min="1" max={spriteParams.frameHeight} value={godotParams.safeAreaHeight} onChange={e => setGodotParams(p => ({ ...p, safeAreaHeight: parseInt(e.target.value) || 160 }))} />
+                </div>
+                <div className="sprite-param-row">
+                  <label>{t('videoPanel.framesPerRow')}</label>
+                  <input type="number" min="1" max="100" value={spriteParams.framesPerRow} onChange={e => setSpriteParams(p => ({ ...p, framesPerRow: parseInt(e.target.value) || 8 }))} />
+                  <label>{t('videoPanel.godotFps')}</label>
+                  <input type="number" min="1" max="120" value={godotParams.fps} onChange={e => setGodotParams(p => ({ ...p, fps: parseInt(e.target.value) || 12 }))} />
+                </div>
+                <div className="sprite-param-row">
+                  <label>{t('videoPanel.animationName')}</label>
+                  <input className="godot-name-input" type="text" value={godotParams.animationName} onChange={e => setGodotParams(p => ({ ...p, animationName: e.target.value }))} />
+                  <label className="sprite-checkbox"><input type="checkbox" checked={godotParams.loop} onChange={e => setGodotParams(p => ({ ...p, loop: e.target.checked }))} /> {t('videoPanel.godotLoop')}</label>
+                </div>
+                <div className="sprite-param-row">
+                  <label>{t('videoPanel.sampleEvery')}</label>
+                  <input type="number" min="1" max="1000" value={spriteParams.sampleEvery} onChange={e => setSpriteParams(p => ({ ...p, sampleEvery: parseInt(e.target.value) || 1 }))} />
+                  <label>{t('videoPanel.maxFrames')}</label>
+                  <input type="number" min="1" max="10000" value={spriteParams.maxFrames} onChange={e => setSpriteParams(p => ({ ...p, maxFrames: parseInt(e.target.value) || 64 }))} />
                 </div>
               </div>
             )}

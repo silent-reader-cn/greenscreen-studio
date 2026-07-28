@@ -39,11 +39,20 @@ const DEFAULT_SPRITE_PARAMS = {
   sampleEvery: 1,
 }
 
+const DEFAULT_GODOT_PARAMS = {
+  animationName: 'animation',
+  safeAreaWidth: 160,
+  safeAreaHeight: 160,
+  fps: 12,
+  loop: true,
+}
+
 const DEFAULT_VIDEO_PARAMS = {
   mode: 'transparent',
   format: 'webm',
   exportMode: 'video',
   spriteParams: DEFAULT_SPRITE_PARAMS,
+  godotParams: DEFAULT_GODOT_PARAMS,
 }
 
 const DEFAULT_FRAME_RANGE = {
@@ -85,6 +94,10 @@ function normalizeParams(params = {}) {
       spriteParams: {
         ...DEFAULT_SPRITE_PARAMS,
         ...spriteParams,
+      },
+      godotParams: {
+        ...DEFAULT_GODOT_PARAMS,
+        ...(video.godotParams || {}),
       },
     },
     frameRange: {

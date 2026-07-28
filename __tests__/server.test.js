@@ -19,6 +19,8 @@ vi.mock('../../videoProcessor.cjs', () => ({
     frameCount: 300, hasAudio: true,
   }),
   exportSpriteSheet: vi.fn(),
+  exportGodotSpriteFrames: vi.fn(),
+  selectSpriteFrames: vi.fn(),
   findLoopEndFrame: vi.fn().mockResolvedValue({
     candidates: [{ frame: 120, score: 5 }, { frame: 200, score: 12 }],
     scores: [{ frame: 2, score: 10 }, { frame: 3, score: 15 }],
@@ -311,5 +313,119 @@ describe('POST /api/video/find-loop-end', () => {
     )
 
     await request(freshApp).delete(`/api/video/${jobId}`)
+  })
+})
+
+describe('POST /api/video/export-godot-spriteframes', () => {
+  it('returns 404 for an unknown job', async () => {
+    const mod = await import('../../server.cjs')
+    const res = await request(mod.app)
+      .post('/api/video/export-godot-spriteframes')
+      .send({
+        jobId: 'nonexistent',
+        spriteParams: { frameWidth: 256, frameHeight: 256, framesPerRow: 8 },
+      })
+
+    expect(res.status).toBe(404)
+    expect(res.body).toHaveProperty('error', 'job not found')
+  })
+
+  it('writes and serves atlas, SpriteFrames, and metadata artifacts', async () => {
+    const fakeVideoProcessor = {
+      probeVideo: vi.fn().mockResolvedValue({
+        width: 1920,
+        height: 1080,
+        fps: 30,
+        duration: 10,
+        frameCount: 300,
+        hasAudio: true,
+      }),
+      processVideo: vi.fn(),
+      exportSpriteSheet: vi.fn(),
+      findLoopEndFrame: vi.fn(),
+      dHashRaw: vi.fn(),
+      hammingDistance: vi.fn(),
+      pickLoopCandidates: vi.fn(),
+      selectSpriteFrames: vi.fn().mockReturnValue({
+        frames: [0, 3, 6],
+        range: { startFrame: 0, endFrame: 9 },
+        frameCount: 3,
+      }),
+      exportGodotSpriteFrames: vi.fn(async (frameJobs, params, spriteParams, options, onProgress) => {
+        onProgress?.(3, 3)
+        return {
+          buffer: Buffer.from('fake-atlas'),
+          tres: '[gd_resource type="SpriteFrames" format=3]\n',
+          frameCount: frameJobs.length,
+          atlasDimensions: { width: 512, height: 512 },
+          frames: frameJobs.map((job) => ({ ...job, region: { x: 0, y: 0, width: 256, height: 256 } })),
+          animations: [{ name: options.animations[0].name, fps: options.fps, loop: true, frameCount: frameJobs.length }],
+          cleanup: { frames: frameJobs.length },
+          warnings: [],
+        }
+      }),
+    }
+
+    const serverPath = nodeRequire.resolve('../server.cjs')
+    const videoProcessorPath = nodeRequire.resolve('../videoProcessor.cjs')
+    delete nodeRequire.cache[serverPath]
+    delete nodeRequire.cache[videoProcessorPath]
+    nodeRequire.cache[videoProcessorPath] = {
+      id: videoProcessorPath,
+      filename: videoProcessorPath,
+      loaded: true,
+      exports: fakeVideoProcessor,
+      children: [],
+      paths: [],
+    }
+    const { app: freshApp } = nodeRequire('../server.cjs')
+
+    const uploadRes = await request(freshApp)
+      .post('/api/video/upload')
+      .attach('video', Buffer.from('fake-video-input'), 'clip.mp4')
+    expect(uploadRes.status).toBe(200)
+
+    const exportRes = await request(freshApp)
+      .post('/api/video/export-godot-spriteframes')
+      .send({
+        jobId: uploadRes.body.jobId,
+        params: { keying: {}, layout: { sourceCharacterHeight: 520 } },
+        spriteParams: { frameWidth: 256, frameHeight: 256, framesPerRow: 8, range: { startFrame: 0, endFrame: 9 } },
+        godot: { animationName: 'idle', safeAreaWidth: 160, safeAreaHeight: 160, fps: 12, loop: true },
+      })
+
+    expect(exportRes.status).toBe(200)
+    expect(exportRes.body.frameCount).toBe(3)
+    expect(exportRes.body.artifacts).toEqual(expect.objectContaining({
+      atlas: expect.objectContaining({ filename: expect.stringMatching(/_atlas\.png$/) }),
+      spriteframes: expect.objectContaining({ filename: expect.stringMatching(/\.tres$/) }),
+      metadata: expect.objectContaining({ filename: expect.stringMatching(/_metadata\.json$/) }),
+    }))
+    expect(fakeVideoProcessor.exportGodotSpriteFrames).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        mode: 'transparent',
+        layout: expect.objectContaining({
+          canvasWidth: 256,
+          canvasHeight: 256,
+          personWidth: 160,
+          personHeight: 160,
+          anchor: 'feet',
+          sourceCharacterHeight: 520,
+        }),
+      }),
+      { frameWidth: 256, frameHeight: 256, framesPerRow: 8 },
+      expect.objectContaining({ fps: 12 }),
+      expect.any(Function)
+    )
+
+    for (const artifact of ['atlas', 'spriteframes', 'metadata']) {
+      const artifactRes = await request(freshApp)
+        .get(`/api/video/godot-artifact/${uploadRes.body.jobId}/${artifact}`)
+      expect(artifactRes.status).toBe(200)
+      expect(artifactRes.headers['content-disposition']).toContain('attachment')
+    }
+
+    await request(freshApp).delete(`/api/video/${uploadRes.body.jobId}`)
   })
 })

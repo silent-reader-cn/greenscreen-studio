@@ -983,6 +983,26 @@ body {
   border-color: #888;
 }
 
+.sprite-param-row input.godot-name-input {
+  width: 112px;
+  text-align: left;
+}
+
+.sprite-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sprite-checkbox input {
+  width: auto;
+}
+
+.godot-downloads {
+  display: grid;
+  gap: 8px;
+}
+
 .sprite-hint {
   font-size: 11px;
   color: #aaa;

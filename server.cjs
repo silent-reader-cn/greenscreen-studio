@@ -13,7 +13,14 @@ const { createCanvas, Image } = require('canvas');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { processVideo, probeVideo, findLoopEndFrame, exportSpriteSheet } = require('./videoProcessor.cjs');
+const {
+  processVideo,
+  probeVideo,
+  findLoopEndFrame,
+  exportSpriteSheet,
+  exportGodotSpriteFrames,
+  selectSpriteFrames,
+} = require('./videoProcessor.cjs');
 
 // 加载 polyfill（必须在引入 keying.js 之前）
 require('./src/lib/canvas-polyfill.js');
@@ -142,6 +149,9 @@ function cleanupVideoJob(jobId) {
   const job = videoJobs.get(jobId);
   if (!job) return false;
   safeUnlink(job.outputPath);
+  for (const outputPath of Object.values(job.godotOutputPaths || {})) {
+    safeUnlink(outputPath);
+  }
   safeUnlink(job.inputPath);
   videoJobs.delete(jobId);
   return true;
@@ -398,6 +408,126 @@ app.post('/api/video/export-spritesheet', express.json({ limit: '10mb' }), async
     }
     if (!res.headersSent) res.status(500).json({ error: err.message });
   }
+});
+
+/**
+ * POST /api/video/export-godot-spriteframes
+ * Generates an atlas PNG, Godot SpriteFrames .tres, and metadata JSON from one video clip.
+ */
+app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' }), async (req, res) => {
+  try {
+    const { jobId, params = {}, spriteParams = {}, godot = {} } = req.body;
+    const job = videoJobs.get(jobId);
+    if (!job) return res.status(404).json({ error: 'job not found' });
+
+    const frameWidth = Number(spriteParams.frameWidth);
+    const frameHeight = Number(spriteParams.frameHeight);
+    const framesPerRow = Number(spriteParams.framesPerRow);
+    if (!Number.isInteger(frameWidth) || !Number.isInteger(frameHeight) || !Number.isInteger(framesPerRow)
+      || frameWidth < 8 || frameHeight < 8 || framesPerRow < 1) {
+      return res.status(400).json({ error: 'frameWidth, frameHeight must be integers >= 8 and framesPerRow must be >= 1' });
+    }
+
+    const safeAreaWidth = Math.min(frameWidth, Math.max(1, Math.round(Number(godot.safeAreaWidth) || frameWidth)));
+    const safeAreaHeight = Math.min(frameHeight, Math.max(1, Math.round(Number(godot.safeAreaHeight) || frameHeight)));
+    const fps = Math.max(1, Math.round(Number(godot.fps) || 12));
+    const animationName = String(godot.animationName || 'animation').trim() || 'animation';
+    const totalFrames = job.info.frameCount || Math.round(job.info.fps * job.info.duration);
+    const selection = selectSpriteFrames(spriteParams, totalFrames);
+    const frameJobs = selection.frames.map((sourceFrameIndex, animationFrameIndex) => ({
+      atlasIndex: animationFrameIndex,
+      animationName,
+      animationFrameIndex,
+      inputPath: job.inputPath,
+      sourceFrameIndex,
+      flipH: false,
+    }));
+    const exportParams = {
+      ...params,
+      mode: 'transparent',
+      layout: {
+        ...(params.layout || {}),
+        canvasWidth: frameWidth,
+        canvasHeight: frameHeight,
+        personWidth: safeAreaWidth,
+        personHeight: safeAreaHeight,
+        anchor: 'feet',
+      },
+    };
+    const basename = `godot_${jobId}_${Date.now()}`;
+    const atlasPath = path.join(tmpDir, `${basename}_atlas.png`);
+    const spriteFramesPath = path.join(tmpDir, `${basename}.tres`);
+    const metadataPath = path.join(tmpDir, `${basename}_metadata.json`);
+
+    for (const outputPath of Object.values(job.godotOutputPaths || {})) safeUnlink(outputPath);
+    job.status = 'processing';
+    job.progress = { current: 0, total: frameJobs.length, percent: 0 };
+    job.error = null;
+
+    const result = await exportGodotSpriteFrames(
+      frameJobs,
+      exportParams,
+      { frameWidth, frameHeight, framesPerRow },
+      {
+        fps,
+        atlasResourcePath: `res://${path.basename(atlasPath)}`,
+        animations: [{ name: animationName, fps, loop: godot.loop !== false }],
+      },
+      (current, total) => {
+        job.progress = { current, total, percent: total > 0 ? Math.round((current / total) * 100) : 0 };
+      }
+    );
+    const metadata = {
+      animationName,
+      selection,
+      atlasDimensions: result.atlasDimensions,
+      frameCount: result.frameCount,
+      frames: result.frames,
+      animations: result.animations,
+      keyingLayoutParams: exportParams,
+      spriteParams: { frameWidth, frameHeight, safeAreaWidth, safeAreaHeight, framesPerRow },
+      cleanup: result.cleanup,
+      warnings: result.warnings,
+    };
+
+    fs.writeFileSync(atlasPath, result.buffer);
+    fs.writeFileSync(spriteFramesPath, result.tres, 'utf8');
+    fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
+    job.godotOutputPaths = { atlas: atlasPath, spriteframes: spriteFramesPath, metadata: metadataPath };
+    job.status = 'done';
+    job.progress = { current: result.frameCount, total: result.frameCount, percent: 100 };
+
+    res.json({
+      frameCount: result.frameCount,
+      atlasDimensions: result.atlasDimensions,
+      animationName,
+      warnings: result.warnings,
+      artifacts: Object.fromEntries(Object.entries(job.godotOutputPaths).map(([kind, outputPath]) => [kind, {
+        filename: path.basename(outputPath),
+        size: fs.statSync(outputPath).size,
+      }])),
+    });
+  } catch (err) {
+    const job = videoJobs.get(req.body?.jobId);
+    if (job) {
+      job.status = 'error';
+      job.error = err.message;
+    }
+    console.error('Godot SpriteFrames export failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/video/godot-artifact/:jobId/:artifact
+ * Downloads an atlas, SpriteFrames resource, or metadata file from a Godot export.
+ */
+app.get('/api/video/godot-artifact/:jobId/:artifact', (req, res) => {
+  const job = videoJobs.get(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'job not found' });
+  const outputPath = job.godotOutputPaths?.[req.params.artifact];
+  if (!outputPath || !fs.existsSync(outputPath)) return res.status(404).json({ error: 'Godot export artifact not found' });
+  res.download(outputPath, path.basename(outputPath));
 });
 
 function getVideoMime(ext) {
