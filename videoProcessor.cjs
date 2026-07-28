@@ -1892,6 +1892,24 @@ function buildGodotSpriteFramesTres({ atlasResourcePath, frames, animations }) {
   return lines.join('\n');
 }
 
+function buildGodotAnimatedSpriteScene({ spriteFramesResourcePath, animationName, frameHeight }) {
+  const anchorOffsetY = -Number(frameHeight) / 2;
+  const escapedAnimationName = escapeGodotString(animationName);
+  return [
+    '[gd_scene load_steps=2 format=3]',
+    '',
+    `[ext_resource type="SpriteFrames" path="${escapeGodotString(spriteFramesResourcePath)}" id="1_sprite_frames"]`,
+    '',
+    '[node name="AnimatedSprite2D" type="AnimatedSprite2D"]',
+    'sprite_frames = ExtResource("1_sprite_frames")',
+    `animation = &"${escapedAnimationName}"`,
+    `autoplay = "${escapedAnimationName}"`,
+    'centered = true',
+    `offset = Vector2(0, ${anchorOffsetY})`,
+    '',
+  ].join('\n');
+}
+
 function escapeGodotString(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
@@ -2531,6 +2549,7 @@ module.exports = {
   exportSpriteSheet,
   exportGodotSpriteFrames,
   selectSpriteFrames,
+  buildGodotAnimatedSpriteScene,
   buildEncoderArgs,
   mergeAlphaBounds,
   cropKeyedToBounds,

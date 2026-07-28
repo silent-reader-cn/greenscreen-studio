@@ -534,6 +534,31 @@ describe('selectSpriteFrames', () => {
   })
 })
 
+describe('buildGodotAnimatedSpriteScene', () => {
+  let buildGodotAnimatedSpriteScene
+
+  beforeEach(async () => {
+    vi.resetModules()
+    const mod = await import('../../videoProcessor.cjs')
+    buildGodotAnimatedSpriteScene = mod.buildGodotAnimatedSpriteScene
+  })
+
+  it('creates an instantiable feet-anchored AnimatedSprite2D scene', () => {
+    const scene = buildGodotAnimatedSpriteScene({
+      spriteFramesResourcePath: 'res://characters/hero.tres',
+      animationName: 'idle"loop',
+      frameHeight: 255,
+    })
+
+    expect(scene).toContain('[gd_scene load_steps=2 format=3]')
+    expect(scene).toContain('path="res://characters/hero.tres"')
+    expect(scene).toContain('[node name="AnimatedSprite2D" type="AnimatedSprite2D"]')
+    expect(scene).toContain('animation = &"idle\\"loop"')
+    expect(scene).toContain('autoplay = "idle\\"loop"')
+    expect(scene).toContain('offset = Vector2(0, -127.5)')
+  })
+})
+
 describe('buildEncoderArgs', () => {
   let buildEncoderArgs
 

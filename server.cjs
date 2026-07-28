@@ -20,6 +20,7 @@ const {
   exportSpriteSheet,
   exportGodotSpriteFrames,
   selectSpriteFrames,
+  buildGodotAnimatedSpriteScene,
 } = require('./videoProcessor.cjs');
 
 // 加载 polyfill（必须在引入 keying.js 之前）
@@ -412,7 +413,7 @@ app.post('/api/video/export-spritesheet', express.json({ limit: '10mb' }), async
 
 /**
  * POST /api/video/export-godot-spriteframes
- * Generates an atlas PNG, Godot SpriteFrames .tres, and metadata JSON from one video clip.
+ * Generates an atlas PNG, Godot SpriteFrames .tres, AnimatedSprite2D scene, and metadata JSON from one video clip.
  */
 app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' }), async (req, res) => {
   try {
@@ -462,6 +463,9 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
         sampleEvery: rawAnimation.sampleEvery,
         maxFrames: rawAnimation.maxFrames,
       }, totalFrames);
+      if (selection.frames.length === 0) {
+        return res.status(400).json({ error: `Godot animation "${name}" has no valid source frames` });
+      }
       const atlasStart = frameJobs.length;
       frameJobs.push(...selection.frames.map((sourceFrameIndex, animationFrameIndex) => ({
         atlasIndex: atlasStart + animationFrameIndex,
@@ -489,6 +493,7 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
     const basename = `godot_${jobId}_${Date.now()}`;
     const atlasPath = path.join(tmpDir, `${basename}_atlas.png`);
     const spriteFramesPath = path.join(tmpDir, `${basename}.tres`);
+    const scenePath = path.join(tmpDir, `${basename}.tscn`);
     const metadataPath = path.join(tmpDir, `${basename}_metadata.json`);
 
     for (const outputPath of Object.values(job.godotOutputPaths || {})) safeUnlink(outputPath);
@@ -519,14 +524,24 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
       animations: result.animations,
       keyingLayoutParams: exportParams,
       spriteParams: { frameWidth, frameHeight, safeAreaWidth, safeAreaHeight, framesPerRow },
+      scene: {
+        resourcePath: `res://${path.basename(spriteFramesPath)}`,
+        defaultAnimation: animations[0].name,
+        anchor: 'feet',
+      },
       cleanup: result.cleanup,
       warnings: result.warnings,
     };
 
     fs.writeFileSync(atlasPath, result.buffer);
     fs.writeFileSync(spriteFramesPath, result.tres, 'utf8');
+    fs.writeFileSync(scenePath, buildGodotAnimatedSpriteScene({
+      spriteFramesResourcePath: `res://${path.basename(spriteFramesPath)}`,
+      animationName: animations[0].name,
+      frameHeight,
+    }), 'utf8');
     fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
-    job.godotOutputPaths = { atlas: atlasPath, spriteframes: spriteFramesPath, metadata: metadataPath };
+    job.godotOutputPaths = { atlas: atlasPath, spriteframes: spriteFramesPath, scene: scenePath, metadata: metadataPath };
     job.status = 'done';
     job.progress = { current: result.frameCount, total: result.frameCount, percent: 100 };
 
@@ -554,7 +569,7 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
 
 /**
  * GET /api/video/godot-artifact/:jobId/:artifact
- * Downloads an atlas, SpriteFrames resource, or metadata file from a Godot export.
+ * Downloads an atlas, SpriteFrames resource, AnimatedSprite2D scene, or metadata file from a Godot export.
  */
 app.get('/api/video/godot-artifact/:jobId/:artifact', (req, res) => {
   const job = videoJobs.get(req.params.jobId);

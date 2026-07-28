@@ -556,6 +556,7 @@ export default function VideoPanel({
               <div className="godot-downloads">
                 <button className="dock-btn dock-btn-primary" onClick={() => handleDownloadGodotArtifact('atlas')}>{t('videoPanel.downloadGodotAtlas')}</button>
                 <button className="dock-btn dock-btn-primary" onClick={() => handleDownloadGodotArtifact('spriteframes')}>{t('videoPanel.downloadGodotSpriteFrames')}</button>
+                <button className="dock-btn dock-btn-primary" onClick={() => handleDownloadGodotArtifact('scene')}>{t('videoPanel.downloadGodotScene')}</button>
                 <button className="dock-btn dock-btn-secondary" onClick={() => handleDownloadGodotArtifact('metadata')}>{t('videoPanel.downloadGodotMetadata')}</button>
               </div>
             ) : (

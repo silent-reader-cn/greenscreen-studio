@@ -21,6 +21,7 @@ vi.mock('../../videoProcessor.cjs', () => ({
   exportSpriteSheet: vi.fn(),
   exportGodotSpriteFrames: vi.fn(),
   selectSpriteFrames: vi.fn(),
+  buildGodotAnimatedSpriteScene: vi.fn(),
   findLoopEndFrame: vi.fn().mockResolvedValue({
     candidates: [{ frame: 120, score: 5 }, { frame: 200, score: 12 }],
     scores: [{ frame: 2, score: 10 }, { frame: 3, score: 15 }],
@@ -330,7 +331,7 @@ describe('POST /api/video/export-godot-spriteframes', () => {
     expect(res.body).toHaveProperty('error', 'job not found')
   })
 
-  it('writes and serves atlas, SpriteFrames, and metadata artifacts', async () => {
+  it('writes and serves atlas, SpriteFrames, AnimatedSprite2D scene, and metadata artifacts', async () => {
     const fakeVideoProcessor = {
       probeVideo: vi.fn().mockResolvedValue({
         width: 1920,
@@ -376,6 +377,17 @@ describe('POST /api/video/export-godot-spriteframes', () => {
           warnings: [],
         }
       }),
+      buildGodotAnimatedSpriteScene: vi.fn(({ spriteFramesResourcePath, animationName, frameHeight }) => [
+        '[gd_scene load_steps=2 format=3]',
+        '',
+        `[ext_resource type="SpriteFrames" path="${spriteFramesResourcePath}" id="1_sprite_frames"]`,
+        '',
+        '[node name="AnimatedSprite2D" type="AnimatedSprite2D"]',
+        'sprite_frames = ExtResource("1_sprite_frames")',
+        `animation = &"${animationName}"`,
+        `offset = Vector2(0, ${-frameHeight / 2})`,
+        '',
+      ].join('\n')),
     }
 
     const serverPath = nodeRequire.resolve('../server.cjs')
@@ -411,6 +423,7 @@ describe('POST /api/video/export-godot-spriteframes', () => {
     expect(exportRes.body.artifacts).toEqual(expect.objectContaining({
       atlas: expect.objectContaining({ filename: expect.stringMatching(/_atlas\.png$/) }),
       spriteframes: expect.objectContaining({ filename: expect.stringMatching(/\.tres$/) }),
+      scene: expect.objectContaining({ filename: expect.stringMatching(/\.tscn$/) }),
       metadata: expect.objectContaining({ filename: expect.stringMatching(/_metadata\.json$/) }),
     }))
     expect(fakeVideoProcessor.exportGodotSpriteFrames).toHaveBeenCalledWith(
@@ -430,6 +443,11 @@ describe('POST /api/video/export-godot-spriteframes', () => {
       expect.objectContaining({ fps: 12 }),
       expect.any(Function)
     )
+    expect(fakeVideoProcessor.buildGodotAnimatedSpriteScene).toHaveBeenCalledWith(expect.objectContaining({
+      animationName: 'idle',
+      frameHeight: 256,
+      spriteFramesResourcePath: expect.stringMatching(/^res:\/\/godot_.*\.tres$/),
+    }))
 
     const multiExportRes = await request(freshApp)
       .post('/api/video/export-godot-spriteframes')
@@ -479,13 +497,24 @@ describe('POST /api/video/export-godot-spriteframes', () => {
     const metadata = JSON.parse(metadataRes.text)
     expect(metadata.animationNames).toEqual(['idle', 'attack'])
     expect(metadata.selections.map(item => item.animationName)).toEqual(['idle', 'attack'])
+    expect(metadata.scene).toEqual(expect.objectContaining({
+      defaultAnimation: 'idle',
+      anchor: 'feet',
+    }))
 
-    for (const artifact of ['atlas', 'spriteframes', 'metadata']) {
+    for (const artifact of ['atlas', 'spriteframes', 'scene', 'metadata']) {
       const artifactRes = await request(freshApp)
         .get(`/api/video/godot-artifact/${uploadRes.body.jobId}/${artifact}`)
       expect(artifactRes.status).toBe(200)
       expect(artifactRes.headers['content-disposition']).toContain('attachment')
     }
+
+    const sceneRes = await request(freshApp)
+      .get(`/api/video/godot-artifact/${uploadRes.body.jobId}/scene`)
+    const sceneText = sceneRes.body.toString('utf8')
+    expect(sceneText).toContain('[node name="AnimatedSprite2D" type="AnimatedSprite2D"]')
+    expect(sceneText).toContain('path="res://')
+    expect(sceneText).toContain('offset = Vector2(0, -128)')
 
     await request(freshApp).delete(`/api/video/${uploadRes.body.jobId}`)
   })
