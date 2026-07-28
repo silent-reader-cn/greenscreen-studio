@@ -450,7 +450,6 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
     const safeAreaHeight = Math.min(frameHeight, Math.max(1, Math.round(Number(godot.safeAreaHeight) || frameHeight)));
     const fps = Math.max(1, Math.round(Number(godot.fps) || 12));
     const animationName = String(godot.animationName || 'animation').trim() || 'animation';
-    const totalFrames = job.info.frameCount || Math.round(job.info.fps * job.info.duration);
     const requestedAnimations = Array.isArray(godot.animations) && godot.animations.length > 0
       ? godot.animations
       : [{
@@ -470,6 +469,16 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
     const sourceAnimations = [];
     const mirrorAnimations = [];
 
+    const resolveSourceJob = (rawAnimation) => {
+      const sourceJobId = String(rawAnimation?.jobId || jobId || '').trim();
+      const sourceJob = videoJobs.get(sourceJobId);
+      if (!sourceJob) {
+        return { error: `Source video job not found: ${sourceJobId || '(empty)'}` };
+      }
+      const sourceTotalFrames = sourceJob.info.frameCount || Math.round(sourceJob.info.fps * sourceJob.info.duration);
+      return { sourceJobId, sourceJob, sourceTotalFrames };
+    };
+
     for (const rawAnimation of requestedAnimations) {
       const name = String(rawAnimation?.name || '').trim();
       if (!name) return res.status(400).json({ error: 'Every Godot animation requires a name' });
@@ -484,13 +493,16 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
 
     for (const rawAnimation of sourceAnimations) {
       const name = rawAnimation.name;
+      const resolved = resolveSourceJob(rawAnimation);
+      if (resolved.error) return res.status(400).json({ error: resolved.error });
+      const { sourceJobId, sourceJob, sourceTotalFrames } = resolved;
       const animationFps = Math.max(1, Math.round(Number(rawAnimation.fps) || fps));
       const selection = selectSpriteFrames({
         frames: rawAnimation.frames,
         range: rawAnimation.range,
         sampleEvery: rawAnimation.sampleEvery,
         maxFrames: rawAnimation.maxFrames,
-      }, totalFrames);
+      }, sourceTotalFrames);
       if (selection.frames.length === 0) {
         return res.status(400).json({ error: `Godot animation "${name}" has no valid source frames` });
       }
@@ -500,13 +512,19 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
         atlasIndex: atlasStart + animationFrameIndex,
         animationName: name,
         animationFrameIndex,
-        inputPath: job.inputPath,
+        inputPath: sourceJob.inputPath,
         sourceFrameIndex,
         flipH,
       }));
       frameJobs.push(...jobs);
       animations.push({ name, fps: animationFps, loop: rawAnimation.loop !== false });
-      selections.push({ animationName: name, selection, flipH, mirroredFrom: null });
+      selections.push({
+        animationName: name,
+        jobId: sourceJobId,
+        selection,
+        flipH,
+        mirroredFrom: null,
+      });
       jobsByAnimation.set(name, jobs);
     }
 
@@ -531,6 +549,7 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
       animations.push({ name, fps: animationFps, loop: rawAnimation.loop !== false });
       selections.push({
         animationName: name,
+        jobId: null,
         selection: {
           mode: 'mirror',
           frames: sourceJobs.map(item => item.sourceFrameIndex),

@@ -535,18 +535,74 @@ describe('POST /api/video/export-godot-spriteframes', () => {
       { name: 'walk_SW', fps: 10, loop: true },
     ])
 
+    const secondUploadRes = await request(freshApp)
+      .post('/api/video/upload')
+      .attach('video', Buffer.from('fake-video-input-ne'), 'clip-ne.mp4')
+    expect(secondUploadRes.status).toBe(200)
+
+    const multiSourceExportRes = await request(freshApp)
+      .post('/api/video/export-godot-spriteframes')
+      .send({
+        jobId: uploadRes.body.jobId,
+        params: { keying: {}, layout: { sourceCharacterHeight: 520 } },
+        spriteParams: { frameWidth: 256, frameHeight: 256, framesPerRow: 8 },
+        godot: {
+          safeAreaWidth: 160,
+          safeAreaHeight: 160,
+          fps: 12,
+          animations: [
+            { name: 'walk_SE', jobId: uploadRes.body.jobId, frames: [0, 3], fps: 10, loop: true },
+            { name: 'walk_NE', jobId: secondUploadRes.body.jobId, frames: [1, 4], fps: 10, loop: true },
+            { name: 'walk_SW', mirrorOf: 'walk_SE', fps: 10, loop: true },
+            { name: 'walk_NW', mirrorOf: 'walk_NE', fps: 10, loop: true },
+          ],
+        },
+      })
+
+    expect(multiSourceExportRes.status).toBe(200)
+    expect(multiSourceExportRes.body.frameCount).toBe(8)
+    expect(multiSourceExportRes.body.animations).toEqual([
+      expect.objectContaining({ name: 'walk_SE', frameCount: 2 }),
+      expect.objectContaining({ name: 'walk_NE', frameCount: 2 }),
+      expect.objectContaining({ name: 'walk_SW', frameCount: 2 }),
+      expect.objectContaining({ name: 'walk_NW', frameCount: 2 }),
+    ])
+    const multiSourceCall = fakeVideoProcessor.exportGodotSpriteFrames.mock.calls.at(-1)
+    expect(multiSourceCall[0].map(job => ({
+      animationName: job.animationName,
+      sourceFrameIndex: job.sourceFrameIndex,
+      flipH: job.flipH,
+      inputPath: job.inputPath,
+    }))).toEqual([
+      expect.objectContaining({ animationName: 'walk_SE', sourceFrameIndex: 0, flipH: false }),
+      expect.objectContaining({ animationName: 'walk_SE', sourceFrameIndex: 3, flipH: false }),
+      expect.objectContaining({ animationName: 'walk_NE', sourceFrameIndex: 1, flipH: false }),
+      expect.objectContaining({ animationName: 'walk_NE', sourceFrameIndex: 4, flipH: false }),
+      expect.objectContaining({ animationName: 'walk_SW', sourceFrameIndex: 0, flipH: true }),
+      expect.objectContaining({ animationName: 'walk_SW', sourceFrameIndex: 3, flipH: true }),
+      expect.objectContaining({ animationName: 'walk_NW', sourceFrameIndex: 1, flipH: true }),
+      expect.objectContaining({ animationName: 'walk_NW', sourceFrameIndex: 4, flipH: true }),
+    ])
+    // SE/SW share one source path, NE/NW share the other.
+    expect(new Set(multiSourceCall[0].filter(j => j.animationName === 'walk_SE' || j.animationName === 'walk_SW').map(j => j.inputPath)).size).toBe(1)
+    expect(new Set(multiSourceCall[0].filter(j => j.animationName === 'walk_NE' || j.animationName === 'walk_NW').map(j => j.inputPath)).size).toBe(1)
+    expect(multiSourceCall[0][0].inputPath).not.toBe(multiSourceCall[0][2].inputPath)
+
     const metadataRes = await request(freshApp)
       .get(`/api/video/godot-artifact/${uploadRes.body.jobId}/metadata`)
     expect(metadataRes.status).toBe(200)
     const metadata = JSON.parse(metadataRes.text)
-    expect(metadata.animationNames).toEqual(['walk_SE', 'walk_SW'])
+    expect(metadata.animationNames).toEqual(['walk_SE', 'walk_NE', 'walk_SW', 'walk_NW'])
     expect(metadata.selections.map(item => ({
       animationName: item.animationName,
       mirroredFrom: item.mirroredFrom,
       flipH: item.flipH,
+      jobId: item.jobId,
     }))).toEqual([
-      { animationName: 'walk_SE', mirroredFrom: null, flipH: false },
-      { animationName: 'walk_SW', mirroredFrom: 'walk_SE', flipH: true },
+      { animationName: 'walk_SE', mirroredFrom: null, flipH: false, jobId: uploadRes.body.jobId },
+      { animationName: 'walk_NE', mirroredFrom: null, flipH: false, jobId: secondUploadRes.body.jobId },
+      { animationName: 'walk_SW', mirroredFrom: 'walk_SE', flipH: true, jobId: null },
+      { animationName: 'walk_NW', mirroredFrom: 'walk_NE', flipH: true, jobId: null },
     ])
     expect(metadata.scene).toEqual(expect.objectContaining({
       defaultAnimation: 'walk_SE',
@@ -569,9 +625,9 @@ describe('POST /api/video/export-godot-spriteframes', () => {
         res.on('end', () => callback(null, Buffer.concat(chunks)))
       })
     expect(bundleRes.body.subarray(0, 2).toString('utf8')).toBe('PK')
-    expect(bundleRes.body.includes(Buffer.from(mirrorExportRes.body.artifacts.scene.filename))).toBe(true)
-    expect(bundleRes.body.includes(Buffer.from(mirrorExportRes.body.artifacts.spriteframes.filename))).toBe(true)
-    expect(mirrorExportRes.body.artifacts.bundle.filename).toMatch(/\.zip$/)
+    expect(bundleRes.body.includes(Buffer.from(multiSourceExportRes.body.artifacts.scene.filename))).toBe(true)
+    expect(bundleRes.body.includes(Buffer.from(multiSourceExportRes.body.artifacts.spriteframes.filename))).toBe(true)
+    expect(multiSourceExportRes.body.artifacts.bundle.filename).toMatch(/\.zip$/)
 
     const sceneRes = await request(freshApp)
       .get(`/api/video/godot-artifact/${uploadRes.body.jobId}/scene`)
@@ -581,5 +637,6 @@ describe('POST /api/video/export-godot-spriteframes', () => {
     expect(sceneText).toContain('offset = Vector2(0, -128)')
 
     await request(freshApp).delete(`/api/video/${uploadRes.body.jobId}`)
+    await request(freshApp).delete(`/api/video/${secondUploadRes.body.jobId}`)
   })
 })

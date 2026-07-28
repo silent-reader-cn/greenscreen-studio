@@ -92,6 +92,7 @@ export default function VideoPanel({
   const [spriteSheetBlob, setSpriteSheetBlob] = useState(null)
   const [godotExport, setGodotExport] = useState(null)
   const [godotClips, setGodotClips] = useState([])
+  const [sourceVideos, setSourceVideos] = useState({})
   const [completedExportSignature, setCompletedExportSignature] = useState('')
   const totalFrames = videoInfo?.frameCount || Math.round((videoInfo?.fps || 0) * (videoInfo?.duration || 0))
   const usesExactFrames = spriteParams.selectionMode === 'exact'
@@ -205,6 +206,10 @@ export default function VideoPanel({
       setErrorMsg(t('videoPanel.clipNameRequired'))
       return
     }
+    if (!videoInfo?.jobId) {
+      setErrorMsg(t('videoPanel.clipSourceRequired'))
+      return
+    }
     if (godotClips.some(clip => clip.name === name)) {
       setErrorMsg(t('videoPanel.clipNameDuplicate', { name }))
       return
@@ -217,6 +222,8 @@ export default function VideoPanel({
     const clip = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       name,
+      jobId: videoInfo.jobId,
+      sourceLabel: videoInfo.originalName || videoInfo.filename || videoInfo.jobId,
       fps: godotParams.fps,
       loop: godotParams.loop,
       range: range ? { startFrame: range.startFrame, endFrame: range.endFrame } : undefined,
@@ -226,11 +233,33 @@ export default function VideoPanel({
       selectionMode: usesExactFrames ? 'exact' : 'sample',
     }
     setGodotClips(clips => [...clips, clip])
+    setSourceVideos(prev => ({
+      ...prev,
+      [videoInfo.jobId]: {
+        jobId: videoInfo.jobId,
+        label: clip.sourceLabel,
+        frameCount: totalFrames,
+      },
+    }))
     setErrorMsg('')
-  }, [explicitFrameError, explicitFrameSelection.frames, godotClips, godotParams, range, spriteParams.maxFrames, spriteParams.sampleEvery, usesExactFrames])
+  }, [explicitFrameError, explicitFrameSelection.frames, godotClips, godotParams, range, spriteParams.maxFrames, spriteParams.sampleEvery, totalFrames, usesExactFrames, videoInfo])
 
   const handleRemoveGodotClip = useCallback((clipId) => {
-    setGodotClips(clips => clips.filter(clip => clip.id !== clipId))
+    setGodotClips(clips => {
+      const next = clips.filter(clip => clip.id !== clipId)
+      const retainedJobIds = new Set(
+        next.flatMap(clip => [clip.jobId, ...(clip.mirrorOf ? [] : [])].filter(Boolean))
+      )
+      // Keep source videos that are still referenced by remaining clips or the active preview.
+      setSourceVideos(prev => {
+        const kept = {}
+        for (const [jobId, info] of Object.entries(prev)) {
+          if (retainedJobIds.has(jobId) || jobId === activeJobIdRef.current) kept[jobId] = info
+        }
+        return kept
+      })
+      return next
+    })
     setErrorMsg('')
   }, [])
 
@@ -252,6 +281,8 @@ export default function VideoPanel({
     const clip = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       name,
+      jobId: sourceClip.jobId,
+      sourceLabel: sourceClip.sourceLabel,
       fps: sourceClip.fps,
       loop: sourceClip.loop,
       mirrorOf: sourceClip.name,
@@ -305,13 +336,13 @@ export default function VideoPanel({
     setDownloadUrl('')
     setSpriteSheetBlob(null)
     setGodotExport(null)
-    setGodotClips([])
     setCompletedExportSignature('')
   }, [])
 
   const handleFile = useCallback(async (file) => {
     if (!isVideoFile(file)) return
     const previousJobId = activeJobIdRef.current
+    const previousStillNeeded = godotClips.some(clip => clip.jobId === previousJobId)
     setUploading(true)
     setErrorMsg('')
     setStatus('idle')
@@ -319,9 +350,16 @@ export default function VideoPanel({
     setDownloadUrl('')
     setSpriteSheetBlob(null)
     setGodotExport(null)
-    setGodotClips([])
     setCompletedExportSignature('')
-    cleanupVideoJob(previousJobId)
+    if (previousJobId && !previousStillNeeded) {
+      cleanupVideoJob(previousJobId)
+      setSourceVideos(prev => {
+        if (!prev[previousJobId]) return prev
+        const next = { ...prev }
+        delete next[previousJobId]
+        return next
+      })
+    }
 
     const formData = new FormData()
     formData.append('video', file)
@@ -330,8 +368,17 @@ export default function VideoPanel({
       const resp = await fetch('/api/video/upload', { method: 'POST', body: formData })
       if (!resp.ok) throw new Error(t('videoPanel.uploadFailed'))
       const data = await resp.json()
+      const label = file.name || data.originalName || data.filename || data.jobId
       activeJobIdRef.current = data.jobId
-      setVideoInfo(data)
+      setVideoInfo({ ...data, originalName: label })
+      setSourceVideos(prev => ({
+        ...prev,
+        [data.jobId]: {
+          jobId: data.jobId,
+          label,
+          frameCount: data.frameCount || Math.round((data.fps || 0) * (data.duration || 0)),
+        },
+      }))
       setStatus('uploaded')
       onVideoUpload?.(file, data)
     } catch (err) {
@@ -340,7 +387,7 @@ export default function VideoPanel({
     } finally {
       setUploading(false)
     }
-  }, [cleanupVideoJob, onVideoUpload])
+  }, [cleanupVideoJob, godotClips, onVideoUpload])
 
   useEffect(() => {
     if (!isVideoFile(droppedFile) || !shouldHandleDroppedVideo(droppedFile, handledDroppedFileRef.current)) return
@@ -418,7 +465,7 @@ export default function VideoPanel({
             godot: {
               ...godotParams,
               animations: godotClips.length > 0
-                ? godotClips.map(({ id, selectionMode, ...clip }) => {
+                ? godotClips.map(({ id, selectionMode, sourceLabel, ...clip }) => {
                     if (clip.mirrorOf) {
                       return {
                         name: clip.name,
@@ -427,7 +474,17 @@ export default function VideoPanel({
                         mirrorOf: clip.mirrorOf,
                       }
                     }
-                    return clip
+                    return {
+                      name: clip.name,
+                      jobId: clip.jobId,
+                      fps: clip.fps,
+                      loop: clip.loop,
+                      range: clip.range,
+                      frames: clip.frames,
+                      sampleEvery: clip.sampleEvery,
+                      maxFrames: clip.maxFrames,
+                      flipH: clip.flipH,
+                    }
                   })
                 : undefined,
             },
@@ -541,11 +598,17 @@ export default function VideoPanel({
   }
 
   const handleReset = () => {
-    const jobId = activeJobIdRef.current
+    const jobIds = new Set([
+      activeJobIdRef.current,
+      ...Object.keys(sourceVideos),
+      ...godotClips.map(clip => clip.jobId),
+    ].filter(Boolean))
     activeJobIdRef.current = null
     handledDroppedFileRef.current = null
+    setGodotClips([])
+    setSourceVideos({})
     resetForNewFile()
-    cleanupVideoJob(jobId)
+    for (const jobId of jobIds) cleanupVideoJob(jobId)
     onVideoUpload?.(null, null)
   }
 
@@ -832,6 +895,9 @@ export default function VideoPanel({
                       : t('videoPanel.noSavedClips')}
                   </span>
                   {godotClips.length > 0 && (
+                    <span className="sprite-hint">{t('videoPanel.multiSourceHint')}</span>
+                  )}
+                  {godotClips.length > 0 && (
                     <div className="godot-clip-list">
                       {godotClips.map(clip => (
                         <div className="godot-clip-item" key={clip.id}>
@@ -842,6 +908,10 @@ export default function VideoPanel({
                                 ? t('videoPanel.clipMirrorOf', { name: clip.mirrorOf })
                                 : (
                                   <>
+                                    {t('videoPanel.clipSource', {
+                                      source: clip.sourceLabel || sourceVideos[clip.jobId]?.label || clip.jobId || t('videoPanel.clipSourceUnknown'),
+                                    })}
+                                    {' · '}
                                     {t('videoPanel.clipRange', {
                                       start: clip.range?.startFrame ?? 0,
                                       end: Math.max(0, (clip.range?.endFrame ?? 0) - 1),
