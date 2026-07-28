@@ -37,6 +37,8 @@ const DEFAULT_SPRITE_PARAMS = {
   framesPerRow: 8,
   maxFrames: 64,
   sampleEvery: 1,
+  selectionMode: 'sample',
+  exactFramesText: '',
 }
 
 const DEFAULT_GODOT_PARAMS = {

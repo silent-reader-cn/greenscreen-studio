@@ -2,6 +2,8 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import CollapsiblePanel from './CollapsiblePanel.jsx'
 import { formatBytes, t } from '../i18n.js'
+import { parseExplicitFrameList } from '../lib/frameSelection.js'
+import { shouldHandleDroppedVideo } from '../lib/droppedVideo.js'
 
 const FMT_OPTIONS = [
   { value: 'webm', labelKey: 'videoPanel.transparentWebm', modes: ['transparent'] },
@@ -16,6 +18,8 @@ const DEFAULT_SPRITE_PARAMS = {
   framesPerRow: 8,
   maxFrames: 64,
   sampleEvery: 1,
+  selectionMode: 'sample',
+  exactFramesText: '',
 }
 
 const DEFAULT_GODOT_PARAMS = {
@@ -88,8 +92,30 @@ export default function VideoPanel({
   const [spriteSheetBlob, setSpriteSheetBlob] = useState(null)
   const [godotExport, setGodotExport] = useState(null)
   const [completedExportSignature, setCompletedExportSignature] = useState('')
+  const totalFrames = videoInfo?.frameCount || Math.round((videoInfo?.fps || 0) * (videoInfo?.duration || 0))
+  const usesExactFrames = spriteParams.selectionMode === 'exact'
+  const explicitFrameSelection = useMemo(
+    () => parseExplicitFrameList(spriteParams.exactFramesText, totalFrames || Infinity),
+    [spriteParams.exactFramesText, totalFrames]
+  )
+  const exactFramesOutsideRange = usesExactFrames && range
+    ? explicitFrameSelection.frames.filter(frame => frame < range.startFrame || frame >= range.endFrame)
+    : []
+  const explicitFrameError = usesExactFrames
+    ? explicitFrameSelection.invalidTokens.length > 0
+      ? t('videoPanel.exactFramesInvalid', { values: explicitFrameSelection.invalidTokens.join(', ') })
+      : explicitFrameSelection.outOfRangeFrames.length > 0
+        ? t('videoPanel.exactFramesOutOfVideo', { values: explicitFrameSelection.outOfRangeFrames.join(', '), max: Math.max(0, totalFrames - 1) })
+        : exactFramesOutsideRange.length > 0
+          ? t('videoPanel.exactFramesOutOfRange', { values: exactFramesOutsideRange.join(', '), start: range.startFrame, end: range.endFrame - 1 })
+          : explicitFrameSelection.frames.length === 0
+            ? t('videoPanel.exactFramesRequired')
+            : ''
+    : ''
 
   const pollTimerRef = useRef(null)
+  const activeJobIdRef = useRef(null)
+  const handledDroppedFileRef = useRef(null)
 
   const exportSignature = useMemo(() => JSON.stringify({
     jobId: videoInfo?.jobId || '',
@@ -144,8 +170,17 @@ export default function VideoPanel({
   }, [updateVideoParams])
 
   const setExportMode = useCallback((nextExportMode) => {
-    updateVideoParams({ exportMode: nextExportMode })
-  }, [updateVideoParams])
+    const patch = { exportMode: nextExportMode }
+    if (
+      nextExportMode === 'godot' &&
+      exportMode !== 'godot' &&
+      spriteParams.frameWidth === 128 &&
+      spriteParams.frameHeight === 128
+    ) {
+      patch.spriteParams = { ...spriteParams, frameWidth: 256, frameHeight: 256 }
+    }
+    updateVideoParams(patch)
+  }, [exportMode, spriteParams, updateVideoParams])
 
   const setSpriteParams = useCallback((updater) => {
     const nextSpriteParams = typeof updater === 'function'
@@ -210,7 +245,7 @@ export default function VideoPanel({
 
   const handleFile = useCallback(async (file) => {
     if (!isVideoFile(file)) return
-    const previousJobId = videoInfo?.jobId
+    const previousJobId = activeJobIdRef.current
     setUploading(true)
     setErrorMsg('')
     setStatus('idle')
@@ -228,6 +263,7 @@ export default function VideoPanel({
       const resp = await fetch('/api/video/upload', { method: 'POST', body: formData })
       if (!resp.ok) throw new Error(t('videoPanel.uploadFailed'))
       const data = await resp.json()
+      activeJobIdRef.current = data.jobId
       setVideoInfo(data)
       setStatus('uploaded')
       onVideoUpload?.(file, data)
@@ -237,17 +273,23 @@ export default function VideoPanel({
     } finally {
       setUploading(false)
     }
-  }, [cleanupVideoJob, onVideoUpload, videoInfo?.jobId])
+  }, [cleanupVideoJob, onVideoUpload])
 
   useEffect(() => {
-    if (isVideoFile(droppedFile)) {
-      resetForNewFile()
-      handleFile(droppedFile)
-    }
+    if (!isVideoFile(droppedFile) || !shouldHandleDroppedVideo(droppedFile, handledDroppedFileRef.current)) return
+    handledDroppedFileRef.current = droppedFile
+    resetForNewFile()
+    handleFile(droppedFile)
   }, [droppedFile, handleFile, resetForNewFile])
 
   const handleProcess = async () => {
     if (!videoInfo) return
+    if ((exportMode === 'spritesheet' || exportMode === 'godot') && explicitFrameError) {
+      setErrorMsg(explicitFrameError)
+      setStatus('error')
+      return
+    }
+    const selectedFrames = usesExactFrames ? explicitFrameSelection.frames : undefined
     const currentExportSignature = exportSignature
     setProcessing(true)
     setStatus('processing')
@@ -268,6 +310,8 @@ export default function VideoPanel({
             params: { keying: keyingParams, layout: layoutParams, region },
             spriteParams: {
               ...spriteParams,
+              frames: selectedFrames,
+              maxFrames: usesExactFrames ? undefined : spriteParams.maxFrames,
               range: range ? { startFrame: range.startFrame, endFrame: range.endFrame } : undefined,
             },
           })
@@ -299,6 +343,8 @@ export default function VideoPanel({
             params: { keying: keyingParams, layout: layoutParams, region },
             spriteParams: {
               ...spriteParams,
+              frames: selectedFrames,
+              maxFrames: usesExactFrames ? undefined : spriteParams.maxFrames,
               range: range ? { startFrame: range.startFrame, endFrame: range.endFrame } : undefined,
             },
             godot: godotParams,
@@ -412,7 +458,9 @@ export default function VideoPanel({
   }
 
   const handleReset = () => {
-    const jobId = videoInfo?.jobId
+    const jobId = activeJobIdRef.current
+    activeJobIdRef.current = null
+    handledDroppedFileRef.current = null
     resetForNewFile()
     cleanupVideoJob(jobId)
     onVideoUpload?.(null, null)
@@ -597,11 +645,36 @@ export default function VideoPanel({
                   <label>{t('videoPanel.maxFrames')}</label>
                   <input type="number" min="1" max="10000" value={spriteParams.maxFrames} onChange={e => setSpriteParams(p => ({ ...p, maxFrames: parseInt(e.target.value) || 64 }))} />
                 </div>
-                <div className="sprite-param-row">
-                  <label>{t('videoPanel.sampleEvery')}</label>
-                  <input type="number" min="1" max="1000" value={spriteParams.sampleEvery} onChange={e => setSpriteParams(p => ({ ...p, sampleEvery: parseInt(e.target.value) || 1 }))} />
-                  <span className="sprite-hint">{t('videoPanel.sampleHint')}</span>
+                <div className="frame-selection-mode">
+                  <button
+                    className={`opt-btn ${!usesExactFrames ? 'active' : ''}`}
+                    onClick={() => setSpriteParams(p => ({ ...p, selectionMode: 'sample' }))}
+                  >{t('videoPanel.intervalSampling')}</button>
+                  <button
+                    className={`opt-btn ${usesExactFrames ? 'active' : ''}`}
+                    onClick={() => setSpriteParams(p => ({ ...p, selectionMode: 'exact' }))}
+                  >{t('videoPanel.exactFrames')}</button>
                 </div>
+                {usesExactFrames ? (
+                  <div className="exact-frame-field">
+                    <label>{t('videoPanel.exactFramesLabel')}</label>
+                    <input
+                      type="text"
+                      value={spriteParams.exactFramesText}
+                      placeholder={t('videoPanel.exactFramesPlaceholder')}
+                      onChange={e => setSpriteParams(p => ({ ...p, exactFramesText: e.target.value }))}
+                    />
+                    <span className={explicitFrameError ? 'exact-frame-error' : 'sprite-hint'}>
+                      {explicitFrameError || t('videoPanel.exactFramesCount', { count: explicitFrameSelection.frames.length })}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="sprite-param-row">
+                    <label>{t('videoPanel.sampleEvery')}</label>
+                    <input type="number" min="1" max="1000" value={spriteParams.sampleEvery} onChange={e => setSpriteParams(p => ({ ...p, sampleEvery: parseInt(e.target.value) || 1 }))} />
+                    <span className="sprite-hint">{t('videoPanel.sampleHint')}</span>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="sprite-params">
@@ -628,12 +701,37 @@ export default function VideoPanel({
                   <input className="godot-name-input" type="text" value={godotParams.animationName} onChange={e => setGodotParams(p => ({ ...p, animationName: e.target.value }))} />
                   <label className="sprite-checkbox"><input type="checkbox" checked={godotParams.loop} onChange={e => setGodotParams(p => ({ ...p, loop: e.target.checked }))} /> {t('videoPanel.godotLoop')}</label>
                 </div>
-                <div className="sprite-param-row">
-                  <label>{t('videoPanel.sampleEvery')}</label>
-                  <input type="number" min="1" max="1000" value={spriteParams.sampleEvery} onChange={e => setSpriteParams(p => ({ ...p, sampleEvery: parseInt(e.target.value) || 1 }))} />
-                  <label>{t('videoPanel.maxFrames')}</label>
-                  <input type="number" min="1" max="10000" value={spriteParams.maxFrames} onChange={e => setSpriteParams(p => ({ ...p, maxFrames: parseInt(e.target.value) || 64 }))} />
+                <div className="frame-selection-mode">
+                  <button
+                    className={`opt-btn ${!usesExactFrames ? 'active' : ''}`}
+                    onClick={() => setSpriteParams(p => ({ ...p, selectionMode: 'sample' }))}
+                  >{t('videoPanel.intervalSampling')}</button>
+                  <button
+                    className={`opt-btn ${usesExactFrames ? 'active' : ''}`}
+                    onClick={() => setSpriteParams(p => ({ ...p, selectionMode: 'exact' }))}
+                  >{t('videoPanel.exactFrames')}</button>
                 </div>
+                {usesExactFrames ? (
+                  <div className="exact-frame-field">
+                    <label>{t('videoPanel.exactFramesLabel')}</label>
+                    <input
+                      type="text"
+                      value={spriteParams.exactFramesText}
+                      placeholder={t('videoPanel.exactFramesPlaceholder')}
+                      onChange={e => setSpriteParams(p => ({ ...p, exactFramesText: e.target.value }))}
+                    />
+                    <span className={explicitFrameError ? 'exact-frame-error' : 'sprite-hint'}>
+                      {explicitFrameError || t('videoPanel.exactFramesCount', { count: explicitFrameSelection.frames.length })}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="sprite-param-row">
+                    <label>{t('videoPanel.sampleEvery')}</label>
+                    <input type="number" min="1" max="1000" value={spriteParams.sampleEvery} onChange={e => setSpriteParams(p => ({ ...p, sampleEvery: parseInt(e.target.value) || 1 }))} />
+                    <label>{t('videoPanel.maxFrames')}</label>
+                    <input type="number" min="1" max="10000" value={spriteParams.maxFrames} onChange={e => setSpriteParams(p => ({ ...p, maxFrames: parseInt(e.target.value) || 64 }))} />
+                  </div>
+                )}
               </div>
             )}
           </div>

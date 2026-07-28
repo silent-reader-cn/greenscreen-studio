@@ -983,6 +983,43 @@ body {
   border-color: #888;
 }
 
+.frame-selection-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.exact-frame-field {
+  display: grid;
+  gap: 4px;
+}
+
+.exact-frame-field label {
+  color: #888;
+  font-size: 11px;
+}
+
+.exact-frame-field input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  color: #333;
+  font-size: 12px;
+  outline: none;
+}
+
+.exact-frame-field input:focus {
+  border-color: #888;
+}
+
+.exact-frame-error {
+  color: #b33;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .sprite-param-row input.godot-name-input {
   width: 112px;
   text-align: left;
