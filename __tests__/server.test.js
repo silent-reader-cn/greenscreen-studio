@@ -331,7 +331,7 @@ describe('POST /api/video/export-godot-spriteframes', () => {
     expect(res.body).toHaveProperty('error', 'job not found')
   })
 
-  it('writes and serves atlas, SpriteFrames, AnimatedSprite2D scene, and metadata artifacts', async () => {
+  it('writes and serves a Godot bundle plus individual artifacts', async () => {
     const fakeVideoProcessor = {
       probeVideo: vi.fn().mockResolvedValue({
         width: 1920,
@@ -421,6 +421,7 @@ describe('POST /api/video/export-godot-spriteframes', () => {
     expect(exportRes.status).toBe(200)
     expect(exportRes.body.frameCount).toBe(3)
     expect(exportRes.body.artifacts).toEqual(expect.objectContaining({
+      bundle: expect.objectContaining({ filename: expect.stringMatching(/\.zip$/) }),
       atlas: expect.objectContaining({ filename: expect.stringMatching(/_atlas\.png$/) }),
       spriteframes: expect.objectContaining({ filename: expect.stringMatching(/\.tres$/) }),
       scene: expect.objectContaining({ filename: expect.stringMatching(/\.tscn$/) }),
@@ -502,12 +503,25 @@ describe('POST /api/video/export-godot-spriteframes', () => {
       anchor: 'feet',
     }))
 
-    for (const artifact of ['atlas', 'spriteframes', 'scene', 'metadata']) {
+    for (const artifact of ['bundle', 'atlas', 'spriteframes', 'scene', 'metadata']) {
       const artifactRes = await request(freshApp)
         .get(`/api/video/godot-artifact/${uploadRes.body.jobId}/${artifact}`)
       expect(artifactRes.status).toBe(200)
       expect(artifactRes.headers['content-disposition']).toContain('attachment')
     }
+
+    const bundleRes = await request(freshApp)
+      .get(`/api/video/godot-artifact/${uploadRes.body.jobId}/bundle`)
+      .buffer(true)
+      .parse((res, callback) => {
+        const chunks = []
+        res.on('data', chunk => chunks.push(chunk))
+        res.on('end', () => callback(null, Buffer.concat(chunks)))
+      })
+    expect(bundleRes.body.subarray(0, 2).toString('utf8')).toBe('PK')
+    expect(bundleRes.body.includes(Buffer.from(multiExportRes.body.artifacts.scene.filename))).toBe(true)
+    expect(bundleRes.body.includes(Buffer.from(multiExportRes.body.artifacts.spriteframes.filename))).toBe(true)
+    expect(multiExportRes.body.artifacts.bundle.filename).toMatch(/\.zip$/)
 
     const sceneRes = await request(freshApp)
       .get(`/api/video/godot-artifact/${uploadRes.body.jobId}/scene`)

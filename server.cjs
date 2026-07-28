@@ -10,6 +10,7 @@
 const express = require('express');
 const multer = require('multer');
 const { createCanvas, Image } = require('canvas');
+const archiver = require('archiver');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -144,6 +145,22 @@ function safeUnlink(filePath) {
   } catch (err) {
     console.warn(`  ⚠️ 临时文件清理失败: ${filePath}`, err.message);
   }
+}
+
+function createGodotBundle(bundlePath, artifactPaths) {
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(bundlePath);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+
+    output.on('close', resolve);
+    output.on('error', reject);
+    archive.on('error', reject);
+    archive.pipe(output);
+    for (const artifactPath of artifactPaths) {
+      archive.file(artifactPath, { name: path.basename(artifactPath) });
+    }
+    archive.finalize();
+  });
 }
 
 function cleanupVideoJob(jobId) {
@@ -413,7 +430,7 @@ app.post('/api/video/export-spritesheet', express.json({ limit: '10mb' }), async
 
 /**
  * POST /api/video/export-godot-spriteframes
- * Generates an atlas PNG, Godot SpriteFrames .tres, AnimatedSprite2D scene, and metadata JSON from one video clip.
+ * Generates Godot artifacts and a ZIP bundle from one video clip.
  */
 app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' }), async (req, res) => {
   try {
@@ -495,6 +512,7 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
     const spriteFramesPath = path.join(tmpDir, `${basename}.tres`);
     const scenePath = path.join(tmpDir, `${basename}.tscn`);
     const metadataPath = path.join(tmpDir, `${basename}_metadata.json`);
+    const bundlePath = path.join(tmpDir, `${basename}.zip`);
 
     for (const outputPath of Object.values(job.godotOutputPaths || {})) safeUnlink(outputPath);
     job.status = 'processing';
@@ -541,7 +559,14 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
       frameHeight,
     }), 'utf8');
     fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
-    job.godotOutputPaths = { atlas: atlasPath, spriteframes: spriteFramesPath, scene: scenePath, metadata: metadataPath };
+    await createGodotBundle(bundlePath, [atlasPath, spriteFramesPath, scenePath, metadataPath]);
+    job.godotOutputPaths = {
+      bundle: bundlePath,
+      atlas: atlasPath,
+      spriteframes: spriteFramesPath,
+      scene: scenePath,
+      metadata: metadataPath,
+    };
     job.status = 'done';
     job.progress = { current: result.frameCount, total: result.frameCount, percent: 100 };
 
@@ -569,7 +594,7 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
 
 /**
  * GET /api/video/godot-artifact/:jobId/:artifact
- * Downloads an atlas, SpriteFrames resource, AnimatedSprite2D scene, or metadata file from a Godot export.
+ * Downloads a Godot ZIP bundle or an individual export artifact.
  */
 app.get('/api/video/godot-artifact/:jobId/:artifact', (req, res) => {
   const job = videoJobs.get(req.params.jobId);
