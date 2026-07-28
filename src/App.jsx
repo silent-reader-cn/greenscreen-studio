@@ -42,6 +42,9 @@ const DEFAULT_SPRITE_PARAMS = {
 }
 
 const DEFAULT_GODOT_PARAMS = {
+  characterName: '',
+  actionName: '',
+  exportName: '',
   animationName: 'animation',
   safeAreaWidth: 160,
   safeAreaHeight: 160,

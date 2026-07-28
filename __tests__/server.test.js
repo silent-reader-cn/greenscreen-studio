@@ -420,12 +420,13 @@ describe('POST /api/video/export-godot-spriteframes', () => {
 
     expect(exportRes.status).toBe(200)
     expect(exportRes.body.frameCount).toBe(3)
+    expect(exportRes.body.basename).toBe('idle')
     expect(exportRes.body.artifacts).toEqual(expect.objectContaining({
-      bundle: expect.objectContaining({ filename: expect.stringMatching(/\.zip$/) }),
-      atlas: expect.objectContaining({ filename: expect.stringMatching(/_atlas\.png$/) }),
-      spriteframes: expect.objectContaining({ filename: expect.stringMatching(/\.tres$/) }),
-      scene: expect.objectContaining({ filename: expect.stringMatching(/\.tscn$/) }),
-      metadata: expect.objectContaining({ filename: expect.stringMatching(/_metadata\.json$/) }),
+      bundle: expect.objectContaining({ filename: expect.stringMatching(/^idle\.zip$/) }),
+      atlas: expect.objectContaining({ filename: expect.stringMatching(/^idle_atlas\.png$/) }),
+      spriteframes: expect.objectContaining({ filename: expect.stringMatching(/^idle\.tres$/) }),
+      scene: expect.objectContaining({ filename: expect.stringMatching(/^idle\.tscn$/) }),
+      metadata: expect.objectContaining({ filename: expect.stringMatching(/^idle_metadata\.json$/) }),
     }))
     expect(fakeVideoProcessor.exportGodotSpriteFrames).toHaveBeenCalledWith(
       expect.any(Array),
@@ -447,7 +448,7 @@ describe('POST /api/video/export-godot-spriteframes', () => {
     expect(fakeVideoProcessor.buildGodotAnimatedSpriteScene).toHaveBeenCalledWith(expect.objectContaining({
       animationName: 'idle',
       frameHeight: 256,
-      spriteFramesResourcePath: expect.stringMatching(/^res:\/\/godot_.*\.tres$/),
+      spriteFramesResourcePath: 'res://idle.tres',
     }))
 
     const multiExportRes = await request(freshApp)
@@ -547,6 +548,8 @@ describe('POST /api/video/export-godot-spriteframes', () => {
         params: { keying: {}, layout: { sourceCharacterHeight: 520 } },
         spriteParams: { frameWidth: 256, frameHeight: 256, framesPerRow: 8 },
         godot: {
+          characterName: '温宁',
+          actionName: 'walk',
           safeAreaWidth: 160,
           safeAreaHeight: 160,
           fps: 12,
@@ -560,6 +563,8 @@ describe('POST /api/video/export-godot-spriteframes', () => {
       })
 
     expect(multiSourceExportRes.status).toBe(200)
+    expect(multiSourceExportRes.body.basename).toBe('温宁_walk')
+    expect(multiSourceExportRes.body.artifacts.bundle.filename).toBe('温宁_walk.zip')
     expect(multiSourceExportRes.body.frameCount).toBe(8)
     expect(multiSourceExportRes.body.animations).toEqual([
       expect.objectContaining({ name: 'walk_SE', frameCount: 2 }),

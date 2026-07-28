@@ -16,6 +16,7 @@ const __dirname = path.dirname(__filename);
 const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, '..');
 const packageJson = require('../package.json');
 const { createGodotBundle } = require('../godotBundle.cjs');
+const { buildGodotExportBasename } = require('../godotNaming.cjs');
 
 const DEFAULT_KEYING = Object.freeze({
   keyColor: [0, 255, 0],
@@ -355,7 +356,11 @@ const godotSpriteFramesSchema = z.object({
   safeAreaHeight: z.number().int().positive().optional(),
   framesPerRow: z.number().int().min(1).optional(),
   fps: z.number().positive().optional(),
+  characterName: z.string().optional(),
+  actionName: z.string().optional(),
+  exportName: z.string().optional(),
   atlasResourcePath: z.string().optional(),
+  spriteFramesResourcePath: z.string().optional(),
   godotProjectRoot: z.string().optional(),
   animations: z.array(godotAnimationSchema).optional(),
   animationGroups: z.array(godotAnimationGroupSchema).optional(),
@@ -727,36 +732,6 @@ export async function exportGodotSpriteFramesFile(args, options = {}) {
   const safeAreaWidth = positiveInt(godot.safeAreaWidth, frameWidth);
   const safeAreaHeight = positiveInt(godot.safeAreaHeight, frameHeight);
   const framesPerRow = positiveInt(godot.framesPerRow, 8);
-  const outputPath = await resolveOutputPath(args.outputPath, {
-    baseDir: options.baseDir,
-    defaultExt: 'tres',
-    defaultPrefix: 'greenscreen_spriteframes',
-    overwrite: args.overwrite === true,
-  });
-  const atlasPath = await resolveOutputPath(args.atlasPath || siblingPath(outputPath, '_atlas', 'png'), {
-    baseDir: options.baseDir,
-    defaultExt: 'png',
-    defaultPrefix: 'greenscreen_spriteframes_atlas',
-    overwrite: args.overwrite === true,
-  });
-  const scenePath = await resolveOutputPath(args.scenePath || siblingPath(outputPath, '', 'tscn'), {
-    baseDir: options.baseDir,
-    defaultExt: 'tscn',
-    defaultPrefix: 'greenscreen_spriteframes_scene',
-    overwrite: args.overwrite === true,
-  });
-  const metadataPath = await resolveOutputPath(args.metadataPath || siblingPath(outputPath, '_metadata', 'json'), {
-    baseDir: options.baseDir,
-    defaultExt: 'json',
-    defaultPrefix: 'greenscreen_spriteframes_metadata',
-    overwrite: args.overwrite === true,
-  });
-  const bundlePath = await resolveOutputPath(args.bundlePath || siblingPath(outputPath, '', 'zip'), {
-    baseDir: options.baseDir,
-    defaultExt: 'zip',
-    defaultPrefix: 'greenscreen_spriteframes_bundle',
-    overwrite: args.overwrite === true,
-  });
 
   const baseParams = normalizeProcessingParams({
     mode: 'transparent',
@@ -785,6 +760,46 @@ export async function exportGodotSpriteFramesFile(args, options = {}) {
     probeVideo,
     selectSpriteFrames,
   });
+
+  const basename = buildGodotExportBasename({
+    characterName: godot.characterName,
+    actionName: godot.actionName,
+    exportName: godot.exportName,
+    animationNames: buildResult.animations.map(animation => animation.name),
+    fallbackPrefix: 'greenscreen_spriteframes',
+  });
+  const defaultDir = options.baseDir || path.join(os.tmpdir(), 'greenscreen-studio-mcp');
+  const outputPath = await resolveOutputPath(args.outputPath || path.join(defaultDir, `${basename}.tres`), {
+    baseDir: options.baseDir,
+    defaultExt: 'tres',
+    defaultPrefix: basename,
+    overwrite: args.overwrite === true,
+  });
+  const atlasPath = await resolveOutputPath(args.atlasPath || siblingPath(outputPath, '_atlas', 'png'), {
+    baseDir: options.baseDir,
+    defaultExt: 'png',
+    defaultPrefix: `${basename}_atlas`,
+    overwrite: args.overwrite === true,
+  });
+  const scenePath = await resolveOutputPath(args.scenePath || siblingPath(outputPath, '', 'tscn'), {
+    baseDir: options.baseDir,
+    defaultExt: 'tscn',
+    defaultPrefix: basename,
+    overwrite: args.overwrite === true,
+  });
+  const metadataPath = await resolveOutputPath(args.metadataPath || siblingPath(outputPath, '_metadata', 'json'), {
+    baseDir: options.baseDir,
+    defaultExt: 'json',
+    defaultPrefix: `${basename}_metadata`,
+    overwrite: args.overwrite === true,
+  });
+  const bundlePath = await resolveOutputPath(args.bundlePath || siblingPath(outputPath, '', 'zip'), {
+    baseDir: options.baseDir,
+    defaultExt: 'zip',
+    defaultPrefix: basename,
+    overwrite: args.overwrite === true,
+  });
+
   const atlasResourcePath = godot.atlasResourcePath || godotResourcePathForAtlas(atlasPath, godot.godotProjectRoot);
   const spriteFramesResourcePath = godot.spriteFramesResourcePath
     || godotResourcePathForAtlas(outputPath, godot.godotProjectRoot);
@@ -814,6 +829,10 @@ export async function exportGodotSpriteFramesFile(args, options = {}) {
   statTargets.push(scenePath);
 
   const metadata = {
+    basename,
+    characterName: String(godot.characterName || '').trim() || null,
+    actionName: String(godot.actionName || '').trim() || null,
+    exportName: String(godot.exportName || '').trim() || null,
     outputPath,
     atlasPath,
     scenePath,

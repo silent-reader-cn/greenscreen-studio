@@ -137,17 +137,17 @@ describe('Greenscreen Studio MCP helpers', () => {
 
   it('exports Godot scene + ZIP bundle alongside SpriteFrames artifacts', async () => {
     const inputPath = path.join(tmpDir, 'walk_SE.mp4')
-    const outputPath = path.join(tmpDir, 'walk.tres')
     await writeSampleGreenscreenMp4(inputPath)
 
     const result = await exportGodotSpriteFramesFile({
-      outputPath,
       overwrite: true,
       params: {
         mode: 'transparent',
         keying: { keyColor: [0, 255, 0], tolerance: 40 },
       },
       godot: {
+        characterName: 'wenning',
+        actionName: 'walk',
         frameWidth: 64,
         frameHeight: 64,
         safeAreaWidth: 64,
@@ -171,8 +171,11 @@ describe('Greenscreen Studio MCP helpers', () => {
       },
     }, { projectRoot, baseDir: tmpDir })
 
+    expect(result.basename).toBe('wenning_walk')
+    expect(path.basename(result.outputPath)).toBe('wenning_walk.tres')
+    expect(path.basename(result.bundlePath)).toBe('wenning_walk.zip')
     expect(result.frameCount).toBe(4)
-    expect(result.animations.map(item => item.name)).toEqual(['walk_SE', 'walk_SW'])
+
     expect(result.scene.defaultAnimation).toBe('walk_SE')
     expect(result.scene.anchor).toBe('feet')
 

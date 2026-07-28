@@ -23,6 +23,7 @@ const {
   buildGodotAnimatedSpriteScene,
 } = require('./videoProcessor.cjs');
 const { createGodotBundle } = require('./godotBundle.cjs');
+const { buildGodotExportBasename } = require('./godotNaming.cjs');
 
 // 加载 polyfill（必须在引入 keying.js 之前）
 require('./src/lib/canvas-polyfill.js');
@@ -557,7 +558,13 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
         anchor: 'feet',
       },
     };
-    const basename = `godot_${jobId}_${Date.now()}`;
+    const basename = buildGodotExportBasename({
+      characterName: godot.characterName,
+      actionName: godot.actionName,
+      exportName: godot.exportName,
+      animationNames: animations.map(animation => animation.name),
+      fallbackPrefix: `godot_${jobId}`,
+    });
     const atlasPath = path.join(tmpDir, `${basename}_atlas.png`);
     const spriteFramesPath = path.join(tmpDir, `${basename}.tres`);
     const scenePath = path.join(tmpDir, `${basename}.tscn`);
@@ -583,6 +590,10 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
       }
     );
     const metadata = {
+      basename,
+      characterName: String(godot.characterName || '').trim() || null,
+      actionName: String(godot.actionName || '').trim() || null,
+      exportName: String(godot.exportName || '').trim() || null,
       animationName: animations.length === 1 ? animations[0].name : null,
       animationNames: animations.map(animation => animation.name),
       selections,
@@ -621,6 +632,7 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
     job.progress = { current: result.frameCount, total: result.frameCount, percent: 100 };
 
     res.json({
+      basename,
       frameCount: result.frameCount,
       atlasDimensions: result.atlasDimensions,
       animationName: animations.length === 1 ? animations[0].name : null,

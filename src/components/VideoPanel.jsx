@@ -9,6 +9,7 @@ import {
   buildSeNeQuadPack,
   buildSePairPack,
 } from '../lib/directionPack.js'
+import { buildGodotExportBasename } from '../lib/godotNaming.js'
 
 const FMT_OPTIONS = [
   { value: 'webm', labelKey: 'videoPanel.transparentWebm', modes: ['transparent'] },
@@ -28,6 +29,9 @@ const DEFAULT_SPRITE_PARAMS = {
 }
 
 const DEFAULT_GODOT_PARAMS = {
+  characterName: '',
+  actionName: '',
+  exportName: '',
   animationName: 'animation',
   safeAreaWidth: 160,
   safeAreaHeight: 160,
@@ -78,14 +82,6 @@ export default function VideoPanel({
 }) {
   const safeVideoParams = normalizeVideoParams(videoParams)
   const { mode, format, exportMode, spriteParams, godotParams } = safeVideoParams
-  const summary = exportMode === 'spritesheet'
-    ? t('videoPanel.spriteSummary', { width: spriteParams.frameWidth, height: spriteParams.frameHeight })
-    : exportMode === 'godot'
-      ? t('videoPanel.godotSummary', { width: spriteParams.frameWidth, height: spriteParams.frameHeight, name: godotParams.animationName })
-      : t('videoPanel.videoSummary', {
-          format: format.toUpperCase(),
-          mode: mode === 'transparent' ? t('videoPanel.transparent') : t('videoPanel.greenscreen'),
-        })
 
   const [videoInfo, setVideoInfo] = useState(null)       // {jobId, width, height, fps, duration, hasAudio}
   const [uploading, setUploading] = useState(false)
@@ -119,6 +115,35 @@ export default function VideoPanel({
             ? t('videoPanel.exactFramesRequired')
             : ''
     : ''
+
+  const exportBasename = useMemo(() => buildGodotExportBasename({
+    characterName: godotParams.characterName,
+    actionName: godotParams.actionName,
+    exportName: godotParams.exportName,
+    animationNames: godotClips.length > 0
+      ? godotClips.map(clip => clip.name)
+      : [godotParams.animationName],
+    fallbackPrefix: godotParams.animationName || 'godot_export',
+  }), [
+    godotClips,
+    godotParams.actionName,
+    godotParams.animationName,
+    godotParams.characterName,
+    godotParams.exportName,
+  ])
+
+  const summary = exportMode === 'spritesheet'
+    ? t('videoPanel.spriteSummary', { width: spriteParams.frameWidth, height: spriteParams.frameHeight })
+    : exportMode === 'godot'
+      ? t('videoPanel.godotSummary', {
+          width: spriteParams.frameWidth,
+          height: spriteParams.frameHeight,
+          name: exportBasename,
+        })
+      : t('videoPanel.videoSummary', {
+          format: format.toUpperCase(),
+          mode: mode === 'transparent' ? t('videoPanel.transparent') : t('videoPanel.greenscreen'),
+        })
 
   const pollTimerRef = useRef(null)
   const activeJobIdRef = useRef(null)
@@ -927,6 +952,35 @@ export default function VideoPanel({
                   <input type="number" min="1" max="100" value={spriteParams.framesPerRow} onChange={e => setSpriteParams(p => ({ ...p, framesPerRow: parseInt(e.target.value) || 8 }))} />
                   <label>{t('videoPanel.godotFps')}</label>
                   <input type="number" min="1" max="120" value={godotParams.fps} onChange={e => setGodotParams(p => ({ ...p, fps: parseInt(e.target.value) || 12 }))} />
+                </div>
+                <div className="sprite-param-row">
+                  <label>{t('videoPanel.characterName')}</label>
+                  <input
+                    className="godot-name-input"
+                    type="text"
+                    value={godotParams.characterName}
+                    placeholder={t('videoPanel.characterNamePlaceholder')}
+                    onChange={e => setGodotParams(p => ({ ...p, characterName: e.target.value }))}
+                  />
+                  <label>{t('videoPanel.actionName')}</label>
+                  <input
+                    className="godot-name-input"
+                    type="text"
+                    value={godotParams.actionName}
+                    placeholder={t('videoPanel.actionNamePlaceholder')}
+                    onChange={e => setGodotParams(p => ({ ...p, actionName: e.target.value }))}
+                  />
+                </div>
+                <div className="sprite-param-row">
+                  <label>{t('videoPanel.exportName')}</label>
+                  <input
+                    className="godot-name-input"
+                    type="text"
+                    value={godotParams.exportName}
+                    placeholder={exportBasename}
+                    onChange={e => setGodotParams(p => ({ ...p, exportName: e.target.value }))}
+                  />
+                  <span className="sprite-hint">{t('videoPanel.exportNameHint', { name: exportBasename })}</span>
                 </div>
                 <div className="sprite-param-row">
                   <label>{t('videoPanel.animationName')}</label>
