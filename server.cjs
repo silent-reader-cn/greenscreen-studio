@@ -433,15 +433,47 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
     const fps = Math.max(1, Math.round(Number(godot.fps) || 12));
     const animationName = String(godot.animationName || 'animation').trim() || 'animation';
     const totalFrames = job.info.frameCount || Math.round(job.info.fps * job.info.duration);
-    const selection = selectSpriteFrames(spriteParams, totalFrames);
-    const frameJobs = selection.frames.map((sourceFrameIndex, animationFrameIndex) => ({
-      atlasIndex: animationFrameIndex,
-      animationName,
-      animationFrameIndex,
-      inputPath: job.inputPath,
-      sourceFrameIndex,
-      flipH: false,
-    }));
+    const requestedAnimations = Array.isArray(godot.animations) && godot.animations.length > 0
+      ? godot.animations
+      : [{
+          name: animationName,
+          fps,
+          loop: godot.loop !== false,
+          frames: spriteParams.frames,
+          range: spriteParams.range,
+          sampleEvery: spriteParams.sampleEvery,
+          maxFrames: spriteParams.maxFrames,
+        }];
+    const frameJobs = [];
+    const animations = [];
+    const selections = [];
+    const usedAnimationNames = new Set();
+
+    for (const rawAnimation of requestedAnimations) {
+      const name = String(rawAnimation?.name || '').trim();
+      if (!name) return res.status(400).json({ error: 'Every Godot animation requires a name' });
+      if (usedAnimationNames.has(name)) return res.status(400).json({ error: `Duplicate Godot animation name: ${name}` });
+      usedAnimationNames.add(name);
+
+      const animationFps = Math.max(1, Math.round(Number(rawAnimation.fps) || fps));
+      const selection = selectSpriteFrames({
+        frames: rawAnimation.frames,
+        range: rawAnimation.range,
+        sampleEvery: rawAnimation.sampleEvery,
+        maxFrames: rawAnimation.maxFrames,
+      }, totalFrames);
+      const atlasStart = frameJobs.length;
+      frameJobs.push(...selection.frames.map((sourceFrameIndex, animationFrameIndex) => ({
+        atlasIndex: atlasStart + animationFrameIndex,
+        animationName: name,
+        animationFrameIndex,
+        inputPath: job.inputPath,
+        sourceFrameIndex,
+        flipH: false,
+      })));
+      animations.push({ name, fps: animationFps, loop: rawAnimation.loop !== false });
+      selections.push({ animationName: name, selection });
+    }
     const exportParams = {
       ...params,
       mode: 'transparent',
@@ -471,15 +503,16 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
       {
         fps,
         atlasResourcePath: `res://${path.basename(atlasPath)}`,
-        animations: [{ name: animationName, fps, loop: godot.loop !== false }],
+        animations,
       },
       (current, total) => {
         job.progress = { current, total, percent: total > 0 ? Math.round((current / total) * 100) : 0 };
       }
     );
     const metadata = {
-      animationName,
-      selection,
+      animationName: animations.length === 1 ? animations[0].name : null,
+      animationNames: animations.map(animation => animation.name),
+      selections,
       atlasDimensions: result.atlasDimensions,
       frameCount: result.frameCount,
       frames: result.frames,
@@ -500,7 +533,8 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
     res.json({
       frameCount: result.frameCount,
       atlasDimensions: result.atlasDimensions,
-      animationName,
+      animationName: animations.length === 1 ? animations[0].name : null,
+      animations: result.animations,
       warnings: result.warnings,
       artifacts: Object.fromEntries(Object.entries(job.godotOutputPaths).map(([kind, outputPath]) => [kind, {
         filename: path.basename(outputPath),

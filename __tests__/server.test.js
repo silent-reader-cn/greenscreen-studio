@@ -346,20 +346,32 @@ describe('POST /api/video/export-godot-spriteframes', () => {
       dHashRaw: vi.fn(),
       hammingDistance: vi.fn(),
       pickLoopCandidates: vi.fn(),
-      selectSpriteFrames: vi.fn().mockReturnValue({
-        frames: [0, 3, 6],
-        range: { startFrame: 0, endFrame: 9 },
-        frameCount: 3,
+      selectSpriteFrames: vi.fn().mockImplementation((selection) => {
+        if (Array.isArray(selection.frames) && selection.frames.length > 0) {
+          return {
+            frames: [...selection.frames],
+            range: selection.range || { startFrame: 0, endFrame: 300 },
+            frameCount: selection.frames.length,
+          }
+        }
+        return {
+          frames: [0, 3, 6],
+          range: selection.range || { startFrame: 0, endFrame: 9 },
+          frameCount: 3,
+        }
       }),
       exportGodotSpriteFrames: vi.fn(async (frameJobs, params, spriteParams, options, onProgress) => {
-        onProgress?.(3, 3)
+        onProgress?.(frameJobs.length, frameJobs.length)
         return {
           buffer: Buffer.from('fake-atlas'),
           tres: '[gd_resource type="SpriteFrames" format=3]\n',
           frameCount: frameJobs.length,
           atlasDimensions: { width: 512, height: 512 },
           frames: frameJobs.map((job) => ({ ...job, region: { x: 0, y: 0, width: 256, height: 256 } })),
-          animations: [{ name: options.animations[0].name, fps: options.fps, loop: true, frameCount: frameJobs.length }],
+          animations: options.animations.map(animation => ({
+            ...animation,
+            frameCount: frameJobs.filter(job => job.animationName === animation.name).length,
+          })),
           cleanup: { frames: frameJobs.length },
           warnings: [],
         }
@@ -418,6 +430,55 @@ describe('POST /api/video/export-godot-spriteframes', () => {
       expect.objectContaining({ fps: 12 }),
       expect.any(Function)
     )
+
+    const multiExportRes = await request(freshApp)
+      .post('/api/video/export-godot-spriteframes')
+      .send({
+        jobId: uploadRes.body.jobId,
+        params: { keying: {}, layout: { sourceCharacterHeight: 520 } },
+        spriteParams: { frameWidth: 256, frameHeight: 256, framesPerRow: 8 },
+        godot: {
+          safeAreaWidth: 160,
+          safeAreaHeight: 160,
+          fps: 12,
+          animations: [
+            { name: 'idle', frames: [0, 3, 6], fps: 8, loop: true },
+            { name: 'attack', frames: [30, 34], fps: 16, loop: false },
+          ],
+        },
+      })
+
+    expect(multiExportRes.status).toBe(200)
+    expect(multiExportRes.body.frameCount).toBe(5)
+    expect(multiExportRes.body.animationName).toBeNull()
+    expect(multiExportRes.body.animations).toEqual([
+      expect.objectContaining({ name: 'idle', fps: 8, loop: true, frameCount: 3 }),
+      expect.objectContaining({ name: 'attack', fps: 16, loop: false, frameCount: 2 }),
+    ])
+    const multiCall = fakeVideoProcessor.exportGodotSpriteFrames.mock.calls.at(-1)
+    expect(multiCall[0].map(job => ({
+      atlasIndex: job.atlasIndex,
+      animationName: job.animationName,
+      animationFrameIndex: job.animationFrameIndex,
+      sourceFrameIndex: job.sourceFrameIndex,
+    }))).toEqual([
+      { atlasIndex: 0, animationName: 'idle', animationFrameIndex: 0, sourceFrameIndex: 0 },
+      { atlasIndex: 1, animationName: 'idle', animationFrameIndex: 1, sourceFrameIndex: 3 },
+      { atlasIndex: 2, animationName: 'idle', animationFrameIndex: 2, sourceFrameIndex: 6 },
+      { atlasIndex: 3, animationName: 'attack', animationFrameIndex: 0, sourceFrameIndex: 30 },
+      { atlasIndex: 4, animationName: 'attack', animationFrameIndex: 1, sourceFrameIndex: 34 },
+    ])
+    expect(multiCall[3].animations).toEqual([
+      { name: 'idle', fps: 8, loop: true },
+      { name: 'attack', fps: 16, loop: false },
+    ])
+
+    const metadataRes = await request(freshApp)
+      .get(`/api/video/godot-artifact/${uploadRes.body.jobId}/metadata`)
+    expect(metadataRes.status).toBe(200)
+    const metadata = JSON.parse(metadataRes.text)
+    expect(metadata.animationNames).toEqual(['idle', 'attack'])
+    expect(metadata.selections.map(item => item.animationName)).toEqual(['idle', 'attack'])
 
     for (const artifact of ['atlas', 'spriteframes', 'metadata']) {
       const artifactRes = await request(freshApp)

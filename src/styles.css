@@ -1040,6 +1040,97 @@ body {
   gap: 8px;
 }
 
+.godot-clip-tools {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid #eee;
+}
+
+.godot-clip-save {
+  width: 100%;
+  padding: 7px 10px;
+  background: #fff;
+  border: 1px solid #d8d8d0;
+  border-radius: 4px;
+  color: #333;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.godot-clip-save:hover:not(:disabled) {
+  border-color: #999;
+  background: #fafaf8;
+}
+
+.godot-clip-save:disabled {
+  color: #aaa;
+  cursor: not-allowed;
+  background: #f5f5f0;
+}
+
+.godot-clip-list {
+  display: grid;
+  gap: 6px;
+}
+
+.godot-clip-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  background: #fafaf8;
+  border: 1px solid #e0e0d8;
+  border-radius: 4px;
+}
+
+.godot-clip-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.godot-clip-main strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #333;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.godot-clip-main span {
+  color: #777;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.godot-clip-delete {
+  width: 28px;
+  height: 28px;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  color: #777;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.godot-clip-delete:hover:not(:disabled) {
+  border-color: #b33;
+  color: #b33;
+}
+
+.godot-clip-delete:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .sprite-hint {
   font-size: 11px;
   color: #aaa;

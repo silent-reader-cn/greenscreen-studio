@@ -91,6 +91,7 @@ export default function VideoPanel({
   const [downloadUrl, setDownloadUrl] = useState('')
   const [spriteSheetBlob, setSpriteSheetBlob] = useState(null)
   const [godotExport, setGodotExport] = useState(null)
+  const [godotClips, setGodotClips] = useState([])
   const [completedExportSignature, setCompletedExportSignature] = useState('')
   const totalFrames = videoInfo?.frameCount || Math.round((videoInfo?.fps || 0) * (videoInfo?.duration || 0))
   const usesExactFrames = spriteParams.selectionMode === 'exact'
@@ -126,6 +127,7 @@ export default function VideoPanel({
     exportMode,
     spriteParams,
     godotParams,
+    godotClips,
     range: range ? { startFrame: range.startFrame, endFrame: range.endFrame } : null,
     region,
   }), [
@@ -137,6 +139,7 @@ export default function VideoPanel({
     exportMode,
     spriteParams,
     godotParams,
+    godotClips,
     range,
     region,
   ])
@@ -196,6 +199,41 @@ export default function VideoPanel({
     updateVideoParams({ godotParams: nextGodotParams })
   }, [godotParams, updateVideoParams])
 
+  const handleSaveGodotClip = useCallback(() => {
+    const name = String(godotParams.animationName || '').trim()
+    if (!name) {
+      setErrorMsg(t('videoPanel.clipNameRequired'))
+      return
+    }
+    if (godotClips.some(clip => clip.name === name)) {
+      setErrorMsg(t('videoPanel.clipNameDuplicate', { name }))
+      return
+    }
+    if (explicitFrameError) {
+      setErrorMsg(explicitFrameError)
+      return
+    }
+
+    const clip = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      name,
+      fps: godotParams.fps,
+      loop: godotParams.loop,
+      range: range ? { startFrame: range.startFrame, endFrame: range.endFrame } : undefined,
+      frames: usesExactFrames ? [...explicitFrameSelection.frames] : undefined,
+      sampleEvery: usesExactFrames ? undefined : spriteParams.sampleEvery,
+      maxFrames: usesExactFrames ? undefined : spriteParams.maxFrames,
+      selectionMode: usesExactFrames ? 'exact' : 'sample',
+    }
+    setGodotClips(clips => [...clips, clip])
+    setErrorMsg('')
+  }, [explicitFrameError, explicitFrameSelection.frames, godotClips, godotParams, range, spriteParams.maxFrames, spriteParams.sampleEvery, usesExactFrames])
+
+  const handleRemoveGodotClip = useCallback((clipId) => {
+    setGodotClips(clips => clips.filter(clip => clip.id !== clipId))
+    setErrorMsg('')
+  }, [])
+
   const availableFormats = FMT_OPTIONS.filter(f => f.modes.includes(mode))
 
   useEffect(() => {
@@ -240,6 +278,7 @@ export default function VideoPanel({
     setDownloadUrl('')
     setSpriteSheetBlob(null)
     setGodotExport(null)
+    setGodotClips([])
     setCompletedExportSignature('')
   }, [])
 
@@ -253,6 +292,7 @@ export default function VideoPanel({
     setDownloadUrl('')
     setSpriteSheetBlob(null)
     setGodotExport(null)
+    setGodotClips([])
     setCompletedExportSignature('')
     cleanupVideoJob(previousJobId)
 
@@ -284,7 +324,8 @@ export default function VideoPanel({
 
   const handleProcess = async () => {
     if (!videoInfo) return
-    if ((exportMode === 'spritesheet' || exportMode === 'godot') && explicitFrameError) {
+    const needsCurrentSelection = exportMode === 'spritesheet' || (exportMode === 'godot' && godotClips.length === 0)
+    if (needsCurrentSelection && explicitFrameError) {
       setErrorMsg(explicitFrameError)
       setStatus('error')
       return
@@ -347,7 +388,12 @@ export default function VideoPanel({
               maxFrames: usesExactFrames ? undefined : spriteParams.maxFrames,
               range: range ? { startFrame: range.startFrame, endFrame: range.endFrame } : undefined,
             },
-            godot: godotParams,
+            godot: {
+              ...godotParams,
+              animations: godotClips.length > 0
+                ? godotClips.map(({ id, selectionMode, ...clip }) => clip)
+                : undefined,
+            },
           }),
         })
         if (!resp.ok) {
@@ -732,6 +778,54 @@ export default function VideoPanel({
                     <input type="number" min="1" max="10000" value={spriteParams.maxFrames} onChange={e => setSpriteParams(p => ({ ...p, maxFrames: parseInt(e.target.value) || 64 }))} />
                   </div>
                 )}
+                <div className="godot-clip-tools">
+                  <button
+                    className="godot-clip-save"
+                    type="button"
+                    onClick={handleSaveGodotClip}
+                    disabled={processing || Boolean(explicitFrameError)}
+                  >
+                    {t('videoPanel.saveGodotClip')}
+                  </button>
+                  <span className="sprite-hint">
+                    {godotClips.length > 0
+                      ? t('videoPanel.savedClipCount', { count: godotClips.length })
+                      : t('videoPanel.noSavedClips')}
+                  </span>
+                  {godotClips.length > 0 && (
+                    <div className="godot-clip-list">
+                      {godotClips.map(clip => (
+                        <div className="godot-clip-item" key={clip.id}>
+                          <div className="godot-clip-main">
+                            <strong>{clip.name}</strong>
+                            <span>
+                              {t('videoPanel.clipRange', {
+                                start: clip.range?.startFrame ?? 0,
+                                end: Math.max(0, (clip.range?.endFrame ?? 0) - 1),
+                              })}
+                              {' · '}
+                              {clip.selectionMode === 'exact'
+                                ? t('videoPanel.clipExactFrames', { count: clip.frames?.length || 0 })
+                                : t('videoPanel.clipSample', { every: clip.sampleEvery, max: clip.maxFrames })}
+                              {' · '}
+                              {t('videoPanel.clipFpsLoop', {
+                                fps: clip.fps,
+                                loop: clip.loop ? t('common.yes') : t('common.no'),
+                              })}
+                            </span>
+                          </div>
+                          <button
+                            className="godot-clip-delete"
+                            type="button"
+                            onClick={() => handleRemoveGodotClip(clip.id)}
+                            disabled={processing}
+                            aria-label={t('videoPanel.deleteGodotClip', { name: clip.name })}
+                          >×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
