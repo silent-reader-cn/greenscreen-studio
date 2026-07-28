@@ -2622,6 +2622,7 @@ module.exports = {
   pickLoopCandidates,
   exportSpriteSheet,
   exportGodotSpriteFrames,
+  buildGodotSpriteFramesTres,
   selectSpriteFrames,
   buildGodotAnimatedSpriteScene,
   renderGodotClipPreview,

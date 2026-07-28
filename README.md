@@ -47,6 +47,7 @@ It is useful for:
 - Range-based sampling with `range`, `sampleEvery`, and `maxFrames`.
 - Improved loop-end detection with early-frame exclusion, strict spacing, motion-aware ranking, and warnings.
 - Optional cleanup for pale-green tracking marks and isolated foreground components before auto-crop.
+- Desktop Godot pose export for a single green-screen still: transparent 256 x 256 atlas, feet-anchored `AnimatedSprite2D` scene, metadata, and ZIP bundle.
 - Desktop Godot export from the video panel:
   - exact frames or interval sampling
   - multi-clip packs from one or more uploaded videos

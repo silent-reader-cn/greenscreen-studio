@@ -8,6 +8,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 import {
   createGreenscreenMcpServer,
+  exportGodotPoseImageFile,
   exportGodotSpriteFramesFile,
   exportImageFile,
   inspectImageFile,
@@ -135,6 +136,46 @@ describe('Greenscreen Studio MCP helpers', () => {
     }, { projectRoot, baseDir: tmpDir })).rejects.toThrow('already exists')
   })
 
+  it('exports a single green-screen pose image as a Godot scene + ZIP bundle', async () => {
+    const inputPath = path.join(tmpDir, 'idle_SE.png')
+    await writeSampleGreenscreenPng(inputPath)
+
+    const result = await exportGodotPoseImageFile({
+      inputPath,
+      overwrite: true,
+      params: {
+        mode: 'transparent',
+        keying: { keyColor: [0, 255, 0], tolerance: 40 },
+      },
+      godot: {
+        characterName: 'wenning',
+        actionName: 'idle',
+        animationName: 'idle_SE',
+        frameWidth: 64,
+        frameHeight: 64,
+        safeAreaWidth: 64,
+        safeAreaHeight: 64,
+        fps: 6,
+        loop: true,
+      },
+    }, { projectRoot, baseDir: tmpDir })
+
+    expect(result.basename).toBe('wenning_idle_SE')
+    expect(result.frameCount).toBe(1)
+    expect(result.scene.defaultAnimation).toBe('idle_SE')
+    expect(result.scene.anchor).toBe('feet')
+    expect(result.placement).toEqual(expect.objectContaining({ anchor: 'feet' }))
+
+    for (const filePath of [result.outputPath, result.atlasPath, result.scenePath, result.metadataPath, result.bundlePath]) {
+      const stat = await fs.stat(filePath)
+      expect(stat.size).toBeGreaterThan(0)
+    }
+
+    const sceneText = await fs.readFile(result.scenePath, 'utf8')
+    expect(sceneText).toContain('animation = &"idle_SE"')
+    expect(sceneText).toContain('offset = Vector2(0, -32)')
+  })
+
   it('exports Godot scene + ZIP bundle alongside SpriteFrames artifacts', async () => {
     const inputPath = path.join(tmpDir, 'walk_SE.mp4')
     await writeSampleGreenscreenMp4(inputPath)
@@ -214,6 +255,7 @@ describe('Greenscreen Studio MCP protocol surface', () => {
         'get_project_info',
         'inspect_image',
         'export_image',
+        'export_godot_pose_image',
         'probe_video',
         'process_video',
         'find_loop_end',

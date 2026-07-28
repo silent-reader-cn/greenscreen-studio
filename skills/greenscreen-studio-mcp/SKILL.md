@@ -22,8 +22,9 @@ The MCP entrypoint is `mcp/server.mjs` from the repository root. Prefer `npm run
    - Images: call `inspect_image`.
    - Videos: call `probe_video`.
 4. Normalize params with `validate_processing_params` before export when user-provided settings are partial, ambiguous, or generated.
-5. Export with `export_image`, `process_video`, `export_spritesheet`, or `export_godot_spriteframes`.
-6. Verify the returned `outputPath`, dimensions, mode, format, output size, cleanup stats, crop/placement metadata, and warnings. For videos, check the returned `progress.percent` and `result.frameCount`.
+5. For a **single pose image**, use `export_godot_pose_image`; for animation clips/videos use `export_godot_spriteframes`.
+6. Export with `export_image`, `process_video`, `export_spritesheet`, `export_godot_pose_image`, or `export_godot_spriteframes`.
+7. Verify the returned `outputPath`, dimensions, mode, format, output size, cleanup stats, crop/placement metadata, and warnings. For videos, check the returned `progress.percent` and `result.frameCount`.
 
 ## Tool Routing
 

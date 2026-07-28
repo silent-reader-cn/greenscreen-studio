@@ -135,10 +135,83 @@ app.post('/api/export', upload.single('image'), async (req, res) => {
   }
 });
 
+/**
+ * POST /api/export-godot-pose
+ * Converts one uploaded green-screen pose image into Godot atlas/.tres/.tscn/metadata/ZIP artifacts.
+ */
+app.post('/api/export-godot-pose', upload.single('image'), async (req, res) => {
+  let inputPath;
+  try {
+    if (!req.file) return res.status(400).json({ error: '未提供图片文件' });
+    const params = req.body.params ? JSON.parse(req.body.params) : {};
+    const godot = req.body.godot ? JSON.parse(req.body.godot) : {};
+    const extension = path.extname(req.file.originalname || '').toLowerCase() || '.png';
+    inputPath = path.join(tmpDir, `pose_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${extension}`);
+    fs.writeFileSync(inputPath, req.file.buffer);
+
+    const { exportGodotPoseImageFile } = await import('./mcp/server.mjs');
+    const result = await exportGodotPoseImageFile({
+      inputPath,
+      params,
+      godot,
+      overwrite: true,
+    }, {
+      projectRoot: __dirname,
+      baseDir: tmpDir,
+    });
+
+    const exportId = `pose_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const artifactPaths = {
+      bundle: result.bundlePath,
+      atlas: result.atlasPath,
+      spriteframes: result.outputPath,
+      scene: result.scenePath,
+      metadata: result.metadataPath,
+    };
+    poseExports.set(exportId, {
+      createdAt: Date.now(),
+      artifactPaths,
+    });
+
+    res.json({
+      exportId,
+      basename: result.basename,
+      frameCount: result.frameCount,
+      atlasDimensions: result.atlasDimensions,
+      animationName: result.scene.defaultAnimation,
+      scene: result.scene,
+      placement: result.placement,
+      cleanup: result.cleanup,
+      warnings: result.warnings,
+      artifacts: Object.fromEntries(Object.entries(artifactPaths).map(([kind, artifactPath]) => [kind, {
+        filename: path.basename(artifactPath),
+      }])),
+    });
+  } catch (err) {
+    console.error('Godot pose export failed:', err);
+    res.status(500).json({ error: err.message });
+  } finally {
+    safeUnlink(inputPath);
+  }
+});
+
+/**
+ * GET /api/godot-pose-artifact/:exportId/:artifact
+ * Downloads one artifact from an image-pose Godot export session.
+ */
+app.get('/api/godot-pose-artifact/:exportId/:artifact', (req, res) => {
+  const exportSession = poseExports.get(req.params.exportId);
+  if (!exportSession) return res.status(404).json({ error: 'Godot pose export not found' });
+  const outputPath = exportSession.artifactPaths?.[req.params.artifact];
+  if (!outputPath || !fs.existsSync(outputPath)) return res.status(404).json({ error: 'Godot pose artifact not found' });
+  res.download(outputPath, path.basename(outputPath));
+});
+
 // ===== 视频接口 =====
 
 // 视频任务状态存储（内存，进程级）
 const videoJobs = new Map();
+const poseExports = new Map();
 
 function safeUnlink(filePath) {
   if (!filePath) return;

@@ -552,6 +552,9 @@ export default function App() {
   const [videoParams, setVideoParams] = useState(initialParams.video)
 
   const [exporting, setExporting] = useState(false)
+  const [imageGodotExporting, setImageGodotExporting] = useState(false)
+  const [imageGodotExport, setImageGodotExport] = useState(null)
+  const [imageGodotError, setImageGodotError] = useState('')
   const [mediaMode, setMediaMode] = useState('image')  // 'image' | 'video'
   const [videoDockTarget, setVideoDockTarget] = useState(null)
   const videoDockRef = useRef(null)
@@ -989,6 +992,8 @@ export default function App() {
 
     const sourceFile = normalizeMediaFile(file, kind)
     if (!sourceFile) return
+    setImageGodotExport(null)
+    setImageGodotError('')
     setImageFile(sourceFile)
     setImageRegion(null)
     setRegionSelectionMode(false)
@@ -1127,9 +1132,77 @@ export default function App() {
   }, [handleFileLoad, switchMode])
 
   // ===== 导出 =====
+  const handleExportGodotPose = async () => {
+    if (!imageFile) return
+    setImageGodotExporting(true)
+    setImageGodotError('')
+    setImageGodotExport(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('image', imageFile, imageFile.name || 'pose.png')
+      formData.append('params', JSON.stringify({
+        keying: keyingParams,
+        layout: layoutParams,
+        cleanup: {},
+        region: imageRegion,
+        mode: 'transparent',
+      }))
+      formData.append('godot', JSON.stringify({
+        ...videoParams.godotParams,
+        frameWidth: 256,
+        frameHeight: 256,
+        safeAreaWidth: 160,
+        safeAreaHeight: 160,
+      }))
+
+      const response = await fetch('/api/export-godot-pose', {
+        method: 'POST',
+        body: formData,
+      })
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.error || t('app.godotPoseExportFailed'))
+      }
+      setImageGodotExport(await response.json())
+    } catch (error) {
+      setImageGodotError(error.message)
+    } finally {
+      setImageGodotExporting(false)
+    }
+  }
+
+  const handleDownloadGodotPose = async (artifact = 'bundle') => {
+    if (!imageGodotExport?.exportId || !imageGodotExport.artifacts?.[artifact]) return
+    try {
+      const response = await fetch(`/api/godot-pose-artifact/${imageGodotExport.exportId}/${artifact}`)
+      if (!response.ok) throw new Error(t('app.godotPoseDownloadFailed'))
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = imageGodotExport.artifacts[artifact].filename
+      anchor.click()
+      setTimeout(() => URL.revokeObjectURL(url), 10_000)
+    } catch (error) {
+      setImageGodotError(error.message)
+    }
+  }
+
+  const updateImageGodotParam = (field, value) => {
+    setVideoParams(prev => ({
+      ...prev,
+      godotParams: {
+        ...prev.godotParams,
+        [field]: value,
+      },
+    }))
+  }
+
   const handleExport = async (mode) => {
     if (!processingImageData) return
     setExporting(true)
+
     try {
       const formData = new FormData()
       // 从当前处理输入重建图片文件
@@ -1237,6 +1310,44 @@ export default function App() {
                   onClick={() => handleExport('transparent')}
                   disabled={!processingImageData || exporting}
                 >{exporting ? t('app.exporting') : `💾 ${t('app.exportTransparent')}`}</button>
+                <section className="image-godot-export" aria-label={t('app.godotPoseTitle')}>
+                  <div className="image-godot-title">{t('app.godotPoseTitle')}</div>
+                  <div className="image-godot-fields">
+                    <input
+                      value={videoParams.godotParams.characterName}
+                      onChange={(event) => updateImageGodotParam('characterName', event.target.value)}
+                      placeholder={t('app.godotPoseCharacter')}
+                      aria-label={t('app.godotPoseCharacter')}
+                    />
+                    <input
+                      value={videoParams.godotParams.actionName}
+                      onChange={(event) => updateImageGodotParam('actionName', event.target.value)}
+                      placeholder={t('app.godotPoseAction')}
+                      aria-label={t('app.godotPoseAction')}
+                    />
+                    <input
+                      value={videoParams.godotParams.animationName}
+                      onChange={(event) => updateImageGodotParam('animationName', event.target.value)}
+                      placeholder={t('app.godotPoseAnimation')}
+                      aria-label={t('app.godotPoseAnimation')}
+                    />
+                  </div>
+                  <button
+                    className="dock-btn dock-btn-primary"
+                    onClick={handleExportGodotPose}
+                    disabled={!imageFile || imageGodotExporting}
+                  >{imageGodotExporting ? t('app.exporting') : t('app.exportGodotPose')}</button>
+                  {imageGodotError && <p className="image-godot-error">{imageGodotError}</p>}
+                  {imageGodotExport && (
+                    <div className="image-godot-result">
+                      <span>{t('app.godotPoseDone', { name: imageGodotExport.basename })}</span>
+                      <div className="image-godot-downloads">
+                        <button type="button" onClick={() => handleDownloadGodotPose('bundle')}>{t('app.downloadGodotPoseBundle')}</button>
+                        <button type="button" onClick={() => handleDownloadGodotPose('scene')}>{t('app.downloadGodotPoseScene')}</button>
+                      </div>
+                    </div>
+                  )}
+                </section>
               </div>
             ) : (
               <div ref={videoDockRef} className="dock-portal-target" />

@@ -388,6 +388,7 @@ export function getCapabilities(projectRoot = DEFAULT_PROJECT_ROOT) {
       'validate_processing_params',
       'inspect_image',
       'export_image',
+      'export_godot_pose_image',
       'probe_video',
       'process_video',
       'find_loop_end',
@@ -725,6 +726,164 @@ export async function exportSpriteSheetFile(args, options = {}) {
   };
 }
 
+export async function exportGodotPoseImageFile(args, options = {}) {
+  const godot = args.godot || {};
+  const frameWidth = positiveInt(godot.frameWidth, 256);
+  const frameHeight = positiveInt(godot.frameHeight, 256);
+  const safeAreaWidth = Math.min(frameWidth, positiveInt(godot.safeAreaWidth, frameWidth));
+  const safeAreaHeight = Math.min(frameHeight, positiveInt(godot.safeAreaHeight, frameHeight));
+  const animationName = String(godot.animationName || godot.actionName || 'pose').trim() || 'pose';
+  const fps = Number(godot.fps) > 0 ? Number(godot.fps) : 12;
+  const loop = godot.loop !== false;
+
+  const inputPath = resolveLocalPath(args.inputPath, { ...options, mustExist: true, label: 'inputPath' });
+  assertFile(inputPath, 'inputPath');
+
+  const basename = buildGodotExportBasename({
+    characterName: godot.characterName,
+    actionName: godot.actionName,
+    exportName: godot.exportName,
+    animationNames: [animationName],
+    fallbackPrefix: 'greenscreen_pose',
+  });
+  const defaultDir = options.baseDir || path.join(os.tmpdir(), 'greenscreen-studio-mcp');
+  const outputPath = await resolveOutputPath(args.outputPath || path.join(defaultDir, `${basename}.tres`), {
+    baseDir: options.baseDir,
+    defaultExt: 'tres',
+    defaultPrefix: basename,
+    overwrite: args.overwrite === true,
+  });
+  const atlasPath = await resolveOutputPath(args.atlasPath || siblingPath(outputPath, '_atlas', 'png'), {
+    baseDir: options.baseDir,
+    defaultExt: 'png',
+    defaultPrefix: `${basename}_atlas`,
+    overwrite: args.overwrite === true,
+  });
+  const scenePath = await resolveOutputPath(args.scenePath || siblingPath(outputPath, '', 'tscn'), {
+    baseDir: options.baseDir,
+    defaultExt: 'tscn',
+    defaultPrefix: basename,
+    overwrite: args.overwrite === true,
+  });
+  const metadataPath = await resolveOutputPath(args.metadataPath || siblingPath(outputPath, '_metadata', 'json'), {
+    baseDir: options.baseDir,
+    defaultExt: 'json',
+    defaultPrefix: `${basename}_metadata`,
+    overwrite: args.overwrite === true,
+  });
+  const bundlePath = await resolveOutputPath(args.bundlePath || siblingPath(outputPath, '', 'zip'), {
+    baseDir: options.baseDir,
+    defaultExt: 'zip',
+    defaultPrefix: basename,
+    overwrite: args.overwrite === true,
+  });
+
+  const baseParams = normalizeProcessingParams({
+    mode: 'transparent',
+    ...(args.params || {}),
+  });
+  const params = {
+    ...baseParams,
+    mode: 'transparent',
+    layout: {
+      ...baseParams.layout,
+      canvasWidth: frameWidth,
+      canvasHeight: frameHeight,
+      personWidth: safeAreaWidth,
+      personHeight: safeAreaHeight,
+      anchor: 'feet',
+    },
+  };
+
+  const atlasResult = await exportImageFile({
+    inputPath,
+    outputPath: atlasPath,
+    params,
+    overwrite: args.overwrite === true,
+  }, options);
+
+  const { buildGodotSpriteFramesTres, buildGodotAnimatedSpriteScene } = loadVideoProcessor(options.projectRoot);
+  const atlasResourcePath = godot.atlasResourcePath || godotResourcePathForAtlas(atlasPath, godot.godotProjectRoot);
+  const spriteFramesResourcePath = godot.spriteFramesResourcePath
+    || godotResourcePathForAtlas(outputPath, godot.godotProjectRoot);
+  const frames = [{
+    atlasIndex: 0,
+    region: { x: 0, y: 0, width: frameWidth, height: frameHeight },
+  }];
+  const animations = [{
+    name: animationName,
+    fps,
+    loop,
+    frameCount: 1,
+    atlasFrameIndexes: [0],
+  }];
+  const tres = buildGodotSpriteFramesTres({ atlasResourcePath, frames, animations });
+  const sceneText = buildGodotAnimatedSpriteScene({
+    spriteFramesResourcePath,
+    animationName,
+    frameHeight,
+  });
+  await fs.writeFile(outputPath, tres, 'utf8');
+  await fs.writeFile(scenePath, sceneText, 'utf8');
+
+  const metadata = {
+    basename,
+    characterName: String(godot.characterName || '').trim() || null,
+    actionName: String(godot.actionName || '').trim() || null,
+    exportName: String(godot.exportName || '').trim() || null,
+    inputPath,
+    outputPath,
+    atlasPath,
+    scenePath,
+    metadataPath,
+    bundlePath,
+    atlasResourcePath,
+    spriteFramesResourcePath,
+    frameCount: 1,
+    atlasDimensions: { width: frameWidth, height: frameHeight },
+    animations,
+    frames,
+    keyingLayoutParams: params,
+    spriteParams: { frameWidth, frameHeight, safeAreaWidth, safeAreaHeight, framesPerRow: 1 },
+    source: atlasResult.source,
+    processingRegion: atlasResult.processingRegion,
+    keyed: atlasResult.keyed,
+    crop: atlasResult.crop,
+    placement: atlasResult.placement,
+    cleanup: atlasResult.cleanup,
+    scene: {
+      resourcePath: spriteFramesResourcePath,
+      defaultAnimation: animationName,
+      anchor: 'feet',
+    },
+    warnings: atlasResult.warnings,
+  };
+  await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
+  await createGodotBundle(bundlePath, [atlasPath, outputPath, scenePath, metadataPath]);
+
+  const stats = Object.fromEntries(await Promise.all([
+    atlasPath,
+    outputPath,
+    scenePath,
+    metadataPath,
+    bundlePath,
+  ].map(async (filePath) => [filePath, (await fs.stat(filePath)).size])));
+
+  return {
+    ...metadata,
+    outputUri: pathToFileURL(outputPath).href,
+    atlasUri: pathToFileURL(atlasPath).href,
+    sceneUri: pathToFileURL(scenePath).href,
+    metadataUri: pathToFileURL(metadataPath).href,
+    bundleUri: pathToFileURL(bundlePath).href,
+    outputSize: stats[outputPath],
+    atlasSize: stats[atlasPath],
+    sceneSize: stats[scenePath],
+    metadataSize: stats[metadataPath],
+    bundleSize: stats[bundlePath],
+  };
+}
+
 export async function exportGodotSpriteFramesFile(args, options = {}) {
   const godot = args.godot || {};
   const frameWidth = positiveInt(godot.frameWidth, 256);
@@ -983,6 +1142,31 @@ export function createGreenscreenMcpServer(options = {}) {
       openWorldHint: false,
     },
   }, async (args) => toolResult(await exportImageFile(args, context), { filePath: true }));
+
+  server.registerTool('export_godot_pose_image', {
+    title: 'Export Godot Pose Image',
+    description: 'Convert one green-screen pose image into a Godot atlas PNG, SpriteFrames .tres, feet-anchored AnimatedSprite2D .tscn, metadata JSON, and ZIP bundle.',
+    inputSchema: {
+      inputPath: z.string().describe('Local path to the source pose image.'),
+      outputPath: z.string().optional().describe('SpriteFrames .tres output path. If omitted, a temp file is created.'),
+      atlasPath: z.string().optional().describe('Atlas PNG output path. Defaults to a sibling _atlas.png file.'),
+      scenePath: z.string().optional().describe('AnimatedSprite2D .tscn output path. Defaults to a sibling .tscn file.'),
+      metadataPath: z.string().optional().describe('Metadata JSON output path. Defaults to a sibling _metadata.json file.'),
+      bundlePath: z.string().optional().describe('ZIP bundle output path. Defaults to a sibling .zip file.'),
+      params: processingParamsSchema.optional().describe('Keying/layout/cleanup parameters. Godot frame size forces a transparent feet-anchored layout.'),
+      godot: godotSpriteFramesSchema.extend({
+        animationName: z.string().min(1).optional(),
+        loop: z.boolean().optional(),
+      }).describe('Godot pose export naming, frame, animation, and resource options.'),
+      overwrite: z.boolean().optional().describe('Allow replacing output paths when they already exist. Defaults to false.'),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  }, async (args) => toolResult(await exportGodotPoseImageFile(args, context), { filePath: true }));
 
   server.registerTool('probe_video', {
     title: 'Probe Video',

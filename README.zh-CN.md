@@ -49,6 +49,7 @@ Greenscreen Studio 是一个面向绿幕人物素材的桌面工具和本地 MCP
 - 范围采样：`range + sampleEvery + maxFrames`，可稳定控制预览或最终精灵图。
 - 循环检测：结合视觉相似度、局部运动/姿态可用性、早期帧排除和可疑候选警告。
 - 杂点清理：可移除浅绿色跟踪点、小型孤立组件，或只保留最大前景组件。
+- 单张绿幕姿势图桌面 Godot 导出：透明 256 x 256 atlas、脚底锚点 `AnimatedSprite2D` 场景、metadata 和 ZIP 包。
 - 桌面端 Godot 导出（视频面板）：
   - 精确帧 / 间隔采样
   - 同源或多源视频多动画打包
