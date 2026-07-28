@@ -15,6 +15,7 @@
     "preview": "vite preview",
     "start": "node server.cjs",
     "test": "vitest run",
+    "test:godot-smoke": "vitest run __tests__/godotSmoke.test.js",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "package": "npm run build && electron-builder",
@@ -22,6 +23,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "adm-zip": "^0.5.18",
     "archiver": "^7.0.1",
     "canvas": "^3.1.0",
     "express": "^4.21.0",

@@ -235,9 +235,12 @@ greenscreen-studio/
 
 ```bash
 npm test
+npm run test:godot-smoke
 npm run build
 npm run package
 ```
+
+`npm run test:godot-smoke` creates a real minimal green-screen video, exports a Godot ZIP through the MCP pipeline, unpacks it into a temporary Godot project, runs Godot's own import step, and loads the exported `.tscn` headlessly. It requires Godot 4.6.3 at `D:/godot/Godot_v4.6.3-stable_win64_console.exe` on this Windows development machine.
 
 Build artifacts are written to `release/`. The desktop app bundles `ffmpeg` and `ffprobe`, so users do not need separate video tooling installed.
 

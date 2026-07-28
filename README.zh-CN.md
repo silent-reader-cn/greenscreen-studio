@@ -237,9 +237,12 @@ greenscreen-studio/
 
 ```bash
 npm test
+npm run test:godot-smoke
 npm run build
 npm run package
 ```
+
+`npm run test:godot-smoke` 会生成真实最小绿幕视频，经 MCP 管线导出 Godot ZIP，解压到临时 Godot 项目，运行 Godot 自身 import，再 headless 加载导出的 `.tscn`。当前 Windows 开发机要求 Godot 4.6.3 位于 `D:/godot/Godot_v4.6.3-stable_win64_console.exe`。
 
 打包输出位于 `release/`。桌面版内置 `ffmpeg` 和 `ffprobe`，用户不需要单独安装视频工具。
 
