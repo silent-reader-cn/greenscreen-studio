@@ -1910,6 +1910,80 @@ function buildGodotAnimatedSpriteScene({ spriteFramesResourcePath, animationName
   ].join('\n');
 }
 
+/**
+ * Render one processed preview frame for a Godot animation clip.
+ * Used by the desktop UI to show direction-pack thumbnails before export.
+ */
+async function renderGodotClipPreview({
+  inputPath,
+  sourceFrameIndex,
+  params = {},
+  frameWidth = 96,
+  frameHeight = 96,
+  flipH = false,
+}) {
+  await loadAlgorithms();
+
+  const info = await probeVideo(inputPath);
+  const totalFrames = info.frameCount || Math.round(info.fps * info.duration);
+  const frame = Math.round(Number(sourceFrameIndex));
+  if (!Number.isInteger(frame) || frame < 0 || frame >= totalFrames) {
+    throw new Error(`sourceFrameIndex must be between 0 and ${Math.max(0, totalFrames - 1)}`);
+  }
+
+  const width = Math.max(8, Math.round(Number(frameWidth) || 96));
+  const height = Math.max(8, Math.round(Number(frameHeight) || 96));
+  const srcW = info.width;
+  const srcH = info.height;
+  const frameBytes = srcW * srcH * 4;
+  let rawFrame = null;
+
+  await scanRawFrames(inputPath, frame, info.fps, 1, frameBytes, (frameBuf) => {
+    rawFrame = Buffer.from(frameBuf);
+  });
+  if (!rawFrame) {
+    throw new Error(`Failed to decode preview frame ${frame} from ${inputPath}`);
+  }
+
+  const exportParams = {
+    ...params,
+    mode: 'transparent',
+    layout: {
+      ...(params.layout || {}),
+      canvasWidth: width,
+      canvasHeight: height,
+      personWidth: Math.min(width, Math.max(1, Math.round(Number(params.layout?.personWidth) || width))),
+      personHeight: Math.min(height, Math.max(1, Math.round(Number(params.layout?.personHeight) || height))),
+      anchor: params.layout?.anchor || 'feet',
+    },
+  };
+
+  const processed = processFrameWithMetadata(
+    rawFrame,
+    srcW,
+    srcH,
+    exportParams,
+    { width, height }
+  );
+
+  const outCanvas = createCanvas(width, height);
+  const outCtx = outCanvas.getContext('2d');
+  if (flipH) {
+    outCtx.translate(width, 0);
+    outCtx.scale(-1, 1);
+  }
+  outCtx.drawImage(processed.canvas, 0, 0, width, height);
+
+  return {
+    buffer: outCanvas.toBuffer('image/png'),
+    width,
+    height,
+    sourceFrameIndex: frame,
+    flipH: flipH === true,
+    warnings: processed.metadata?.warnings || [],
+  };
+}
+
 function escapeGodotString(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
@@ -2550,6 +2624,7 @@ module.exports = {
   exportGodotSpriteFrames,
   selectSpriteFrames,
   buildGodotAnimatedSpriteScene,
+  renderGodotClipPreview,
   buildEncoderArgs,
   mergeAlphaBounds,
   cropKeyedToBounds,

@@ -22,6 +22,7 @@ vi.mock('../../videoProcessor.cjs', () => ({
   exportGodotSpriteFrames: vi.fn(),
   selectSpriteFrames: vi.fn(),
   buildGodotAnimatedSpriteScene: vi.fn(),
+  renderGodotClipPreview: vi.fn(),
   findLoopEndFrame: vi.fn().mockResolvedValue({
     candidates: [{ frame: 120, score: 5 }, { frame: 200, score: 12 }],
     scores: [{ frame: 2, score: 10 }, { frame: 3, score: 15 }],
@@ -388,6 +389,7 @@ describe('POST /api/video/export-godot-spriteframes', () => {
         `offset = Vector2(0, ${-frameHeight / 2})`,
         '',
       ].join('\n')),
+      renderGodotClipPreview: vi.fn(),
     }
 
     const serverPath = nodeRequire.resolve('../server.cjs')
@@ -643,5 +645,76 @@ describe('POST /api/video/export-godot-spriteframes', () => {
 
     await request(freshApp).delete(`/api/video/${uploadRes.body.jobId}`)
     await request(freshApp).delete(`/api/video/${secondUploadRes.body.jobId}`)
+  })
+})
+
+describe('POST /api/video/godot-clip-preview', () => {
+  it('returns a PNG thumbnail for a source clip frame', async () => {
+    const fakeVideoProcessor = {
+      probeVideo: vi.fn().mockResolvedValue({
+        width: 64,
+        height: 64,
+        fps: 6,
+        duration: 1,
+        frameCount: 6,
+        hasAudio: false,
+      }),
+      exportSpriteSheet: vi.fn(),
+      exportGodotSpriteFrames: vi.fn(),
+      selectSpriteFrames: vi.fn(),
+      buildGodotAnimatedSpriteScene: vi.fn(),
+      renderGodotClipPreview: vi.fn().mockResolvedValue({
+        buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]),
+        width: 96,
+        height: 96,
+        sourceFrameIndex: 2,
+        flipH: true,
+        warnings: [],
+      }),
+      findLoopEndFrame: vi.fn(),
+    }
+
+    const serverPath = nodeRequire.resolve('../server.cjs')
+    const processorPath = nodeRequire.resolve('../videoProcessor.cjs')
+    delete nodeRequire.cache[serverPath]
+    delete nodeRequire.cache[processorPath]
+    nodeRequire.cache[processorPath] = {
+      id: processorPath,
+      filename: processorPath,
+      loaded: true,
+      exports: fakeVideoProcessor,
+      children: [],
+      paths: [],
+    }
+    const { app: freshApp } = nodeRequire('../server.cjs')
+
+    const uploadRes = await request(freshApp)
+      .post('/api/video/upload')
+      .attach('video', Buffer.from('fake-video-input'), 'clip.mp4')
+    expect(uploadRes.status).toBe(200)
+
+    const previewRes = await request(freshApp)
+      .post('/api/video/godot-clip-preview')
+      .send({
+        jobId: uploadRes.body.jobId,
+        sourceFrameIndex: 2,
+        flipH: true,
+        spriteParams: { frameWidth: 96, frameHeight: 96 },
+        godot: { safeAreaWidth: 80, safeAreaHeight: 80 },
+        params: { keying: {}, layout: {} },
+      })
+
+    expect(previewRes.status).toBe(200)
+    expect(previewRes.headers['content-type']).toMatch(/image\/png/)
+    expect(previewRes.headers['x-preview-frame']).toBe('2')
+    expect(previewRes.headers['x-preview-fliph']).toBe('1')
+    expect(fakeVideoProcessor.renderGodotClipPreview).toHaveBeenCalledWith(expect.objectContaining({
+      sourceFrameIndex: 2,
+      flipH: true,
+      frameWidth: 96,
+      frameHeight: 96,
+    }))
+
+    await request(freshApp).delete(`/api/video/${uploadRes.body.jobId}`)
   })
 })

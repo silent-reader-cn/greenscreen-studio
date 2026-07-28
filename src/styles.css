@@ -1106,13 +1106,46 @@ body {
 
 .godot-clip-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   padding: 8px;
   background: #fafaf8;
   border: 1px solid #e0e0d8;
   border-radius: 4px;
+}
+
+.godot-clip-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 4px;
+  border: 1px solid #e4e4dc;
+  background:
+    linear-gradient(45deg, #eee 25%, transparent 25%),
+    linear-gradient(-45deg, #eee 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #eee 75%),
+    linear-gradient(-45deg, transparent 75%, #eee 75%);
+  background-size: 12px 12px;
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+  background-color: #fff;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.godot-clip-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.godot-clip-thumb-empty {
+  font-size: 10px;
+  color: #999;
+  text-align: center;
+  padding: 0 4px;
+  line-height: 1.2;
 }
 
 .godot-clip-actions {

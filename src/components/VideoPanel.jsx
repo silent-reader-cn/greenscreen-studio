@@ -94,8 +94,10 @@ export default function VideoPanel({
   const [godotExport, setGodotExport] = useState(null)
   const [godotClips, setGodotClips] = useState([])
   const [sourceVideos, setSourceVideos] = useState({})
+  const [clipPreviews, setClipPreviews] = useState({})
   const [completedExportSignature, setCompletedExportSignature] = useState('')
   const totalFrames = videoInfo?.frameCount || Math.round((videoInfo?.fps || 0) * (videoInfo?.duration || 0))
+
   const usesExactFrames = spriteParams.selectionMode === 'exact'
   const explicitFrameSelection = useMemo(
     () => parseExplicitFrameList(spriteParams.exactFramesText, totalFrames || Infinity),
@@ -400,6 +402,116 @@ export default function VideoPanel({
       baseName: godotParams.animationName,
     }))
   }, [applyDirectionPackResult, godotClips, godotParams.animationName])
+
+  const resolveClipPreviewRequest = useCallback((clip) => {
+    if (!clip) return null
+    if (clip.mirrorOf) {
+      const sourceClip = godotClips.find(item => item.name === clip.mirrorOf)
+      if (!sourceClip?.jobId) return null
+      const sourceFrameIndex = Array.isArray(sourceClip.frames) && sourceClip.frames.length > 0
+        ? sourceClip.frames[0]
+        : (sourceClip.range?.startFrame ?? 0)
+      return {
+        clipId: clip.id,
+        jobId: sourceClip.jobId,
+        sourceFrameIndex,
+        flipH: true,
+      }
+    }
+    if (!clip.jobId) return null
+    const sourceFrameIndex = Array.isArray(clip.frames) && clip.frames.length > 0
+      ? clip.frames[0]
+      : (clip.range?.startFrame ?? 0)
+    return {
+      clipId: clip.id,
+      jobId: clip.jobId,
+      sourceFrameIndex,
+      flipH: clip.flipH === true,
+    }
+  }, [godotClips])
+
+  useEffect(() => {
+    if (exportMode !== 'godot' || godotClips.length === 0) {
+      setClipPreviews(prev => {
+        for (const url of Object.values(prev)) {
+          if (url) URL.revokeObjectURL(url)
+        }
+        return {}
+      })
+      return undefined
+    }
+
+    let cancelled = false
+    const controllers = []
+
+    const loadPreviews = async () => {
+      const next = {}
+      const activeIds = new Set(godotClips.map(clip => clip.id))
+
+      for (const clip of godotClips) {
+        const request = resolveClipPreviewRequest(clip)
+        if (!request) continue
+        const controller = new AbortController()
+        controllers.push(controller)
+        try {
+          const resp = await fetch('/api/video/godot-clip-preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: controller.signal,
+            body: JSON.stringify({
+              jobId: request.jobId,
+              sourceFrameIndex: request.sourceFrameIndex,
+              flipH: request.flipH,
+              params: { keying: keyingParams, layout: layoutParams, region },
+              spriteParams: {
+                frameWidth: Math.min(96, spriteParams.frameWidth || 96),
+                frameHeight: Math.min(96, spriteParams.frameHeight || 96),
+              },
+              godot: {
+                safeAreaWidth: godotParams.safeAreaWidth,
+                safeAreaHeight: godotParams.safeAreaHeight,
+              },
+            }),
+          })
+          if (!resp.ok) continue
+          const blob = await resp.blob()
+          if (cancelled) return
+          next[clip.id] = URL.createObjectURL(blob)
+        } catch (err) {
+          if (err?.name === 'AbortError') return
+        }
+      }
+
+      if (cancelled) {
+        for (const url of Object.values(next)) URL.revokeObjectURL(url)
+        return
+      }
+
+      setClipPreviews(prev => {
+        for (const [id, url] of Object.entries(prev)) {
+          if (!activeIds.has(id) || next[id]) URL.revokeObjectURL(url)
+        }
+        return next
+      })
+    }
+
+    loadPreviews()
+    return () => {
+      cancelled = true
+      for (const controller of controllers) controller.abort()
+    }
+  }, [
+    exportMode,
+    godotClips,
+    godotParams.safeAreaHeight,
+    godotParams.safeAreaWidth,
+    keyingParams,
+    layoutParams,
+    region,
+    resolveClipPreviewRequest,
+    spriteParams.frameHeight,
+    spriteParams.frameWidth,
+  ])
 
   const availableFormats = FMT_OPTIONS.filter(f => f.modes.includes(mode))
 
@@ -1069,6 +1181,13 @@ export default function VideoPanel({
                     <div className="godot-clip-list">
                       {godotClips.map(clip => (
                         <div className="godot-clip-item" key={clip.id}>
+                          <div className="godot-clip-thumb" aria-hidden={!clipPreviews[clip.id]}>
+                            {clipPreviews[clip.id] ? (
+                              <img src={clipPreviews[clip.id]} alt="" />
+                            ) : (
+                              <span className="godot-clip-thumb-empty">{t('videoPanel.clipPreviewLoading')}</span>
+                            )}
+                          </div>
                           <div className="godot-clip-main">
                             <strong>{clip.name}</strong>
                             <span>

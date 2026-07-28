@@ -21,6 +21,7 @@ const {
   exportGodotSpriteFrames,
   selectSpriteFrames,
   buildGodotAnimatedSpriteScene,
+  renderGodotClipPreview,
 } = require('./videoProcessor.cjs');
 const { createGodotBundle } = require('./godotBundle.cjs');
 const { buildGodotExportBasename } = require('./godotNaming.cjs');
@@ -664,6 +665,65 @@ app.get('/api/video/godot-artifact/:jobId/:artifact', (req, res) => {
   const outputPath = job.godotOutputPaths?.[req.params.artifact];
   if (!outputPath || !fs.existsSync(outputPath)) return res.status(404).json({ error: 'Godot export artifact not found' });
   res.download(outputPath, path.basename(outputPath));
+});
+
+/**
+ * POST /api/video/godot-clip-preview
+ * Render one keyed/composited thumbnail for a saved Godot animation clip.
+ * body: {
+ *   jobId, sourceFrameIndex?, flipH?,
+ *   params?: { keying, layout, region, cleanup },
+ *   spriteParams?: { frameWidth, frameHeight },
+ *   godot?: { safeAreaWidth, safeAreaHeight }
+ * }
+ */
+app.post('/api/video/godot-clip-preview', express.json({ limit: '2mb' }), async (req, res) => {
+  try {
+    const {
+      jobId,
+      sourceFrameIndex = 0,
+      flipH = false,
+      params = {},
+      spriteParams = {},
+      godot = {},
+    } = req.body || {};
+    const job = videoJobs.get(jobId);
+    if (!job) return res.status(404).json({ error: 'job not found' });
+
+    const frameWidth = Math.max(8, Math.min(256, Math.round(Number(spriteParams.frameWidth) || 96)));
+    const frameHeight = Math.max(8, Math.min(256, Math.round(Number(spriteParams.frameHeight) || 96)));
+    const safeAreaWidth = Math.min(frameWidth, Math.max(1, Math.round(Number(godot.safeAreaWidth) || frameWidth)));
+    const safeAreaHeight = Math.min(frameHeight, Math.max(1, Math.round(Number(godot.safeAreaHeight) || frameHeight)));
+
+    const preview = await renderGodotClipPreview({
+      inputPath: job.inputPath,
+      sourceFrameIndex,
+      flipH: flipH === true,
+      frameWidth,
+      frameHeight,
+      params: {
+        ...params,
+        mode: 'transparent',
+        layout: {
+          ...(params.layout || {}),
+          canvasWidth: frameWidth,
+          canvasHeight: frameHeight,
+          personWidth: safeAreaWidth,
+          personHeight: safeAreaHeight,
+          anchor: 'feet',
+        },
+      },
+    });
+
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Preview-Frame', String(preview.sourceFrameIndex));
+    res.setHeader('X-Preview-FlipH', preview.flipH ? '1' : '0');
+    res.send(preview.buffer);
+  } catch (err) {
+    console.error('Godot clip preview failed:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 function getVideoMime(ext) {
