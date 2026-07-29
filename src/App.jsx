@@ -1344,6 +1344,9 @@ export default function App() {
                   region={videoRegion}
                   droppedFiles={droppedVideoFiles}
                   dockTarget={videoDockTarget}
+                  reviewProjectId={reviewContext?.projectId || ''}
+                  reviewAssetId={reviewContext?.assetId || ''}
+                  reviewClipId={reviewClips.find((clip) => selectedReviewClipIds.some((id) => String(id) === String(clip.id)))?.id || ''}
                 />
               )}
 

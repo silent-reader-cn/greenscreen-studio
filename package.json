@@ -61,6 +61,7 @@
       "electron/**/*",
       "dist/**/*",
       "server.cjs",
+      "godot*.cjs",
       "lib/**/*",
       "videoProcessor.cjs",
       "videoFrameWorker.cjs",

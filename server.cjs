@@ -24,6 +24,7 @@ const {
   renderGodotClipPreview,
 } = require('./videoProcessor.cjs');
 const { createGodotBundle } = require('./godotBundle.cjs');
+const { buildGodotEvents } = require('./godotEvents.cjs');
 const { buildGodotExportBasename } = require('./godotNaming.cjs');
 
 // 加载 polyfill（必须在引入 keying.js 之前）
@@ -226,6 +227,56 @@ function safeUnlink(filePath) {
   }
 }
 
+function apiError(status, code, message) {
+  const err = new Error(message);
+  err.status = status;
+  err.code = code;
+  return err;
+}
+
+function resolveVideoReviewContext(body = {}) {
+  const projectId = String(body.projectId || '').trim();
+  const assetId = String(body.assetId || '').trim();
+  if (!projectId && !assetId) return { projectId: null, assetId: null };
+  if (!projectId || !assetId) {
+    throw apiError(400, 'VIDEO_REVIEW_CONTEXT_INCOMPLETE', 'projectId and assetId must be provided together');
+  }
+  if (!studioServices.store.getProject(projectId)) {
+    throw apiError(404, 'PROJECT_NOT_FOUND', 'project not found');
+  }
+  const asset = studioServices.store.listAssets(projectId).find((item) => item.id === assetId);
+  if (!asset || asset.kind !== 'video') {
+    throw apiError(400, 'VIDEO_REVIEW_ASSET_INVALID', 'asset must be a video in the selected project');
+  }
+  return { projectId, assetId };
+}
+
+function resolveReviewedClipExport(job, clipId, selections) {
+  const id = String(clipId || '').trim();
+  if (!id) return null;
+  if (!job.projectId || !job.assetId) {
+    throw apiError(409, 'CLIP_JOB_CONTEXT_REQUIRED', 'review clip export requires a project-bound video upload');
+  }
+  const bundle = studioServices.store.getActionClipBundle(id);
+  if (!bundle) throw apiError(404, 'CLIP_NOT_FOUND', 'review clip not found');
+  const { clip } = bundle;
+  if (clip.projectId !== job.projectId || clip.assetId !== job.assetId) {
+    throw apiError(409, 'CLIP_JOB_CONTEXT_MISMATCH', 'review clip does not belong to the uploaded project asset');
+  }
+  if (clip.status !== 'approved') {
+    throw apiError(409, 'CLIP_NOT_APPROVED', 'review clip must be approved before Godot export');
+  }
+  const selection = selections.find((item) => (
+    item.jobId === job.id
+    && item.selection?.range?.startFrame === clip.startFrame
+    && item.selection?.range?.endFrame === clip.endFrame
+  ));
+  if (!selection) {
+    throw apiError(409, 'CLIP_EXPORT_RANGE_MISMATCH', 'exported source range must match the approved review clip');
+  }
+  return { bundle, selection };
+}
+
 function cleanupVideoJob(jobId) {
   const job = videoJobs.get(jobId);
   if (!job) return false;
@@ -246,13 +297,16 @@ app.post('/api/video/upload', videoUpload.single('video'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: '未提供视频文件' });
 
+    const reviewContext = resolveVideoReviewContext(req.body);
     const info = await probeVideo(req.file.path);
     const jobId = `vid_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
     videoJobs.set(jobId, {
+      id: jobId,
       status: 'uploaded',
       inputPath: req.file.path,
       info,
+      ...reviewContext,
       createdAt: Date.now(),
     });
 
@@ -266,10 +320,13 @@ app.post('/api/video/upload', videoUpload.single('video'), async (req, res) => {
       duration: info.duration,
       hasAudio: info.hasAudio,
       frameCount: info.frameCount,
+      projectId: reviewContext.projectId,
+      assetId: reviewContext.assetId,
     });
   } catch (err) {
+    safeUnlink(req.file?.path);
     console.error('视频上传失败:', err);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message, code: err.code });
   }
 });
 
@@ -497,7 +554,7 @@ app.post('/api/video/export-spritesheet', express.json({ limit: '10mb' }), async
  */
 app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' }), async (req, res) => {
   try {
-    const { jobId, params = {}, spriteParams = {}, godot = {} } = req.body;
+    const { jobId, clipId, params = {}, spriteParams = {}, godot = {} } = req.body;
     const job = videoJobs.get(jobId);
     if (!job) return res.status(404).json({ error: 'job not found' });
 
@@ -584,6 +641,7 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
       selections.push({
         animationName: name,
         jobId: sourceJobId,
+        sourceFps: sourceJob.info.fps,
         selection,
         flipH,
         mirroredFrom: null,
@@ -599,6 +657,7 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
         return res.status(400).json({ error: `Mirror animation "${name}" references missing source "${mirrorOf}"` });
       }
       const animationFps = Math.max(1, Math.round(Number(rawAnimation.fps) || fps));
+      const sourceSelection = selections.find((item) => item.animationName === mirrorOf);
       const atlasStart = frameJobs.length;
       const jobs = sourceJobs.map((sourceJob, animationFrameIndex) => ({
         atlasIndex: atlasStart + animationFrameIndex,
@@ -613,6 +672,7 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
       selections.push({
         animationName: name,
         jobId: null,
+        sourceFps: sourceSelection?.sourceFps || job.info.fps,
         selection: {
           mode: 'mirror',
           frames: sourceJobs.map(item => item.sourceFrameIndex),
@@ -624,6 +684,7 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
       });
       jobsByAnimation.set(name, jobs);
     }
+    const reviewedClipExport = resolveReviewedClipExport(job, clipId, selections);
     const exportParams = {
       ...params,
       mode: 'transparent',
@@ -647,6 +708,7 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
     const spriteFramesPath = path.join(tmpDir, `${basename}.tres`);
     const scenePath = path.join(tmpDir, `${basename}.tscn`);
     const metadataPath = path.join(tmpDir, `${basename}_metadata.json`);
+    const eventsPath = path.join(tmpDir, `${basename}_${jobId}_${Date.now()}_events.json`);
     const bundlePath = path.join(tmpDir, `${basename}.zip`);
 
     for (const outputPath of Object.values(job.godotOutputPaths || {})) safeUnlink(outputPath);
@@ -667,6 +729,20 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
         job.progress = { current, total, percent: total > 0 ? Math.round((current / total) * 100) : 0 };
       }
     );
+    const godotEvents = buildGodotEvents({
+      tracks: selections.map((selection) => {
+        const animation = animations.find((item) => item.name === selection.animationName);
+        return {
+          animationName: selection.animationName,
+          animationFps: animation?.fps || fps,
+          loop: animation?.loop !== false,
+          sourceFps: selection.sourceFps,
+          range: selection.selection.range,
+          sourceFrames: selection.selection.frames,
+          clipBundle: reviewedClipExport?.selection === selection ? reviewedClipExport.bundle : null,
+        };
+      }),
+    });
     const metadata = {
       basename,
       characterName: String(godot.characterName || '').trim() || null,
@@ -686,6 +762,13 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
         defaultAnimation: animations[0].name,
         anchor: 'feet',
       },
+      events: {
+        resourcePath: 'res://events.json',
+        schemaVersion: godotEvents.schemaVersion,
+        trackCount: godotEvents.tracks.length,
+        eventCount: godotEvents.tracks.reduce((total, track) => total + track.events.length, 0),
+        reviewedClipId: reviewedClipExport?.bundle.clip.id || null,
+      },
       cleanup: result.cleanup,
       warnings: result.warnings,
     };
@@ -698,14 +781,23 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
       frameHeight,
     }), 'utf8');
     fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
-    await createGodotBundle(bundlePath, [atlasPath, spriteFramesPath, scenePath, metadataPath]);
+    fs.writeFileSync(eventsPath, JSON.stringify(godotEvents, null, 2), 'utf8');
+    await createGodotBundle(bundlePath, [
+      atlasPath,
+      spriteFramesPath,
+      scenePath,
+      metadataPath,
+      { path: eventsPath, name: 'events.json' },
+    ]);
     job.godotOutputPaths = {
       bundle: bundlePath,
       atlas: atlasPath,
       spriteframes: spriteFramesPath,
       scene: scenePath,
       metadata: metadataPath,
+      events: eventsPath,
     };
+    job.godotOutputNames = { events: 'events.json' };
     job.status = 'done';
     job.progress = { current: result.frameCount, total: result.frameCount, percent: 100 };
 
@@ -717,18 +809,18 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
       animations: result.animations,
       warnings: result.warnings,
       artifacts: Object.fromEntries(Object.entries(job.godotOutputPaths).map(([kind, outputPath]) => [kind, {
-        filename: path.basename(outputPath),
+        filename: job.godotOutputNames[kind] || path.basename(outputPath),
         size: fs.statSync(outputPath).size,
       }])),
     });
   } catch (err) {
     const job = videoJobs.get(req.body?.jobId);
-    if (job) {
+    if (job && !err.status) {
       job.status = 'error';
       job.error = err.message;
     }
     console.error('Godot SpriteFrames export failed:', err);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message, code: err.code });
   }
 });
 
@@ -741,7 +833,7 @@ app.get('/api/video/godot-artifact/:jobId/:artifact', (req, res) => {
   if (!job) return res.status(404).json({ error: 'job not found' });
   const outputPath = job.godotOutputPaths?.[req.params.artifact];
   if (!outputPath || !fs.existsSync(outputPath)) return res.status(404).json({ error: 'Godot export artifact not found' });
-  res.download(outputPath, path.basename(outputPath));
+  res.download(outputPath, job.godotOutputNames?.[req.params.artifact] || path.basename(outputPath));
 });
 
 /**

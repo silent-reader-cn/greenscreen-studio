@@ -82,6 +82,9 @@ export default function VideoPanel({
   region,
   droppedFiles,
   dockTarget,
+  reviewProjectId = '',
+  reviewAssetId = '',
+  reviewClipId = '',
 }) {
   const safeVideoParams = normalizeVideoParams(videoParams)
   const { mode, format, exportMode, spriteParams, godotParams } = safeVideoParams
@@ -164,6 +167,7 @@ export default function VideoPanel({
     spriteParams,
     godotParams,
     godotClips,
+    reviewClipId,
     range: range ? { startFrame: range.startFrame, endFrame: range.endFrame } : null,
     region,
   }), [
@@ -176,6 +180,7 @@ export default function VideoPanel({
     spriteParams,
     godotParams,
     godotClips,
+    reviewClipId,
     range,
     region,
   ])
@@ -587,6 +592,10 @@ export default function VideoPanel({
 
     const formData = new FormData()
     formData.append('video', file)
+    if (reviewProjectId && reviewAssetId) {
+      formData.append('projectId', reviewProjectId)
+      formData.append('assetId', reviewAssetId)
+    }
 
     try {
       const resp = await fetch('/api/video/upload', { method: 'POST', body: formData })
@@ -614,7 +623,7 @@ export default function VideoPanel({
     } finally {
       setUploading(false)
     }
-  }, [cleanupVideoJob, godotClips, onVideoUpload])
+  }, [cleanupVideoJob, godotClips, onVideoUpload, reviewAssetId, reviewProjectId])
 
   const uploadVideoQuiet = useCallback(async (file) => {
     if (!isVideoFile(file)) return null
@@ -865,6 +874,7 @@ export default function VideoPanel({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             jobId: videoInfo.jobId,
+            clipId: reviewClipId || undefined,
             params: { keying: keyingParams, layout: layoutParams, region },
             spriteParams: {
               ...spriteParams,
@@ -1068,6 +1078,7 @@ export default function VideoPanel({
                 <button className="dock-btn dock-btn-primary" onClick={() => handleDownloadGodotArtifact('atlas')}>{t('videoPanel.downloadGodotAtlas')}</button>
                 <button className="dock-btn dock-btn-primary" onClick={() => handleDownloadGodotArtifact('spriteframes')}>{t('videoPanel.downloadGodotSpriteFrames')}</button>
                 <button className="dock-btn dock-btn-primary" onClick={() => handleDownloadGodotArtifact('scene')}>{t('videoPanel.downloadGodotScene')}</button>
+                <button className="dock-btn dock-btn-secondary" onClick={() => handleDownloadGodotArtifact('events')}>{t('videoPanel.downloadGodotEvents')}</button>
                 <button className="dock-btn dock-btn-secondary" onClick={() => handleDownloadGodotArtifact('metadata')}>{t('videoPanel.downloadGodotMetadata')}</button>
               </div>
             ) : (

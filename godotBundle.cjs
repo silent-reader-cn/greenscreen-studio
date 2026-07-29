@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const archiver = require('archiver');
 
-function createGodotBundle(bundlePath, artifactPaths) {
+function createGodotBundle(bundlePath, artifacts) {
   return new Promise((resolve, reject) => {
     const output = fs.createWriteStream(bundlePath);
     const archive = archiver('zip', { zlib: { level: 9 } });
@@ -11,8 +11,10 @@ function createGodotBundle(bundlePath, artifactPaths) {
     output.on('error', reject);
     archive.on('error', reject);
     archive.pipe(output);
-    for (const artifactPath of artifactPaths) {
-      archive.file(artifactPath, { name: path.basename(artifactPath) });
+    for (const artifact of artifacts) {
+      const artifactPath = typeof artifact === 'string' ? artifact : artifact.path;
+      const artifactName = typeof artifact === 'string' ? path.basename(artifact) : artifact.name;
+      archive.file(artifactPath, { name: artifactName || path.basename(artifactPath) });
     }
     archive.finalize();
   });
