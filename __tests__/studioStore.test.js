@@ -54,6 +54,54 @@ describe('projectStore + mcpRuntime + studio API', () => {
     expect(bundle.assets).toEqual([])
   })
 
+  it('persists action clips, semantic markers, and review state for a source video', () => {
+    const project = store.createProject({ name: 'action review' })
+    const sourcePath = path.join(tmpDir, 'action.mp4')
+    fs.writeFileSync(sourcePath, 'video bytes')
+    const asset = store.addAsset(project.id, {
+      kind: 'video',
+      role: 'source',
+      filePath: sourcePath,
+      originalName: 'action.mp4',
+      mimeType: 'video/mp4',
+    })
+
+    const attack = store.createActionClip(project.id, {
+      assetId: asset.id,
+      name: 'attack_loop_SE',
+      startFrame: 0,
+      endFrame: 60,
+      loop: true,
+    })
+    const idle = store.createActionClip(project.id, {
+      assetId: asset.id,
+      name: 'idle_loop_SE',
+      startFrame: 80,
+      endFrame: 120,
+      loop: true,
+      status: 'needs_review',
+    })
+    expect(store.listActionClips(project.id, { assetId: asset.id })).toHaveLength(2)
+    expect(idle.status).toBe('needs_review')
+
+    const windup = store.addActionMarker(attack.id, { frame: 30, type: 'windup_end', label: 'startup done' })
+    const hit = store.addActionMarker(attack.id, { frame: 45, type: 'hit', payload: { damageMultiplier: 1 } })
+    expect(store.getActionClipBundle(attack.id).markers.map(marker => marker.frame)).toEqual([30, 45])
+    expect(hit.payload.damageMultiplier).toBe(1)
+
+    const approved = store.updateActionClip(attack.id, { status: 'approved' })
+    expect(approved.status).toBe('approved')
+    expect(approved.version).toBe(2)
+    expect(() => store.addActionMarker(attack.id, { frame: 60, type: 'hit' })).toThrow(/inside the clip range/)
+    expect(() => store.addActionMarker(attack.id, { frame: 40, type: 'unknown' })).toThrow(/marker type is invalid/)
+    expect(() => store.updateActionClip(attack.id, { endFrame: 0 })).toThrow(/end frame/)
+
+    const bundle = store.getProjectBundle(project.id)
+    expect(bundle.clips.map(clip => clip.id)).toContain(attack.id)
+    expect(store.deleteActionMarker(windup.id)).toBe(true)
+    expect(store.getActionClipBundle(attack.id).markers).toHaveLength(1)
+  })
+
   it('supports collab task claim/complete and messages', () => {
     const project = store.createProject({ name: 'collab' })
     const task = store.createTask(project.id, {
