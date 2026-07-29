@@ -556,6 +556,8 @@ export default function App() {
   const [imageGodotExport, setImageGodotExport] = useState(null)
   const [imageGodotError, setImageGodotError] = useState('')
   const [mediaMode, setMediaMode] = useState('image')  // 'image' | 'video'
+  // Mobile: toggle between preview canvas and settings/export panels
+  const [mobilePane, setMobilePane] = useState('preview') // 'preview' | 'settings'
   const [videoDockTarget, setVideoDockTarget] = useState(null)
   const videoDockRef = useRef(null)
   const [clipboardImport, setClipboardImport] = useState(null)
@@ -835,6 +837,7 @@ export default function App() {
 
     setMediaMode('image')
     setPreviewMode('keying')
+    setMobilePane('preview')
     setImageRegion(null)
     setRegionDraft(null)
     setRegionSelectionMode(true)
@@ -913,6 +916,7 @@ export default function App() {
 
     setMediaMode('video')
     setPreviewMode('keying')
+    setMobilePane('preview')
     setResultJobId(null)
     setResultVideoFormat(null)
     setVideoRegion(null)
@@ -1235,192 +1239,205 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="header">
-        <div className="header-copy">
-          <h1>🎬 {t('app.title')}</h1>
-          <p>{t('app.tagline')}</p>
-        </div>
-        <ProfileSwitcher
-          profiles={profiles}
-          activeProfileId={activeProfileId}
-          onSelect={handleSelectProfile}
-          onCreate={handleCreateProfile}
-          onRename={handleRenameProfile}
-          onDelete={handleDeleteProfile}
-        />
-      </header>
-
-      <main className="main">
-        <aside className="sidebar">
-          <div className="sidebar-scroll">
-            <FileMetaPanel
-              mediaMode={mediaMode}
-              imageFile={imageFile}
-              imageSize={imageSize}
-              imageRegion={imageRegion}
-              videoRegion={videoRegion}
-              regionSelectionMode={regionSelectionMode}
-              onSelectImageRegion={beginImageRegionSelection}
-              onResetImageRegion={resetImageRegion}
-              onSelectVideoRegion={beginVideoRegionSelection}
-              onResetVideoRegion={resetVideoRegion}
-              videoFile={videoFile}
-              videoInfo={videoInfo}
-            />
-            {mediaMode === 'video' && (
-              <VideoPanel
-                keyingParams={keyingParams}
-                layoutParams={layoutParams}
-                videoParams={videoParams}
-                onVideoParamsChange={setVideoParams}
-                onVideoUpload={handleVideoUpload}
-                range={frameRange}
-                onRangeChange={handleRangeChange}
-                region={videoRegion}
-                droppedFiles={droppedVideoFiles}
-                dockTarget={videoDockTarget}
-              />
-            )}
-
-            <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
-            <LayoutPanel
-              params={layoutParams}
-              onChange={setLayoutParams}
-              imageSize={layoutInputSize}
-              canAutoDetectSourceCharacterHeight={mediaMode === 'video' && Boolean(videoFile)}
-              onAutoDetectSourceCharacterHeight={handleAutoDetectSourceCharacterHeight}
-            />
+    <div className={`app mobile-pane-${mobilePane}`}>
+        <header className="header">
+          <div className="header-copy">
+            <h1>🎬 {t('app.title')}</h1>
+            <p>{t('app.tagline')}</p>
           </div>
+          <ProfileSwitcher
+            profiles={profiles}
+            activeProfileId={activeProfileId}
+            onSelect={handleSelectProfile}
+            onCreate={handleCreateProfile}
+            onRename={handleRenameProfile}
+            onDelete={handleDeleteProfile}
+          />
+        </header>
 
-          <div className="sidebar-dock">
-            <p className="dock-label">{t('app.exportActions')}</p>
-            {mediaMode === 'image' ? (
-              <div className="dock-actions">
-                {!imageData && (
-                  <p className="dock-hint">{t('app.imageExportHint')}</p>
-                )}
-                <button
-                  className="dock-btn dock-btn-primary"
-                  onClick={() => handleExport('greenscreen')}
-                  disabled={!processingImageData || exporting}
-                >{exporting ? t('app.exporting') : `💾 ${t('app.exportGreenscreen')}`}</button>
-                <button
-                  className="dock-btn dock-btn-secondary"
-                  onClick={() => handleExport('transparent')}
-                  disabled={!processingImageData || exporting}
-                >{exporting ? t('app.exporting') : `💾 ${t('app.exportTransparent')}`}</button>
-                <section className="image-godot-export" aria-label={t('app.godotPoseTitle')}>
-                  <div className="image-godot-title">{t('app.godotPoseTitle')}</div>
-                  <div className="image-godot-fields">
-                    <input
-                      value={videoParams.godotParams.characterName}
-                      onChange={(event) => updateImageGodotParam('characterName', event.target.value)}
-                      placeholder={t('app.godotPoseCharacter')}
-                      aria-label={t('app.godotPoseCharacter')}
-                    />
-                    <input
-                      value={videoParams.godotParams.actionName}
-                      onChange={(event) => updateImageGodotParam('actionName', event.target.value)}
-                      placeholder={t('app.godotPoseAction')}
-                      aria-label={t('app.godotPoseAction')}
-                    />
-                    <input
-                      value={videoParams.godotParams.animationName}
-                      onChange={(event) => updateImageGodotParam('animationName', event.target.value)}
-                      placeholder={t('app.godotPoseAnimation')}
-                      aria-label={t('app.godotPoseAnimation')}
-                    />
-                  </div>
-                  <button
-                    className="dock-btn dock-btn-primary"
-                    onClick={handleExportGodotPose}
-                    disabled={!imageFile || imageGodotExporting}
-                  >{imageGodotExporting ? t('app.exporting') : t('app.exportGodotPose')}</button>
-                  {imageGodotError && <p className="image-godot-error">{imageGodotError}</p>}
-                  {imageGodotExport && (
-                    <div className="image-godot-result">
-                      <span>{t('app.godotPoseDone', { name: imageGodotExport.basename })}</span>
-                      <div className="image-godot-downloads">
-                        <button type="button" onClick={() => handleDownloadGodotPose('bundle')}>{t('app.downloadGodotPoseBundle')}</button>
-                        <button type="button" onClick={() => handleDownloadGodotPose('scene')}>{t('app.downloadGodotPoseScene')}</button>
-                      </div>
-                    </div>
-                  )}
-                </section>
-              </div>
-            ) : (
-              <div ref={videoDockRef} className="dock-portal-target" />
-            )}
-          </div>
-        </aside>
+        <nav className="mobile-nav" aria-label={t('app.mobileNavLabel')}>
+          <button
+            type="button"
+            className={`mobile-nav-btn ${mobilePane === 'preview' ? 'active' : ''}`}
+            onClick={() => setMobilePane('preview')}
+          >{t('app.mobilePreview')}</button>
+          <button
+            type="button"
+            className={`mobile-nav-btn ${mobilePane === 'settings' ? 'active' : ''}`}
+            onClick={() => setMobilePane('settings')}
+          >{t('app.mobileSettings')}</button>
+        </nav>
 
-        <section className="preview-area">
-          <div className="tab-bar">
-            <div className="mode-switcher">
-              <button
-                className={`mode-btn ${mediaMode === 'image' ? 'active' : ''}`}
-                onClick={() => switchMode('image')}
-              >🖼️ {t('app.image')}</button>
-              <button
-                className={`mode-btn ${mediaMode === 'video' ? 'active' : ''}`}
-                onClick={() => switchMode('video')}
-              >🎬 {t('app.video')}</button>
-            </div>
-            <button
-              className={`tab ${previewMode === 'keying' ? 'active' : ''}`}
-              onClick={() => setPreviewMode('keying')}
-            >{t('app.keyingPreview')}</button>
-            <button
-              className={`tab ${previewMode === 'composite' ? 'active' : ''}`}
-              onClick={() => setPreviewMode('composite')}
-            >{t('app.compositePreview')}</button>
-          </div>
-          <div className="canvas-wrapper" ref={imagePreviewWrapperRef}>
-            {mediaMode === 'image' ? (
-              imageData ? (
-                <div
-                  className={`preview-stage ${canSelectImageRegion ? 'selecting' : ''}`}
-                  style={imagePreviewStageStyle}
-                >
-                  <canvas
-                    ref={previewRef}
-                    className="preview-canvas"
-                    onPointerDown={handleRegionPointerDown}
-                    onPointerMove={handleRegionPointerMove}
-                    onPointerUp={handleRegionPointerUp}
-                    onPointerCancel={handleRegionPointerCancel}
-                  />
-                  {canSelectImageRegion && regionDraft && (
-                    <div
-                      className="region-selection-box"
-                      style={getRegionOverlayStyle(regionDraft, processingImageData)}
-                    />
-                  )}
-                </div>
-              ) : (
-                <PreviewCanvas />
-              )
-            ) : (
-              <VideoPreview
+        <main className="main">
+          <aside className="sidebar">
+            <div className="sidebar-scroll">
+              <FileMetaPanel
+                mediaMode={mediaMode}
+                imageFile={imageFile}
+                imageSize={imageSize}
+                imageRegion={imageRegion}
+                videoRegion={videoRegion}
+                regionSelectionMode={regionSelectionMode}
+                onSelectImageRegion={beginImageRegionSelection}
+                onResetImageRegion={resetImageRegion}
+                onSelectVideoRegion={beginVideoRegionSelection}
+                onResetVideoRegion={resetVideoRegion}
                 videoFile={videoFile}
                 videoInfo={videoInfo}
-                keyingParams={keyingParams}
-                layoutParams={layoutParams}
-                previewMode={previewMode}
-                resultJobId={resultJobId}
-                resultFormat={resultVideoFormat}
-                range={frameRange}
-                onRangeChange={handleRangeChange}
-                region={videoRegion}
-                regionSelectionMode={regionSelectionMode && mediaMode === 'video'}
-                onRegionChange={setVideoRegion}
-                onRegionSelectionComplete={() => setRegionSelectionMode(false)}
               />
-            )}
-          </div>
-        </section>
-      </main>
+              {mediaMode === 'video' && (
+                <VideoPanel
+                  keyingParams={keyingParams}
+                  layoutParams={layoutParams}
+                  videoParams={videoParams}
+                  onVideoParamsChange={setVideoParams}
+                  onVideoUpload={handleVideoUpload}
+                  range={frameRange}
+                  onRangeChange={handleRangeChange}
+                  region={videoRegion}
+                  droppedFiles={droppedVideoFiles}
+                  dockTarget={videoDockTarget}
+                />
+              )}
+
+              <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
+              <LayoutPanel
+                params={layoutParams}
+                onChange={setLayoutParams}
+                imageSize={layoutInputSize}
+                canAutoDetectSourceCharacterHeight={mediaMode === 'video' && Boolean(videoFile)}
+                onAutoDetectSourceCharacterHeight={handleAutoDetectSourceCharacterHeight}
+              />
+            </div>
+
+            <div className="sidebar-dock">
+              <p className="dock-label">{t('app.exportActions')}</p>
+              {mediaMode === 'image' ? (
+                <div className="dock-actions">
+                  {!imageData && (
+                    <p className="dock-hint">{t('app.imageExportHint')}</p>
+                  )}
+                  <button
+                    className="dock-btn dock-btn-primary"
+                    onClick={() => handleExport('greenscreen')}
+                    disabled={!processingImageData || exporting}
+                  >{exporting ? t('app.exporting') : `💾 ${t('app.exportGreenscreen')}`}</button>
+                  <button
+                    className="dock-btn dock-btn-secondary"
+                    onClick={() => handleExport('transparent')}
+                    disabled={!processingImageData || exporting}
+                  >{exporting ? t('app.exporting') : `💾 ${t('app.exportTransparent')}`}</button>
+                  <section className="image-godot-export" aria-label={t('app.godotPoseTitle')}>
+                    <div className="image-godot-title">{t('app.godotPoseTitle')}</div>
+                    <div className="image-godot-fields">
+                      <input
+                        value={videoParams.godotParams.characterName}
+                        onChange={(event) => updateImageGodotParam('characterName', event.target.value)}
+                        placeholder={t('app.godotPoseCharacter')}
+                        aria-label={t('app.godotPoseCharacter')}
+                      />
+                      <input
+                        value={videoParams.godotParams.actionName}
+                        onChange={(event) => updateImageGodotParam('actionName', event.target.value)}
+                        placeholder={t('app.godotPoseAction')}
+                        aria-label={t('app.godotPoseAction')}
+                      />
+                      <input
+                        value={videoParams.godotParams.animationName}
+                        onChange={(event) => updateImageGodotParam('animationName', event.target.value)}
+                        placeholder={t('app.godotPoseAnimation')}
+                        aria-label={t('app.godotPoseAnimation')}
+                      />
+                    </div>
+                    <button
+                      className="dock-btn dock-btn-primary"
+                      onClick={handleExportGodotPose}
+                      disabled={!imageFile || imageGodotExporting}
+                    >{imageGodotExporting ? t('app.exporting') : t('app.exportGodotPose')}</button>
+                    {imageGodotError && <p className="image-godot-error">{imageGodotError}</p>}
+                    {imageGodotExport && (
+                      <div className="image-godot-result">
+                        <span>{t('app.godotPoseDone', { name: imageGodotExport.basename })}</span>
+                        <div className="image-godot-downloads">
+                          <button type="button" onClick={() => handleDownloadGodotPose('bundle')}>{t('app.downloadGodotPoseBundle')}</button>
+                          <button type="button" onClick={() => handleDownloadGodotPose('scene')}>{t('app.downloadGodotPoseScene')}</button>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                </div>
+              ) : (
+                <div ref={videoDockRef} className="dock-portal-target" />
+              )}
+            </div>
+          </aside>
+
+          <section className="preview-area">
+            <div className="tab-bar">
+              <div className="mode-switcher">
+                <button
+                  className={`mode-btn ${mediaMode === 'image' ? 'active' : ''}`}
+                  onClick={() => switchMode('image')}
+                >🖼️ {t('app.image')}</button>
+                <button
+                  className={`mode-btn ${mediaMode === 'video' ? 'active' : ''}`}
+                  onClick={() => switchMode('video')}
+                >🎬 {t('app.video')}</button>
+              </div>
+              <button
+                className={`tab ${previewMode === 'keying' ? 'active' : ''}`}
+                onClick={() => setPreviewMode('keying')}
+              >{t('app.keyingPreview')}</button>
+              <button
+                className={`tab ${previewMode === 'composite' ? 'active' : ''}`}
+                onClick={() => setPreviewMode('composite')}
+              >{t('app.compositePreview')}</button>
+            </div>
+            <div className="canvas-wrapper" ref={imagePreviewWrapperRef}>
+              {mediaMode === 'image' ? (
+                imageData ? (
+                  <div
+                    className={`preview-stage ${canSelectImageRegion ? 'selecting' : ''}`}
+                    style={imagePreviewStageStyle}
+                  >
+                    <canvas
+                      ref={previewRef}
+                      className="preview-canvas"
+                      onPointerDown={handleRegionPointerDown}
+                      onPointerMove={handleRegionPointerMove}
+                      onPointerUp={handleRegionPointerUp}
+                      onPointerCancel={handleRegionPointerCancel}
+                    />
+                    {canSelectImageRegion && regionDraft && (
+                      <div
+                        className="region-selection-box"
+                        style={getRegionOverlayStyle(regionDraft, processingImageData)}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <PreviewCanvas />
+                )
+              ) : (
+                <VideoPreview
+                  videoFile={videoFile}
+                  videoInfo={videoInfo}
+                  keyingParams={keyingParams}
+                  layoutParams={layoutParams}
+                  previewMode={previewMode}
+                  resultJobId={resultJobId}
+                  resultFormat={resultVideoFormat}
+                  range={frameRange}
+                  onRangeChange={handleRangeChange}
+                  region={videoRegion}
+                  regionSelectionMode={regionSelectionMode && mediaMode === 'video'}
+                  onRegionChange={setVideoRegion}
+                  onRegionSelectionComplete={() => setRegionSelectionMode(false)}
+                />
+              )}
+            </div>
+          </section>
+        </main>
 
       {dragOver && (
         <div className="drop-overlay">

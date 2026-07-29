@@ -26,6 +26,9 @@ const dictionaries = {
       dropHint: 'Supports PNG/JPG/WebP images or MP4/MOV/WebM/AVI videos',
       dropMultiHint: 'Drop multiple walk_SE / walk_NE videos together to auto-build a direction pack',
       exportFailed: 'Export failed',
+      mobilePreview: 'Preview',
+      mobileSettings: 'Settings',
+      mobileNavLabel: 'Mobile view',
     },
     common: {
       unknown: 'Unknown',
@@ -279,6 +282,9 @@ const dictionaries = {
       dropHint: '支持图片 PNG/JPG/WebP 或视频 MP4/MOV/WebM/AVI',
       dropMultiHint: '可一次拖入多个 walk_SE / walk_NE 视频，自动组成方向包',
       exportFailed: '导出失败',
+      mobilePreview: '预览',
+      mobileSettings: '参数',
+      mobileNavLabel: '手机视图切换',
     },
     common: {
       unknown: '未知',

@@ -823,9 +823,11 @@ if (fs.existsSync(distPath)) {
 // 仅当作为主进程运行时才启动 listen（被 Electron require 时不启动）
 if (require.main === module) {
   const port = process.env.PORT ? parseInt(process.env.PORT) : 20003;
-  app.listen(port, () => {
-    console.log(`\n  🟢 绿幕工具后端已启动: http://localhost:${port}`);
-    console.log(`  📁 项目路径: ${__dirname}\n`);
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`
+  🟢 绿幕工具后端已启动: http://localhost:${port}`);
+    console.log(`  📁 项目路径: ${__dirname}
+`);
   });
 }
 
