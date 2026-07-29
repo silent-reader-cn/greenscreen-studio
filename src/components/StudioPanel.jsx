@@ -254,7 +254,12 @@ export default function StudioPanel({ onOpenVideoAsset }) {
       })
       setPreviewAsset(null)
       setOpen(false)
-      onOpenVideoAsset(file)
+      onOpenVideoAsset({
+        file,
+        projectId: selectedId,
+        assetId: asset.id,
+        asset,
+      })
     } catch (err) {
       setError(err.message || t('studio.openVideoFailed'))
     } finally {

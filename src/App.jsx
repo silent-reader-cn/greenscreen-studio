@@ -9,6 +9,7 @@ import VideoPreview from './components/VideoPreview.jsx'
 import ProfileSwitcher from './components/ProfileSwitcher.jsx'
 import CollapsiblePanel from './components/CollapsiblePanel.jsx'
 import StudioPanel from './components/StudioPanel.jsx'
+import ActionClipReviewPanel from './components/ActionClipReviewPanel.jsx'
 import { formatBytes as formatLocalizedBytes, formatDateTime, formatDuration as formatLocalizedDuration, t, uiLanguage } from './i18n.js'
 
 // ===== 默认参数 =====
@@ -574,6 +575,10 @@ export default function App() {
   // 全局拖放状态
   const [dragOver, setDragOver] = useState(false)
   const [droppedVideoFiles, setDroppedVideoFiles] = useState(null)
+  const [reviewContext, setReviewContext] = useState(null) // { projectId, assetId, sourceLabel }
+  const [reviewClips, setReviewClips] = useState([])
+  const [selectedReviewClipIds, setSelectedReviewClipIds] = useState([])
+  const pendingProjectVideoRef = useRef(null)
 
   // 视频帧范围
   const [frameRange, setFrameRange] = useState(initialParams.frameRange)
@@ -745,6 +750,13 @@ export default function App() {
     setRegionDraft(null)
     setResultJobId(null)
     setResultVideoFormat(null)
+    const isPendingProjectVideo = Boolean(file && pendingProjectVideoRef.current === file)
+    pendingProjectVideoRef.current = null
+    if (!isPendingProjectVideo) {
+      setReviewContext(null)
+      setReviewClips([])
+      setSelectedReviewClipIds([])
+    }
     // 新视频上传后重置帧范围为全视频
     if (info) {
       const totalFrames = info.frameCount || Math.round(info.fps * info.duration)
@@ -754,13 +766,33 @@ export default function App() {
     }
   }, [])
 
-  const handleOpenProjectVideo = useCallback((file) => {
+  const handleOpenProjectVideo = useCallback((payload) => {
+    const file = payload?.file || payload
     if (!file) return
+    const nextContext = payload?.projectId && payload?.assetId
+      ? {
+          projectId: payload.projectId,
+          assetId: payload.assetId,
+          sourceLabel: payload.asset?.originalName || file.name || '',
+        }
+      : null
+    setReviewContext(nextContext)
+    setReviewClips([])
+    setSelectedReviewClipIds([])
+    pendingProjectVideoRef.current = nextContext ? file : null
     switchMode('video')
     setPreviewMode('keying')
     setMobilePane('preview')
     setDroppedVideoFiles([file])
   }, [switchMode])
+
+  const handleApplyReviewClipRange = useCallback((clip) => {
+    if (!clip) return
+    setFrameRange({
+      startFrame: Math.max(0, Number(clip.startFrame) || 0),
+      endFrame: Math.max(0, Number(clip.endFrame) || 0),
+    })
+  }, [])
 
   useEffect(() => {
     setVideoDockTarget(videoDockRef.current)
@@ -1312,6 +1344,20 @@ export default function App() {
                 />
               )}
 
+              {mediaMode === 'video' && (
+                <ActionClipReviewPanel
+                  projectId={reviewContext?.projectId || ''}
+                  assetId={reviewContext?.assetId || ''}
+                  sourceLabel={reviewContext?.sourceLabel || videoFile?.name || ''}
+                  range={frameRange}
+                  totalFrames={videoInfo?.frameCount || Math.round((videoInfo?.fps || 0) * (videoInfo?.duration || 0)) || 0}
+                  selectedClipIds={selectedReviewClipIds}
+                  onSelectionChange={setSelectedReviewClipIds}
+                  onClipsChange={setReviewClips}
+                  onApplyClipRange={handleApplyReviewClipRange}
+                />
+              )}
+
               <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
               <LayoutPanel
                 params={layoutParams}
@@ -1447,6 +1493,23 @@ export default function App() {
                   regionSelectionMode={regionSelectionMode && mediaMode === 'video'}
                   onRegionChange={setVideoRegion}
                   onRegionSelectionComplete={() => setRegionSelectionMode(false)}
+                  reviewClips={reviewClips}
+                  selectedReviewClipIds={selectedReviewClipIds}
+                  onSelectReviewClip={(clip, event) => {
+                    if (!clip?.id) return
+                    const id = String(clip.id)
+                    if (event?.shiftKey || event?.metaKey || event?.ctrlKey) {
+                      setSelectedReviewClipIds((prev) => {
+                        const set = new Set(prev.map(String))
+                        if (set.has(id)) set.delete(id)
+                        else set.add(id)
+                        return [...set]
+                      })
+                    } else {
+                      setSelectedReviewClipIds([id])
+                      handleApplyReviewClipRange(clip)
+                    }
+                  }}
                 />
               )}
             </div>

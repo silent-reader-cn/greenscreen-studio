@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { applyKeying, composeToCanvas, cropKeyedToBounds, expandBoundsToSourceCenter, findAlphaBounds } from '../lib/keying.js'
 import { clamp, cropImageData, getRegionOverlayStyle, makeRegionFromPoints, normalizeRegion } from '../lib/region.js'
+import { clipTimelineStyle } from '../lib/actionReviewClips.js'
 import { t } from '../i18n.js'
 
 const AUTO_LOOP_DETECT_KEY = 'greenscreen-studio-auto-loop-detect'
@@ -83,6 +84,9 @@ export default function VideoPreview({
   regionSelectionMode = false,
   onRegionChange,
   onRegionSelectionComplete,
+  reviewClips = [],
+  selectedReviewClipIds = [],
+  onSelectReviewClip,
 }) {
   const [frameTime, setFrameTime] = useState(0)        // 当前选中的时间点（秒）
   const [frameImageData, setFrameImageData] = useState(null)  // 当前帧的 ImageData
@@ -120,6 +124,11 @@ export default function VideoPreview({
   const fps = videoInfo?.fps || 30
   const startFrame = range?.startFrame ?? 0
   const endFrame = range?.endFrame ?? 0
+  const totalFrames = videoInfo?.frameCount || Math.round(fps * duration) || 0
+  const selectedReviewSet = useMemo(
+    () => new Set((selectedReviewClipIds || []).map(String)),
+    [selectedReviewClipIds],
+  )
   const startPct = duration > 0 ? clamp((startFrame / fps / duration) * 100, 0, 100) : 0
   const endPct = duration > 0 ? clamp((endFrame / fps / duration) * 100, 0, 100) : 0
   const currentPct = duration > 0 ? clamp((frameTime / duration) * 100, 0, 100) : 0
@@ -875,6 +884,29 @@ export default function VideoPreview({
                 width: `${Math.max(0, endPct - startPct)}%`
               }}
             />
+            {totalFrames > 0 && reviewClips.length > 0 && (
+              <div className="timeline-review-clips" aria-hidden="false">
+                {reviewClips.map((clip) => {
+                  const style = clipTimelineStyle(clip, totalFrames)
+                  const selected = selectedReviewSet.has(String(clip.id))
+                  return (
+                    <button
+                      key={clip.id}
+                      type="button"
+                      className={`timeline-review-clip ${selected ? 'selected' : ''} status-${clip.status || 'draft'}`}
+                      style={style}
+                      title={`${clip.name} · ${clip.startFrame}-${Math.max(clip.startFrame, (clip.endFrame || 0) - 1)} · ${clip.status}`}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        onSelectReviewClip?.(clip, event)
+                      }}
+                    >
+                      <span>{clip.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             {/* 起点/终点标记针 */}
             {duration > 0 && videoInfo && (
               <>
