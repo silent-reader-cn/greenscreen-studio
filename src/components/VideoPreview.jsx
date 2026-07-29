@@ -610,13 +610,14 @@ export default function VideoPreview({
       canvas.height = layoutParams.canvasHeight
       const ctx = canvas.getContext('2d')
       if (layoutParams.autoCrop !== false) {
-        if (stablePreviewCrop.status !== 'ready') {
-          const bg = layoutParams.bgColor || keyingParams.keyColor || [0, 255, 0]
-          ctx.fillStyle = `rgb(${bg[0]}, ${bg[1]}, ${bg[2]})`
-          ctx.fillRect(0, 0, canvas.width, canvas.height)
-          return
-        }
-        keyed = cropKeyedToBounds(keyed, stablePreviewCrop.bounds, PREVIEW_STABLE_CROP_ALPHA_THRESHOLD)
+        // The stable union crop prevents placement drift after its scan finishes.
+        // While it is scanning or unavailable, keep composing from the current
+        // frame instead of rendering a misleading green-only placeholder.
+        keyed = cropKeyedToBounds(
+          keyed,
+          stablePreviewCrop.status === 'ready' ? stablePreviewCrop.bounds : null,
+          PREVIEW_STABLE_CROP_ALPHA_THRESHOLD,
+        )
       }
       composeToCanvas(ctx, keyed, layoutParams, tempCanvasRef.current, keyingParams.keyColor)
     }

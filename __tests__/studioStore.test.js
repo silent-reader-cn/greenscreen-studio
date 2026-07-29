@@ -126,6 +126,22 @@ describe('projectStore + mcpRuntime + studio API', () => {
     expect(listRes.status).toBe(200)
     expect(listRes.body.projects.some((p) => p.id === projectId)).toBe(true)
 
+    const sourcePath = path.join(tmpDir, 'source.mp4')
+    fs.writeFileSync(sourcePath, 'video bytes')
+    const asset = mounted.store.addAsset(projectId, {
+      kind: 'video',
+      role: 'source',
+      filePath: sourcePath,
+      originalName: 'source.mp4',
+      mimeType: 'video/mp4',
+    })
+    const contentRes = await request(app).get(`/api/projects/${projectId}/assets/${asset.id}/content`)
+    expect(contentRes.status).toBe(200)
+    expect(contentRes.headers['content-type']).toContain('video/mp4')
+    expect(contentRes.body.toString()).toBe('video bytes')
+    const missingAssetRes = await request(app).get(`/api/projects/${projectId}/assets/missing/content`)
+    expect(missingAssetRes.status).toBe(404)
+
     const taskRes = await request(app)
       .post(`/api/projects/${projectId}/tasks`)
       .send({ title: 'Tune keying', priority: 'normal' })

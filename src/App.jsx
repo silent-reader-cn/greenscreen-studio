@@ -754,6 +754,14 @@ export default function App() {
     }
   }, [])
 
+  const handleOpenProjectVideo = useCallback((file) => {
+    if (!file) return
+    switchMode('video')
+    setPreviewMode('keying')
+    setMobilePane('preview')
+    setDroppedVideoFiles([file])
+  }, [switchMode])
+
   useEffect(() => {
     setVideoDockTarget(videoDockRef.current)
   }, [mediaMode])
@@ -1247,7 +1255,7 @@ export default function App() {
           <p>{t('app.tagline')}</p>
         </div>
         <div className="header-actions">
-          <StudioPanel />
+          <StudioPanel onOpenVideoAsset={handleOpenProjectVideo} />
           <ProfileSwitcher
             profiles={profiles}
             activeProfileId={activeProfileId}

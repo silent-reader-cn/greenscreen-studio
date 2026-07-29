@@ -39,7 +39,7 @@ function formatTime(value) {
   }
 }
 
-export default function StudioPanel() {
+export default function StudioPanel({ onOpenVideoAsset }) {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState('projects') // projects | collab | mcp
   const [projects, setProjects] = useState([])
@@ -57,6 +57,8 @@ export default function StudioPanel() {
   const [taskDesc, setTaskDesc] = useState('')
   const [messageBody, setMessageBody] = useState('')
   const [copied, setCopied] = useState(false)
+  const [previewAsset, setPreviewAsset] = useState(null)
+  const [openingAssetId, setOpeningAssetId] = useState('')
   const logEndRef = useRef(null)
 
   const selected = useMemo(
@@ -208,6 +210,55 @@ export default function StudioPanel() {
       setError(err.message)
     } finally {
       setBusy(false)
+    }
+  }
+
+  const handleInspectAsset = async (asset) => {
+    if (!selectedId || busy) return
+    setBusy(true)
+    setError('')
+    try {
+      const label = asset.originalName || asset.path
+      await api(`/api/projects/${selectedId}/tasks`, {
+        method: 'POST',
+        body: JSON.stringify({
+          title: t('studio.inspectAssetTask', { name: label }),
+          description: t('studio.inspectAssetDescription', { name: label }),
+          assignee: 'ai',
+          priority: 'normal',
+          payload: { assetId: asset.id, assetKind: asset.kind },
+        }),
+      })
+      await refreshBundle(selectedId)
+      setPreviewAsset(null)
+      setTab('collab')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleOpenVideoAsset = async (asset) => {
+    if (!selectedId || !onOpenVideoAsset || openingAssetId) return
+    setOpeningAssetId(asset.id)
+    setError('')
+    try {
+      const response = await fetch(`/api/projects/${selectedId}/assets/${asset.id}/content`)
+      if (!response.ok) throw new Error(t('studio.openVideoFailed'))
+      const blob = await response.blob()
+      const type = blob.type || asset.mimeType || 'video/mp4'
+      const file = new File([blob], asset.originalName || 'project-video.mp4', {
+        type,
+        lastModified: Date.parse(asset.createdAt) || Date.now(),
+      })
+      setPreviewAsset(null)
+      setOpen(false)
+      onOpenVideoAsset(file)
+    } catch (err) {
+      setError(err.message || t('studio.openVideoFailed'))
+    } finally {
+      setOpeningAssetId('')
     }
   }
 
@@ -374,6 +425,19 @@ export default function StudioPanel() {
                           <div key={asset.id} className="studio-row">
                             <span>{asset.role}/{asset.kind}</span>
                             <code title={asset.path}>{asset.originalName || asset.path}</code>
+                            {asset.kind === 'video' && (
+                              <div className="studio-asset-actions">
+                                <button type="button" className="studio-primary-btn" onClick={() => void handleOpenVideoAsset(asset)} disabled={Boolean(openingAssetId)}>
+                                  {openingAssetId === asset.id ? t('studio.openingVideo') : t('studio.openInVideoKeying')}
+                                </button>
+                                <button type="button" className="studio-mini-btn" onClick={() => setPreviewAsset(asset)}>
+                                  {t('studio.previewAsset')}
+                                </button>
+                                <button type="button" className="studio-mini-btn" onClick={() => void handleInspectAsset(asset)} disabled={busy}>
+                                  {t('studio.inspectAsset')}
+                                </button>
+                              </div>
+                            )}
                           </div>
                         ))}
                         {(bundle.assets || []).length === 0 && <p className="studio-empty">{t('studio.noAssets')}</p>}
@@ -498,6 +562,38 @@ export default function StudioPanel() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {previewAsset && selectedId && (
+        <div className="studio-media-modal" role="dialog" aria-modal="true" aria-label={t('studio.assetPreviewTitle')}>
+          <div className="studio-media-backdrop" onClick={() => setPreviewAsset(null)} />
+          <div className="studio-media-dialog">
+            <div className="studio-detail-head">
+              <div>
+                <h3>{previewAsset.originalName || previewAsset.path}</h3>
+                <p>{previewAsset.role}/{previewAsset.kind}</p>
+              </div>
+              <button type="button" className="studio-mini-btn" onClick={() => setPreviewAsset(null)}>
+                {t('studio.close')}
+              </button>
+            </div>
+            {previewAsset.kind === 'video' ? (
+              <video className="studio-media-player" controls playsInline src={`/api/projects/${selectedId}/assets/${previewAsset.id}/content`} />
+            ) : (
+              <img className="studio-media-image" src={`/api/projects/${selectedId}/assets/${previewAsset.id}/content`} alt={previewAsset.originalName || t('studio.assetPreviewTitle')} />
+            )}
+            <div className="studio-media-actions">
+              {previewAsset.kind === 'video' && (
+                <button type="button" className="studio-primary-btn" onClick={() => void handleOpenVideoAsset(previewAsset)} disabled={Boolean(openingAssetId)}>
+                  {openingAssetId === previewAsset.id ? t('studio.openingVideo') : t('studio.openInVideoKeying')}
+                </button>
+              )}
+              <button type="button" className="studio-mini-btn" onClick={() => void handleInspectAsset(previewAsset)} disabled={busy}>
+                {t('studio.inspectAsset')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </>
