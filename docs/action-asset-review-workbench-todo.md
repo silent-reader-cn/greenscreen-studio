@@ -47,7 +47,7 @@ flowchart LR
 
 ## Delivery Checklist
 
-- [ ] **Data model and API**: Persist clips, markers, review state, and clip-version metadata against a project asset.
+- [x] **Data model and API**: Persist clips, markers, review state, and clip-version metadata against a project asset. (commit `7dd6cac`)
 - [ ] **Review timeline**: Create, edit, delete, and select multiple clips from the video workbench.
 - [ ] **Semantic markers**: Add, move, edit, and remove typed frame markers within a selected clip.
 - [ ] **Approval gate**: Move clips through `draft`, `needs_review`, `approved`, `exported`, `verified_in_game`, and `rejected`.

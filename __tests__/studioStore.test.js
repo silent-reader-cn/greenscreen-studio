@@ -190,6 +190,32 @@ describe('projectStore + mcpRuntime + studio API', () => {
     const missingAssetRes = await request(app).get(`/api/projects/${projectId}/assets/missing/content`)
     expect(missingAssetRes.status).toBe(404)
 
+    const clipRes = await request(app)
+      .post(`/api/projects/${projectId}/clips`)
+      .send({ assetId: asset.id, name: 'attack_SE', startFrame: 20, endFrame: 60, loop: false })
+    expect(clipRes.status).toBe(201)
+    expect(clipRes.body.startFrame).toBe(20)
+    const clipId = clipRes.body.id
+
+    const markerRes = await request(app)
+      .post(`/api/projects/${projectId}/clips/${clipId}/markers`)
+      .send({ frame: 45, type: 'hit', label: 'damage 1', payload: { hitbox: 'slash_a' } })
+    expect(markerRes.status).toBe(201)
+    expect(markerRes.body.type).toBe('hit')
+
+    const clipBundleRes = await request(app).get(`/api/projects/${projectId}/clips/${clipId}`)
+    expect(clipBundleRes.status).toBe(200)
+    expect(clipBundleRes.body.markers).toHaveLength(1)
+    const approvedClipRes = await request(app)
+      .patch(`/api/projects/${projectId}/clips/${clipId}`)
+      .send({ status: 'approved' })
+    expect(approvedClipRes.status).toBe(200)
+    expect(approvedClipRes.body.status).toBe('approved')
+    const invalidMarkerRes = await request(app)
+      .post(`/api/projects/${projectId}/clips/${clipId}/markers`)
+      .send({ frame: 60, type: 'hit' })
+    expect(invalidMarkerRes.status).toBe(400)
+
     const taskRes = await request(app)
       .post(`/api/projects/${projectId}/tasks`)
       .send({ title: 'Tune keying', priority: 'normal' })
