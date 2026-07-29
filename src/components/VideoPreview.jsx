@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { applyKeying, composeToCanvas, cropKeyedToBounds, expandBoundsToSourceCenter, findAlphaBounds } from '../lib/keying.js'
 import { clamp, cropImageData, getRegionOverlayStyle, makeRegionFromPoints, normalizeRegion } from '../lib/region.js'
 import { clipTimelineStyle } from '../lib/actionReviewClips.js'
+import { markerTimelineStyle } from '../lib/actionReviewMarkers.js'
 import { t } from '../i18n.js'
 
 const AUTO_LOOP_DETECT_KEY = 'greenscreen-studio-auto-loop-detect'
@@ -85,6 +86,7 @@ export default function VideoPreview({
   onRegionChange,
   onRegionSelectionComplete,
   reviewClips = [],
+  reviewMarkers = [],
   selectedReviewClipIds = [],
   onSelectReviewClip,
 }) {
@@ -905,6 +907,25 @@ export default function VideoPreview({
                     </button>
                   )
                 })}
+              </div>
+            )}
+            {totalFrames > 0 && reviewMarkers.length > 0 && (
+              <div className="timeline-semantic-markers">
+                {reviewMarkers.map((marker) => (
+                  <button
+                    key={marker.id}
+                    type="button"
+                    className={`timeline-semantic-marker type-${marker.type}`}
+                    style={markerTimelineStyle(marker, totalFrames)}
+                    title={`${t(`review.markerTypes.${marker.type}`)} · ${t('review.marker.atFrame', { frame: marker.frame })}${marker.label ? ` · ${marker.label}` : ''}`}
+                    aria-label={`${t(`review.markerTypes.${marker.type}`)} ${t('review.marker.atFrame', { frame: marker.frame })}`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      seekToFrame(marker.frame / fps, { force: true })
+                      setFrameTime(marker.frame / fps)
+                    }}
+                  />
+                ))}
               </div>
             )}
             {/* 起点/终点标记针 */}

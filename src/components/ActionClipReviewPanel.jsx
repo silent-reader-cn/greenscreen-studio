@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { t } from '../i18n.js'
+import SemanticMarkerEditor from './SemanticMarkerEditor.jsx'
 import {
   buildCreateClipPayload,
   buildUpdateClipPayload,
@@ -43,6 +44,7 @@ export default function ActionClipReviewPanel({
   selectedClipIds = [],
   onSelectionChange,
   onClipsChange,
+  onMarkersChange,
   onApplyClipRange,
   disabled = false,
 }) {
@@ -59,6 +61,10 @@ export default function ActionClipReviewPanel({
   const orderedClips = useMemo(() => sortClipsForTimeline(clips), [clips])
   const selectedSet = useMemo(() => new Set(selectedClipIds.map(String)), [selectedClipIds])
   const primarySelected = orderedClips.find((clip) => selectedSet.has(String(clip.id))) || null
+
+  useEffect(() => {
+    if (!primarySelected) onMarkersChange?.([])
+  }, [onMarkersChange, primarySelected])
 
   const refresh = useCallback(async () => {
     if (!projectId || !assetId) {
@@ -183,7 +189,9 @@ export default function ActionClipReviewPanel({
       })
       await refresh()
     } catch (err) {
-      setError(err.message || t('review.updateFailed'))
+      setError(err.data?.code === 'CLIP_RANGE_EXCLUDES_MARKERS'
+        ? t('review.rangeExcludesMarkers')
+        : (err.message || t('review.updateFailed')))
     } finally {
       setBusy(false)
     }
@@ -412,6 +420,15 @@ export default function ActionClipReviewPanel({
           )
         })}
       </div>
+
+      {primarySelected && (
+        <SemanticMarkerEditor
+          projectId={projectId}
+          clip={primarySelected}
+          disabled={disabled || busy}
+          onMarkersChange={onMarkersChange}
+        />
+      )}
     </div>
   )
 }

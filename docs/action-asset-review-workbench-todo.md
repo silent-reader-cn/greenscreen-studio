@@ -48,8 +48,8 @@ flowchart LR
 ## Delivery Checklist
 
 - [x] **Data model and API**: Persist clips, markers, review state, and clip-version metadata against a project asset. (commit `7dd6cac`)
-- [x] **Review timeline**: Create, edit, delete, and select multiple clips from the video workbench.
-- [ ] **Semantic markers**: Add, move, edit, and remove typed frame markers within a selected clip.
+- [x] **Review timeline**: Create, edit, delete, and select multiple clips from the video workbench. (commit `327860c`)
+- [x] **Semantic markers**: Add, move, edit, and remove typed frame markers within a selected clip.
 - [ ] **Approval gate**: Move clips through `draft`, `needs_review`, `approved`, `exported`, `verified_in_game`, and `rejected`.
 - [ ] **Godot event artifact**: Export approved clip events as `events.json` beside the atlas, SpriteFrames, scene, metadata, and ZIP.
 - [ ] **AI collaboration gate**: Queue and claim export work only for approved clips; include immutable clip and marker data in the task payload.

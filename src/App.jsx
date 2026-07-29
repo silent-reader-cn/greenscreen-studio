@@ -577,6 +577,7 @@ export default function App() {
   const [droppedVideoFiles, setDroppedVideoFiles] = useState(null)
   const [reviewContext, setReviewContext] = useState(null) // { projectId, assetId, sourceLabel }
   const [reviewClips, setReviewClips] = useState([])
+  const [reviewMarkers, setReviewMarkers] = useState([])
   const [selectedReviewClipIds, setSelectedReviewClipIds] = useState([])
   const pendingProjectVideoRef = useRef(null)
 
@@ -755,6 +756,7 @@ export default function App() {
     if (!isPendingProjectVideo) {
       setReviewContext(null)
       setReviewClips([])
+      setReviewMarkers([])
       setSelectedReviewClipIds([])
     }
     // 新视频上传后重置帧范围为全视频
@@ -778,6 +780,7 @@ export default function App() {
       : null
     setReviewContext(nextContext)
     setReviewClips([])
+    setReviewMarkers([])
     setSelectedReviewClipIds([])
     pendingProjectVideoRef.current = nextContext ? file : null
     switchMode('video')
@@ -1354,6 +1357,7 @@ export default function App() {
                   selectedClipIds={selectedReviewClipIds}
                   onSelectionChange={setSelectedReviewClipIds}
                   onClipsChange={setReviewClips}
+                  onMarkersChange={setReviewMarkers}
                   onApplyClipRange={handleApplyReviewClipRange}
                 />
               )}
@@ -1494,6 +1498,7 @@ export default function App() {
                   onRegionChange={setVideoRegion}
                   onRegionSelectionComplete={() => setRegionSelectionMode(false)}
                   reviewClips={reviewClips}
+                  reviewMarkers={reviewMarkers}
                   selectedReviewClipIds={selectedReviewClipIds}
                   onSelectReviewClip={(clip, event) => {
                     if (!clip?.id) return
