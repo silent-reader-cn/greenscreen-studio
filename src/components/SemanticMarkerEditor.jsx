@@ -96,7 +96,7 @@ export default function SemanticMarkerEditor({
   }, [clip?.endFrame, clip?.id, clip?.startFrame, onMarkersChange])
 
   const handleCreate = useCallback(async () => {
-    if (!projectId || !clip?.id || busy) return
+    if (!projectId || !clip?.id || disabled || busy) return
     const built = buildCreateMarkerPayload({
       frame: frameDraft,
       type: typeDraft,
@@ -122,7 +122,7 @@ export default function SemanticMarkerEditor({
     } finally {
       setBusy(false)
     }
-  }, [busy, clip, frameDraft, labelDraft, payloadDraft, projectId, refresh, typeDraft])
+  }, [busy, clip, disabled, frameDraft, labelDraft, payloadDraft, projectId, refresh, typeDraft])
 
   const beginEdit = useCallback((marker) => {
     setEditingId(marker.id)
@@ -136,7 +136,7 @@ export default function SemanticMarkerEditor({
   }, [])
 
   const handleSave = useCallback(async (marker) => {
-    if (!projectId || !clip?.id || !editDraft || busy) return
+    if (!projectId || !clip?.id || !editDraft || disabled || busy) return
     const built = buildUpdateMarkerPayload(editDraft, { clip, current: marker })
     if (!built.ok) {
       setError(validationMessage(built.error))
@@ -157,10 +157,10 @@ export default function SemanticMarkerEditor({
     } finally {
       setBusy(false)
     }
-  }, [busy, clip, editDraft, projectId, refresh])
+  }, [busy, clip, disabled, editDraft, projectId, refresh])
 
   const handleDelete = useCallback(async (marker) => {
-    if (!projectId || !clip?.id || busy) return
+    if (!projectId || !clip?.id || disabled || busy) return
     if (!window.confirm(t('review.marker.deleteConfirm', {
       type: markerTypeLabel(marker.type),
       frame: marker.frame,
@@ -175,7 +175,7 @@ export default function SemanticMarkerEditor({
     } finally {
       setBusy(false)
     }
-  }, [busy, clip?.id, projectId, refresh])
+  }, [busy, clip?.id, disabled, projectId, refresh])
 
   if (!clip) return null
 
@@ -256,7 +256,7 @@ export default function SemanticMarkerEditor({
                     aria-label={t('review.marker.type')}
                     value={editDraft.type}
                     onChange={(event) => setEditDraft((prev) => ({ ...prev, type: event.target.value }))}
-                    disabled={busy}
+                    disabled={disabled || busy}
                   >
                     {MARKER_TYPES.map((type) => <option key={type} value={type}>{markerTypeLabel(type)}</option>)}
                   </select>
@@ -268,24 +268,24 @@ export default function SemanticMarkerEditor({
                     step="1"
                     value={editDraft.frame}
                     onChange={(event) => setEditDraft((prev) => ({ ...prev, frame: event.target.value }))}
-                    disabled={busy}
+                    disabled={disabled || busy}
                   />
                   <input
                     aria-label={t('review.marker.label')}
                     type="text"
                     value={editDraft.label}
                     onChange={(event) => setEditDraft((prev) => ({ ...prev, label: event.target.value }))}
-                    disabled={busy}
+                    disabled={disabled || busy}
                   />
                   <textarea
                     aria-label={t('review.marker.payload')}
                     rows="2"
                     value={editDraft.payloadText}
                     onChange={(event) => setEditDraft((prev) => ({ ...prev, payloadText: event.target.value }))}
-                    disabled={busy}
+                    disabled={disabled || busy}
                   />
                   <div className="review-marker-actions">
-                    <button type="button" className="studio-mini-btn" onClick={() => void handleSave(marker)} disabled={busy}>{t('review.marker.save')}</button>
+                    <button type="button" className="studio-mini-btn" onClick={() => void handleSave(marker)} disabled={disabled || busy}>{t('review.marker.save')}</button>
                     <button
                       type="button"
                       className="studio-mini-btn"
@@ -293,7 +293,7 @@ export default function SemanticMarkerEditor({
                         setEditingId('')
                         setEditDraft(null)
                       }}
-                      disabled={busy}
+                      disabled={disabled || busy}
                     >
                       {t('review.marker.cancel')}
                     </button>
@@ -309,8 +309,8 @@ export default function SemanticMarkerEditor({
                     <code>{JSON.stringify(marker.payload || {})}</code>
                   </div>
                   <div className="review-marker-actions">
-                    <button type="button" className="studio-mini-btn" onClick={() => beginEdit(marker)} disabled={busy}>{t('review.marker.edit')}</button>
-                    <button type="button" className="studio-danger-btn" onClick={() => void handleDelete(marker)} disabled={busy}>{t('review.marker.delete')}</button>
+                    <button type="button" className="studio-mini-btn" onClick={() => beginEdit(marker)} disabled={disabled || busy}>{t('review.marker.edit')}</button>
+                    <button type="button" className="studio-danger-btn" onClick={() => void handleDelete(marker)} disabled={disabled || busy}>{t('review.marker.delete')}</button>
                   </div>
                 </>
               )}

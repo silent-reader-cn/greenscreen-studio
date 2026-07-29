@@ -13,6 +13,34 @@ export const CLIP_STATUSES = Object.freeze([
   'rejected',
 ])
 
+export const CLIP_STATUS_TRANSITIONS = Object.freeze({
+  draft: Object.freeze(['needs_review']),
+  needs_review: Object.freeze(['draft', 'approved', 'rejected']),
+  approved: Object.freeze(['needs_review', 'exported']),
+  exported: Object.freeze(['approved', 'verified_in_game']),
+  verified_in_game: Object.freeze(['needs_review']),
+  rejected: Object.freeze(['draft']),
+})
+
+export function isClipEditable(status) {
+  return status === 'draft' || status === 'needs_review'
+}
+
+export function availableClipStatuses(status) {
+  return CLIP_STATUS_TRANSITIONS[status] || []
+}
+
+export function buildClipStatusTransition(currentStatus, nextStatus) {
+  if (!CLIP_STATUSES.includes(currentStatus) || !CLIP_STATUSES.includes(nextStatus)) {
+    return { ok: false, error: 'status_invalid' }
+  }
+  if (currentStatus === nextStatus) return { ok: false, error: 'status_unchanged' }
+  if (!availableClipStatuses(currentStatus).includes(nextStatus)) {
+    return { ok: false, error: 'status_transition_invalid' }
+  }
+  return { ok: true, payload: { status: nextStatus } }
+}
+
 /**
  * @param {number} value
  * @param {number} [fallback=0]
@@ -69,6 +97,10 @@ export function buildCreateClipPayload(input = {}) {
   )
   if (!range.ok) return range
 
+  if (input.status != null && input.status !== 'draft') {
+    return { ok: false, error: CLIP_STATUSES.includes(input.status) ? 'status_initial_invalid' : 'status_invalid' }
+  }
+
   return {
     ok: true,
     payload: {
@@ -77,7 +109,7 @@ export function buildCreateClipPayload(input = {}) {
       startFrame: range.startFrame,
       endFrame: range.endFrame,
       loop: Boolean(input.loop),
-      status: CLIP_STATUSES.includes(input.status) ? input.status : 'draft',
+      status: input.status || 'draft',
       notes: String(input.notes || ''),
       params: input.params && typeof input.params === 'object' ? input.params : {},
     },
@@ -100,6 +132,10 @@ export function buildUpdateClipPayload(patch = {}, options = {}) {
   if (patch.loop != null) body.loop = Boolean(patch.loop)
   if (patch.status != null) {
     if (!CLIP_STATUSES.includes(patch.status)) return { ok: false, error: 'status_invalid' }
+    if (options.current?.status && patch.status !== options.current.status) {
+      const transition = buildClipStatusTransition(options.current.status, patch.status)
+      if (!transition.ok) return transition
+    }
     body.status = patch.status
   }
   if (patch.notes != null) body.notes = String(patch.notes)

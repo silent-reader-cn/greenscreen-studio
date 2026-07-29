@@ -139,4 +139,28 @@ describe('ActionClipReviewPanel', () => {
     await waitFor(() => expect(screen.queryByText('recover_fast')).toBeNull())
     expect(confirm).toHaveBeenCalledOnce()
   })
+
+  it('moves through review states and locks approved clip content', async () => {
+    renderPanel({ selectedClipIds: ['clip_1'] })
+    await screen.findByText('idle')
+
+    let statusSelect = screen.getByLabelText(t('review.statusControl', { name: 'idle' }))
+    fireEvent.change(statusSelect, { target: { value: 'needs_review' } })
+    await waitFor(() => {
+      statusSelect = screen.getByLabelText(t('review.statusControl', { name: 'idle' }))
+      expect(statusSelect.value).toBe('needs_review')
+    })
+
+    fireEvent.change(statusSelect, { target: { value: 'approved' } })
+    await waitFor(() => {
+      statusSelect = screen.getByLabelText(t('review.statusControl', { name: 'idle' }))
+      expect(statusSelect.value).toBe('approved')
+    })
+
+    const idleItem = screen.getByText('idle').closest('[role="option"]')
+    expect(within(idleItem).getByRole('button', { name: t('review.rename') }).disabled).toBe(true)
+    expect(within(idleItem).getByRole('button', { name: t('review.unloop') }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: t('review.updateRange') }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: t('review.marker.add') }).disabled).toBe(true)
+  })
 })

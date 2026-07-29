@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   CLIP_STATUSES,
+  availableClipStatuses,
+  buildClipStatusTransition,
   buildCreateClipPayload,
   buildUpdateClipPayload,
   clipTimelineStyle,
   clipsForAsset,
   expandSelectionRange,
   normalizeClipRange,
+  isClipEditable,
   sortClipsForTimeline,
   suggestClipName,
   updateClipSelection,
@@ -58,6 +61,16 @@ describe('buildCreateClipPayload', () => {
     expect(buildCreateClipPayload({ name: 'x' }).error).toBe('asset_required')
     expect(buildCreateClipPayload({ assetId: 'a', name: '  ' }).error).toBe('name_required')
   })
+
+  it('requires new clips to start in draft', () => {
+    expect(buildCreateClipPayload({
+      assetId: 'a',
+      name: 'attack',
+      startFrame: 0,
+      endFrame: 10,
+      status: 'approved',
+    }).error).toBe('status_initial_invalid')
+  })
 })
 
 describe('buildUpdateClipPayload', () => {
@@ -76,6 +89,33 @@ describe('buildUpdateClipPayload', () => {
   it('rejects invalid status and empty patches', () => {
     expect(buildUpdateClipPayload({ status: 'shipped' }).error).toBe('status_invalid')
     expect(buildUpdateClipPayload({}).error).toBe('empty_patch')
+  })
+})
+
+describe('clip review state machine', () => {
+  it('exposes only valid next states', () => {
+    expect(availableClipStatuses('draft')).toEqual(['needs_review'])
+    expect(availableClipStatuses('needs_review')).toEqual(['draft', 'approved', 'rejected'])
+    expect(availableClipStatuses('approved')).toEqual(['needs_review', 'exported'])
+    expect(availableClipStatuses('exported')).toEqual(['approved', 'verified_in_game'])
+    expect(availableClipStatuses('verified_in_game')).toEqual(['needs_review'])
+    expect(availableClipStatuses('rejected')).toEqual(['draft'])
+  })
+
+  it('builds valid transitions and rejects skipped states', () => {
+    expect(buildClipStatusTransition('draft', 'needs_review')).toEqual({
+      ok: true,
+      payload: { status: 'needs_review' },
+    })
+    expect(buildClipStatusTransition('draft', 'approved').error).toBe('status_transition_invalid')
+    expect(buildClipStatusTransition('approved', 'approved').error).toBe('status_unchanged')
+  })
+
+  it('locks content after review approval', () => {
+    expect(isClipEditable('draft')).toBe(true)
+    expect(isClipEditable('needs_review')).toBe(true)
+    expect(isClipEditable('approved')).toBe(false)
+    expect(isClipEditable('verified_in_game')).toBe(false)
   })
 })
 

@@ -2,9 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { t } from '../i18n.js'
 import SemanticMarkerEditor from './SemanticMarkerEditor.jsx'
 import {
+  availableClipStatuses,
+  buildClipStatusTransition,
   buildCreateClipPayload,
   buildUpdateClipPayload,
   expandSelectionRange,
+  isClipEditable,
   sortClipsForTimeline,
   suggestClipName,
   updateClipSelection,
@@ -237,6 +240,28 @@ export default function ActionClipReviewPanel({
     }
   }, [busy, projectId, refresh])
 
+  const handleStatusChange = useCallback(async (clip, nextStatus) => {
+    if (!projectId || !clip || busy) return
+    const built = buildClipStatusTransition(clip.status, nextStatus)
+    if (!built.ok) {
+      setError(t('review.statusTransitionInvalid'))
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      await api(`/api/projects/${projectId}/clips/${clip.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(built.payload),
+      })
+      await refresh()
+    } catch (err) {
+      setError(err.message || t('review.statusTransitionFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }, [busy, projectId, refresh])
+
   const handleDeleteSelected = useCallback(async () => {
     if (!projectId || selectedClipIds.length === 0 || busy) return
     const names = orderedClips
@@ -321,7 +346,7 @@ export default function ActionClipReviewPanel({
             type="button"
             className="studio-mini-btn"
             onClick={() => void handleApplyRangeToSelected()}
-            disabled={disabled || busy || !primarySelected || !range}
+            disabled={disabled || busy || !primarySelected || !isClipEditable(primarySelected.status) || !range}
             title={t('review.updateRangeHint')}
           >
             {t('review.updateRange')}
@@ -346,6 +371,8 @@ export default function ActionClipReviewPanel({
         {orderedClips.map((clip) => {
           const selected = selectedSet.has(String(clip.id))
           const editing = editingId === clip.id
+          const editable = isClipEditable(clip.status)
+          const nextStatuses = availableClipStatuses(clip.status)
           return (
             <div
               key={clip.id}
@@ -368,7 +395,8 @@ export default function ActionClipReviewPanel({
                       autoFocus
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
-                      disabled={busy}
+                      disabled={busy || !editable}
+                      title={!editable ? t('review.reviewLocked') : undefined}
                     />
                     <button type="submit" className="studio-mini-btn" disabled={busy}>{t('review.saveName')}</button>
                     <button
@@ -403,7 +431,8 @@ export default function ActionClipReviewPanel({
                     setEditingId(clip.id)
                     setEditName(clip.name)
                   }}
-                  disabled={busy}
+                  disabled={busy || !editable}
+                  title={!editable ? t('review.reviewLocked') : undefined}
                 >
                   {t('review.rename')}
                 </button>
@@ -411,10 +440,23 @@ export default function ActionClipReviewPanel({
                   type="button"
                   className="studio-mini-btn"
                   onClick={() => void handleToggleLoop(clip)}
-                  disabled={busy}
+                  disabled={busy || !editable}
+                  title={!editable ? t('review.reviewLocked') : undefined}
                 >
                   {clip.loop ? t('review.unloop') : t('review.loop')}
                 </button>
+                <select
+                  className="review-status-select"
+                  aria-label={t('review.statusControl', { name: clip.name })}
+                  value={clip.status}
+                  onChange={(event) => void handleStatusChange(clip, event.target.value)}
+                  disabled={busy || nextStatuses.length === 0}
+                >
+                  <option value={clip.status}>{statusLabel(clip.status)}</option>
+                  {nextStatuses.map((status) => (
+                    <option key={status} value={status}>{statusLabel(status)}</option>
+                  ))}
+                </select>
               </div>
             </div>
           )
@@ -425,7 +467,7 @@ export default function ActionClipReviewPanel({
         <SemanticMarkerEditor
           projectId={projectId}
           clip={primarySelected}
-          disabled={disabled || busy}
+          disabled={disabled || busy || !isClipEditable(primarySelected.status)}
           onMarkersChange={onMarkersChange}
         />
       )}

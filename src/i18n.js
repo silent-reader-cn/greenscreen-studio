@@ -338,6 +338,10 @@ const dictionaries = {
       createFailed: 'Failed to create clip',
       updateFailed: 'Failed to update clip',
       deleteFailed: 'Failed to delete clip',
+      statusControl: 'Review state for {name}',
+      statusTransitionInvalid: 'That review-state transition is not allowed',
+      statusTransitionFailed: 'Failed to update review state',
+      reviewLocked: 'Return this clip to review before editing its content',
       status: {
         draft: 'draft',
         needs_review: 'needs review',
@@ -731,6 +735,10 @@ const dictionaries = {
       createFailed: '创建 clip 失败',
       updateFailed: '更新 clip 失败',
       deleteFailed: '删除 clip 失败',
+      statusControl: '{name} 的审阅状态',
+      statusTransitionInvalid: '不允许这样切换审阅状态',
+      statusTransitionFailed: '更新审阅状态失败',
+      reviewLocked: '请先把该 clip 退回待审，再编辑内容',
       status: {
         draft: '草稿',
         needs_review: '待审',
