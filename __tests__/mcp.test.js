@@ -278,7 +278,10 @@ describe('Greenscreen Studio MCP protocol surface', () => {
 
       const info = await client.callTool({ name: 'get_project_info', arguments: {} })
       expect(info.structuredContent.name).toBe('greenscreen-studio')
-      expect(info.structuredContent.tools).toContain('process_video')
+            expect(info.structuredContent.tools).toContain('process_video')
+            expect(info.structuredContent.tools).toContain('list_projects')
+            expect(info.structuredContent.tools).toContain('claim_next_task')
+            expect(info.structuredContent.resources).toContain('greenscreen://studio/overview')
 
       const validated = await client.callTool({
         name: 'validate_processing_params',

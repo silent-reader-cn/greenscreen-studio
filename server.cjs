@@ -59,11 +59,15 @@ app.use(express.json({ limit: '50mb' }));
 // CORS（开发环境 vite 在 5174）
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
+// Project management + MCP status/logs + AI collaboration
+const { mountStudioApi } = require('./lib/studioApi.cjs');
+const studioServices = mountStudioApi(app);
 
 /**
  * POST /api/export
@@ -806,7 +810,12 @@ function getVideoMime(ext) {
 
 // 健康检查
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    time: new Date().toISOString(),
+    dataDir: studioServices.dataDir,
+    features: ['projects', 'mcp-status', 'collab', 'sse'],
+  });
 });
 
 // 生产环境服务前端静态文件
@@ -832,4 +841,4 @@ if (require.main === module) {
 }
 
 // 导出给 Electron 主进程 require
-module.exports = { app, defaultPort: 3001 };
+module.exports = { app, defaultPort: 3001, studioServices };

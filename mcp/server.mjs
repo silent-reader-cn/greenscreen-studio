@@ -17,6 +17,9 @@ const DEFAULT_PROJECT_ROOT = path.resolve(__dirname, '..');
 const packageJson = require('../package.json');
 const { createGodotBundle } = require('../godotBundle.cjs');
 const { buildGodotExportBasename } = require('../godotNaming.cjs');
+const { createProjectStore } = require('../lib/projectStore.cjs');
+const { createMcpRuntime, getMcpConfig, readMcpLogs, getMcpStatus } = require('../lib/mcpRuntime.cjs');
+const { getDataDir, ensureDataLayout } = require('../lib/paths.cjs');
 
 const DEFAULT_KEYING = Object.freeze({
   keyColor: [0, 255, 0],
@@ -384,22 +387,35 @@ export function getCapabilities(projectRoot = DEFAULT_PROJECT_ROOT) {
       transport: 'stdio',
     },
     tools: [
-      'get_project_info',
-      'validate_processing_params',
-      'inspect_image',
-      'export_image',
-      'export_godot_pose_image',
-      'probe_video',
-      'process_video',
-      'find_loop_end',
-      'export_spritesheet',
-      'export_godot_spriteframes',
-    ],
-    resources: [
-      'greenscreen://presets/default',
-      'greenscreen://docs/workflows',
-      'greenscreen://schemas/processing-params',
-    ],
+          'get_project_info',
+          'validate_processing_params',
+          'inspect_image',
+          'export_image',
+          'export_godot_pose_image',
+          'probe_video',
+          'process_video',
+          'find_loop_end',
+          'export_spritesheet',
+          'export_godot_spriteframes',
+          'list_projects',
+          'create_project',
+          'get_project',
+          'update_project',
+          'add_project_asset',
+          'list_project_tasks',
+          'create_project_task',
+          'claim_next_task',
+          'complete_task',
+          'post_project_message',
+          'get_mcp_status',
+          'get_mcp_logs',
+        ],
+        resources: [
+          'greenscreen://presets/default',
+          'greenscreen://docs/workflows',
+          'greenscreen://schemas/processing-params',
+          'greenscreen://studio/overview',
+        ],
     prompts: ['standardize_greenscreen_asset'],
     defaultParams: normalizeProcessingParams(),
     presets: PRESETS,
@@ -1044,14 +1060,69 @@ export async function exportGodotSpriteFramesFile(args, options = {}) {
 export function createGreenscreenMcpServer(options = {}) {
   const projectRoot = path.resolve(options.projectRoot || DEFAULT_PROJECT_ROOT);
   const baseDir = path.resolve(options.baseDir || process.cwd());
+  const dataDir = ensureDataLayout(options.dataDir || getDataDir());
+  const store = options.store || createProjectStore({ dataDir, fresh: Boolean(options.freshStore) });
+  const runtime = options.runtime || createMcpRuntime({
+    dataDir,
+    toolCount: getCapabilities(projectRoot).tools.length,
+  });
   const server = new McpServer({
     name: 'greenscreen-studio',
     version: packageJson.version,
   });
 
-  const context = { projectRoot, baseDir };
+  const context = { projectRoot, baseDir, dataDir, store, runtime };
 
-  server.registerTool('get_project_info', {
+  function registerLoggedTool(name, config, handler) {
+    server.registerTool(name, config, async (args, extra) => {
+      const started = Date.now();
+      const projectId = args?.projectId || null;
+      try {
+        await runtime.touch({ lastTool: name });
+        await runtime.record({
+          type: 'tool',
+          phase: 'start',
+          tool: name,
+          projectId,
+          message: `start ${name}`,
+          details: { argKeys: args ? Object.keys(args) : [] },
+        });
+        const result = await handler(args, extra);
+        await runtime.touch({ lastTool: name });
+        await runtime.record({
+          type: 'tool',
+          phase: 'end',
+          tool: name,
+          projectId,
+          message: `ok ${name}`,
+          durationMs: Date.now() - started,
+          dataChanged: Boolean(
+            name.startsWith('export_')
+            || name.startsWith('process_')
+            || name.includes('project')
+            || name.includes('task')
+            || name.includes('message')
+            || name.includes('asset')
+          ),
+        });
+        return result;
+      } catch (error) {
+        await runtime.record({
+          level: 'error',
+          type: 'tool',
+          phase: 'error',
+          tool: name,
+          projectId,
+          message: `error ${name}: ${error.message}`,
+          durationMs: Date.now() - started,
+          details: { stack: String(error.stack || '').slice(0, 800) },
+        });
+        throw error;
+      }
+    });
+  }
+
+  registerLoggedTool('get_project_info', {
     title: 'Get Greenscreen Studio MCP Info',
     description: 'Return project paths, default processing parameters, presets, resources, prompts, and available MCP tools.',
     annotations: {
@@ -1082,7 +1153,7 @@ export function createGreenscreenMcpServer(options = {}) {
     },
   }, async () => toolResult(getCapabilities(projectRoot)));
 
-  server.registerTool('validate_processing_params', {
+  registerLoggedTool('validate_processing_params', {
     title: 'Validate Greenscreen Processing Params',
     description: 'Normalize partial keying/layout parameters and return the exact values that export tools will use.',
     inputSchema: {
@@ -1105,7 +1176,7 @@ export function createGreenscreenMcpServer(options = {}) {
     },
   }, async ({ params }) => toolResult({ params: normalizeProcessingParams(params || {}) }));
 
-  server.registerTool('inspect_image', {
+  registerLoggedTool('inspect_image', {
     title: 'Inspect Image',
     description: 'Load a local image file and return width, height, size, and guessed MIME type before export.',
     inputSchema: {
@@ -1126,7 +1197,7 @@ export function createGreenscreenMcpServer(options = {}) {
     },
   }, async ({ inputPath }) => toolResult(await inspectImageFile(inputPath, context)));
 
-  server.registerTool('export_image', {
+  registerLoggedTool('export_image', {
     title: 'Export Image',
     description: 'Apply Greenscreen Studio chroma keying, auto-crop, scaling, and centering to a local image and write a PNG.',
     inputSchema: {
@@ -1134,6 +1205,7 @@ export function createGreenscreenMcpServer(options = {}) {
       outputPath: z.string().optional().describe('PNG output path. If omitted, a temp file is created.'),
       params: processingParamsSchema.optional().describe('Keying/layout/mode parameters. Missing fields use project defaults.'),
       overwrite: z.boolean().optional().describe('Allow replacing outputPath when it already exists. Defaults to false.'),
+      projectId: z.string().optional().describe('Optional studio project id to attach the export asset to.'),
     },
     annotations: {
       readOnlyHint: false,
@@ -1141,9 +1213,26 @@ export function createGreenscreenMcpServer(options = {}) {
       idempotentHint: false,
       openWorldHint: false,
     },
-  }, async (args) => toolResult(await exportImageFile(args, context), { filePath: true }));
+  }, async (args) => {
+    const result = await exportImageFile(args, context);
+    if (args.projectId) {
+      try {
+        store.addAsset(args.projectId, {
+          kind: 'export',
+          role: 'export',
+          filePath: result.outputPath,
+          originalName: path.basename(result.outputPath),
+          mimeType: 'image/png',
+          meta: { tool: 'export_image', mode: result.mode },
+        });
+      } catch {
+        // project may not exist; keep export result
+      }
+    }
+    return toolResult(result, { filePath: true });
+  });
 
-  server.registerTool('export_godot_pose_image', {
+  registerLoggedTool('export_godot_pose_image', {
     title: 'Export Godot Pose Image',
     description: 'Convert one green-screen pose image into a Godot atlas PNG, SpriteFrames .tres, feet-anchored AnimatedSprite2D .tscn, metadata JSON, and ZIP bundle.',
     inputSchema: {
@@ -1159,6 +1248,7 @@ export function createGreenscreenMcpServer(options = {}) {
         loop: z.boolean().optional(),
       }).describe('Godot pose export naming, frame, animation, and resource options.'),
       overwrite: z.boolean().optional().describe('Allow replacing output paths when they already exist. Defaults to false.'),
+      projectId: z.string().optional(),
     },
     annotations: {
       readOnlyHint: false,
@@ -1166,9 +1256,24 @@ export function createGreenscreenMcpServer(options = {}) {
       idempotentHint: false,
       openWorldHint: false,
     },
-  }, async (args) => toolResult(await exportGodotPoseImageFile(args, context), { filePath: true }));
+  }, async (args) => {
+    const result = await exportGodotPoseImageFile(args, context);
+    if (args.projectId && result.bundlePath) {
+      try {
+        store.addAsset(args.projectId, {
+          kind: 'godot_bundle',
+          role: 'export',
+          filePath: result.bundlePath,
+          originalName: path.basename(result.bundlePath),
+          mimeType: 'application/zip',
+          meta: { tool: 'export_godot_pose_image', basename: result.basename },
+        });
+      } catch { /* ignore */ }
+    }
+    return toolResult(result, { filePath: true });
+  });
 
-  server.registerTool('probe_video', {
+  registerLoggedTool('probe_video', {
     title: 'Probe Video',
     description: 'Run ffprobe on a local video and return width, height, fps, duration, frame count, codec, and audio presence.',
     inputSchema: {
@@ -1182,7 +1287,7 @@ export function createGreenscreenMcpServer(options = {}) {
     },
   }, async ({ inputPath }) => toolResult(await probeVideoFile(inputPath, context)));
 
-  server.registerTool('process_video', {
+  registerLoggedTool('process_video', {
     title: 'Process Video',
     description: 'Apply Greenscreen Studio frame processing to a local video and write WebM, MOV, MP4, or looping GIF output.',
     inputSchema: {
@@ -1192,6 +1297,7 @@ export function createGreenscreenMcpServer(options = {}) {
       params: processingParamsSchema.optional(),
       range: rangeSchema.optional().describe('Optional frame range [startFrame, endFrame) for trimming or tests.'),
       overwrite: z.boolean().optional().describe('Allow replacing outputPath when it already exists. Defaults to false.'),
+      projectId: z.string().optional(),
     },
     annotations: {
       readOnlyHint: false,
@@ -1199,9 +1305,23 @@ export function createGreenscreenMcpServer(options = {}) {
       idempotentHint: false,
       openWorldHint: false,
     },
-  }, async (args) => toolResult(await processVideoFile(args, context), { filePath: true }));
+  }, async (args) => {
+    const result = await processVideoFile(args, context);
+    if (args.projectId && result.outputPath) {
+      try {
+        store.addAsset(args.projectId, {
+          kind: 'export',
+          role: 'export',
+          filePath: result.outputPath,
+          originalName: path.basename(result.outputPath),
+          meta: { tool: 'process_video', format: result.format, mode: result.mode },
+        });
+      } catch { /* ignore */ }
+    }
+    return toolResult(result, { filePath: true });
+  });
 
-  server.registerTool('find_loop_end', {
+  registerLoggedTool('find_loop_end', {
     title: 'Find Loop End Frame',
     description: 'Find frame candidates that visually match a start frame for looping video clips, optionally after keying/layout preview processing.',
     inputSchema: {
@@ -1225,7 +1345,7 @@ export function createGreenscreenMcpServer(options = {}) {
     },
   }, async (args) => toolResult(await findLoopEndForVideo(args, context)));
 
-  server.registerTool('export_spritesheet', {
+  registerLoggedTool('export_spritesheet', {
     title: 'Export Sprite Sheet',
     description: 'Sample keyed video frames into a PNG sprite sheet with configurable cell size, rows, sampling rate, and max frames.',
     inputSchema: {
@@ -1234,6 +1354,7 @@ export function createGreenscreenMcpServer(options = {}) {
       params: processingParamsSchema.optional().describe('Keying/layout parameters used for each sampled frame.'),
       spriteParams: spriteParamsSchema.describe('Sprite sheet layout and sampling parameters.'),
       overwrite: z.boolean().optional().describe('Allow replacing outputPath when it already exists. Defaults to false.'),
+      projectId: z.string().optional(),
     },
     annotations: {
       readOnlyHint: false,
@@ -1241,9 +1362,24 @@ export function createGreenscreenMcpServer(options = {}) {
       idempotentHint: false,
       openWorldHint: false,
     },
-  }, async (args) => toolResult(await exportSpriteSheetFile(args, context), { filePath: true }));
+  }, async (args) => {
+    const result = await exportSpriteSheetFile(args, context);
+    if (args.projectId && result.outputPath) {
+      try {
+        store.addAsset(args.projectId, {
+          kind: 'spritesheet',
+          role: 'export',
+          filePath: result.outputPath,
+          originalName: path.basename(result.outputPath),
+          mimeType: 'image/png',
+          meta: { tool: 'export_spritesheet' },
+        });
+      } catch { /* ignore */ }
+    }
+    return toolResult(result, { filePath: true });
+  });
 
-  server.registerTool('export_godot_spriteframes', {
+  registerLoggedTool('export_godot_spriteframes', {
     title: 'Export Godot SpriteFrames',
     description: 'Export a Godot-ready atlas PNG, SpriteFrames .tres, AnimatedSprite2D .tscn, metadata JSON, and ZIP bundle from exact video frame clips, direction groups, and mirrored directions.',
     inputSchema: {
@@ -1255,6 +1391,7 @@ export function createGreenscreenMcpServer(options = {}) {
       params: processingParamsSchema.optional().describe('Keying/layout/cleanup parameters. The Godot frame size overrides layout canvas dimensions.'),
       godot: godotSpriteFramesSchema.describe('Godot atlas, animation, direction, and mirroring options.'),
       overwrite: z.boolean().optional().describe('Allow replacing output files when they already exist. Defaults to false.'),
+      projectId: z.string().optional(),
     },
     annotations: {
       readOnlyHint: false,
@@ -1262,15 +1399,202 @@ export function createGreenscreenMcpServer(options = {}) {
       idempotentHint: false,
       openWorldHint: false,
     },
-  }, async (args) => toolResult(await exportGodotSpriteFramesFile(args, context), { filePath: true }));
+  }, async (args) => {
+    const result = await exportGodotSpriteFramesFile(args, context);
+    if (args.projectId && result.bundlePath) {
+      try {
+        store.addAsset(args.projectId, {
+          kind: 'godot_bundle',
+          role: 'export',
+          filePath: result.bundlePath,
+          originalName: path.basename(result.bundlePath),
+          mimeType: 'application/zip',
+          meta: { tool: 'export_godot_spriteframes', basename: result.basename },
+        });
+      } catch { /* ignore */ }
+    }
+    return toolResult(result, { filePath: true });
+  });
 
-  registerResources(server);
+  // ===== Project management + AI collaboration =====
+  registerLoggedTool('list_projects', {
+    title: 'List Studio Projects',
+    description: 'List Greenscreen Studio projects stored in the local SQLite database under the data folder.',
+    inputSchema: {
+      includeArchived: z.boolean().optional(),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async ({ includeArchived }) => toolResult({
+    dataDir,
+    projects: store.listProjects({ includeArchived: includeArchived === true }),
+  }));
+
+  registerLoggedTool('create_project', {
+    title: 'Create Studio Project',
+    description: 'Create a new project with SQLite metadata and data/projects/<id> folders for sources/exports/artifacts.',
+    inputSchema: {
+      name: z.string().min(1),
+      description: z.string().optional(),
+      characterName: z.string().optional(),
+      params: processingParamsSchema.optional(),
+      notes: z.string().optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, async (args) => toolResult(store.createProject(args)));
+
+  registerLoggedTool('get_project', {
+    title: 'Get Studio Project Bundle',
+    description: 'Return one project with assets, recent jobs, collaboration tasks, and messages.',
+    inputSchema: {
+      projectId: z.string(),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async ({ projectId }) => {
+    const bundle = store.getProjectBundle(projectId);
+    if (!bundle) throw new Error(`project not found: ${projectId}`);
+    return toolResult(bundle);
+  });
+
+  registerLoggedTool('update_project', {
+    title: 'Update Studio Project',
+    description: 'Update project name/description/character/params/notes/status.',
+    inputSchema: {
+      projectId: z.string(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      characterName: z.string().optional(),
+      params: processingParamsSchema.optional(),
+      notes: z.string().optional(),
+      status: z.enum(['active', 'archived']).optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async ({ projectId, ...patch }) => {
+    const project = store.updateProject(projectId, patch);
+    if (!project) throw new Error(`project not found: ${projectId}`);
+    return toolResult(project);
+  });
+
+  registerLoggedTool('add_project_asset', {
+    title: 'Add Project Asset',
+    description: 'Register a local file as a project asset. Optionally copy it into the project data folder.',
+    inputSchema: {
+      projectId: z.string(),
+      path: z.string(),
+      kind: z.enum(['image', 'video', 'export', 'godot_bundle', 'spritesheet', 'other']).optional(),
+      role: z.enum(['source', 'export', 'preview', 'artifact', 'note']).optional(),
+      originalName: z.string().optional(),
+      mimeType: z.string().optional(),
+      copyIntoProject: z.boolean().optional(),
+      meta: z.record(z.string(), z.unknown()).optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, async (args) => toolResult(store.addAsset(args.projectId, {
+    kind: args.kind,
+    role: args.role,
+    filePath: resolveLocalPath(args.path, { baseDir, mustExist: true, label: 'path' }),
+    originalName: args.originalName,
+    mimeType: args.mimeType,
+    copyIntoProject: args.copyIntoProject === true,
+    meta: args.meta,
+  })));
+
+  registerLoggedTool('list_project_tasks', {
+    title: 'List Collaboration Tasks',
+    description: 'List AI/human collaboration tasks for a project.',
+    inputSchema: {
+      projectId: z.string(),
+      status: z.string().optional(),
+      limit: z.number().int().positive().optional(),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async ({ projectId, status, limit }) => toolResult({
+    tasks: store.listTasks(projectId, { status: status || null, limit }),
+  }));
+
+  registerLoggedTool('create_project_task', {
+    title: 'Create Collaboration Task',
+    description: 'Create a human/AI collaboration task on a project (export request, review, parameter tuning, etc.).',
+    inputSchema: {
+      projectId: z.string(),
+      title: z.string().min(1),
+      description: z.string().optional(),
+      assignee: z.string().optional(),
+      priority: z.enum(['high', 'normal', 'low']).optional(),
+      payload: z.record(z.string(), z.unknown()).optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, async (args) => toolResult(store.createTask(args.projectId, args)));
+
+  registerLoggedTool('claim_next_task', {
+    title: 'Claim Next Collaboration Task',
+    description: 'AI worker claims the next open collaboration task, optionally scoped to one project.',
+    inputSchema: {
+      projectId: z.string().optional(),
+      workerId: z.string().optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, async ({ projectId, workerId }) => {
+    const task = store.claimNextTask({ projectId: projectId || null, workerId: workerId || 'ai' });
+    return toolResult({
+      claimed: Boolean(task),
+      task,
+      project: task ? store.getProject(task.projectId, { withCounts: true }) : null,
+    });
+  });
+
+  registerLoggedTool('complete_task', {
+    title: 'Complete Collaboration Task',
+    description: 'Mark a claimed/in-progress task as done/needs_review and optionally leave a result + message.',
+    inputSchema: {
+      taskId: z.string(),
+      status: z.enum(['done', 'needs_review', 'blocked', 'cancelled']).optional(),
+      result: z.record(z.string(), z.unknown()).optional(),
+      message: z.string().optional(),
+      author: z.string().optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, async (args) => {
+    const task = store.completeTask(args.taskId, args);
+    if (!task) throw new Error(`task not found: ${args.taskId}`);
+    return toolResult(task);
+  });
+
+  registerLoggedTool('post_project_message', {
+    title: 'Post Project Collaboration Message',
+    description: 'Leave a human or AI note on a project, optionally attached to a task.',
+    inputSchema: {
+      projectId: z.string(),
+      body: z.string().min(1),
+      author: z.string().optional(),
+      taskId: z.string().optional(),
+      meta: z.record(z.string(), z.unknown()).optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, async (args) => toolResult(store.addMessage(args.projectId, args)));
+
+  registerLoggedTool('get_mcp_status', {
+    title: 'Get MCP Live Status',
+    description: 'Return live MCP session heartbeat status for the desktop/WebUI status panel.',
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async () => toolResult(await getMcpStatus({ dataDir })));
+
+  registerLoggedTool('get_mcp_logs', {
+    title: 'Get MCP Event Logs',
+    description: 'Return recent MCP tool/lifecycle event logs from data/mcp-events.ndjson.',
+    inputSchema: {
+      limit: z.number().int().positive().max(200).optional(),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  }, async ({ limit }) => toolResult({ logs: await readMcpLogs({ dataDir, limit }) }));
+
+  registerResources(server, { store, dataDir });
   registerPrompts(server);
 
+  server._gss = { store, runtime, dataDir };
   return server;
 }
 
-function registerResources(server) {
+function registerResources(server, { store = null, dataDir = getDataDir() } = {}) {
   server.registerResource('processing-presets', 'greenscreen://presets/default', {
     title: 'Greenscreen Processing Presets',
     description: 'Default keying/layout values and reusable processing presets.',
@@ -1304,6 +1628,18 @@ function registerResources(server) {
       uri: uri.href,
       mimeType: 'application/schema+json',
       text: JSON.stringify(PARAM_SCHEMA_RESOURCE, null, 2),
+    }],
+  }));
+
+  server.registerResource('studio-overview', 'greenscreen://studio/overview', {
+    title: 'Studio Project Overview',
+    description: 'SQLite-backed project overview, open collaboration tasks, and active jobs.',
+    mimeType: 'application/json',
+  }, async (uri) => ({
+    contents: [{
+      uri: uri.href,
+      mimeType: 'application/json',
+      text: JSON.stringify(store ? store.getOverview() : { dataDir, projects: [] }, null, 2),
     }],
   }));
 }
@@ -1707,6 +2043,16 @@ function mimeTypeForOutput(filePath) {
 async function main() {
   installMcpSafeConsole();
   const server = createGreenscreenMcpServer();
+  const runtime = server._gss?.runtime;
+  if (runtime) {
+    await runtime.start();
+    const shutdown = async (reason) => {
+      try { await runtime.stop(reason); } catch { /* ignore */ }
+    };
+    process.on('exit', () => { void shutdown('process exit'); });
+    process.on('SIGINT', () => { void shutdown('SIGINT'); process.exit(0); });
+    process.on('SIGTERM', () => { void shutdown('SIGTERM'); process.exit(0); });
+  }
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('Greenscreen Studio MCP server running on stdio');

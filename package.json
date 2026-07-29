@@ -61,6 +61,7 @@
       "electron/**/*",
       "dist/**/*",
       "server.cjs",
+      "lib/**/*",
       "videoProcessor.cjs",
       "videoFrameWorker.cjs",
       "mcp/**/*",

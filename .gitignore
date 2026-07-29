@@ -1,6 +1,7 @@
 node_modules/
 dist/
 release/
+data/
 electron-dev.log
 *.png
 !docs/images/*.png
@@ -9,3 +10,4 @@ test-*.png
 gen-test*.cjs
 .DS_Store
 logs/
+.playwright-mcp/

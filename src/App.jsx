@@ -8,6 +8,7 @@ import VideoPanel from './components/VideoPanel.jsx'
 import VideoPreview from './components/VideoPreview.jsx'
 import ProfileSwitcher from './components/ProfileSwitcher.jsx'
 import CollapsiblePanel from './components/CollapsiblePanel.jsx'
+import StudioPanel from './components/StudioPanel.jsx'
 import { formatBytes as formatLocalizedBytes, formatDateTime, formatDuration as formatLocalizedDuration, t, uiLanguage } from './i18n.js'
 
 // ===== 默认参数 =====
@@ -1241,10 +1242,12 @@ export default function App() {
   return (
     <div className={`app mobile-pane-${mobilePane}`}>
         <header className="header">
-          <div className="header-copy">
-            <h1>🎬 {t('app.title')}</h1>
-            <p>{t('app.tagline')}</p>
-          </div>
+        <div className="header-copy">
+          <h1>🎬 {t('app.title')}</h1>
+          <p>{t('app.tagline')}</p>
+        </div>
+        <div className="header-actions">
+          <StudioPanel />
           <ProfileSwitcher
             profiles={profiles}
             activeProfileId={activeProfileId}
@@ -1253,7 +1256,8 @@ export default function App() {
             onRename={handleRenameProfile}
             onDelete={handleDeleteProfile}
           />
-        </header>
+        </div>
+      </header>
 
         <nav className="mobile-nav" aria-label={t('app.mobileNavLabel')}>
           <button
@@ -1327,44 +1331,46 @@ export default function App() {
                     onClick={() => handleExport('transparent')}
                     disabled={!processingImageData || exporting}
                   >{exporting ? t('app.exporting') : `💾 ${t('app.exportTransparent')}`}</button>
-                  <section className="image-godot-export" aria-label={t('app.godotPoseTitle')}>
-                    <div className="image-godot-title">{t('app.godotPoseTitle')}</div>
-                    <div className="image-godot-fields">
-                      <input
-                        value={videoParams.godotParams.characterName}
-                        onChange={(event) => updateImageGodotParam('characterName', event.target.value)}
-                        placeholder={t('app.godotPoseCharacter')}
-                        aria-label={t('app.godotPoseCharacter')}
-                      />
-                      <input
-                        value={videoParams.godotParams.actionName}
-                        onChange={(event) => updateImageGodotParam('actionName', event.target.value)}
-                        placeholder={t('app.godotPoseAction')}
-                        aria-label={t('app.godotPoseAction')}
-                      />
-                      <input
-                        value={videoParams.godotParams.animationName}
-                        onChange={(event) => updateImageGodotParam('animationName', event.target.value)}
-                        placeholder={t('app.godotPoseAnimation')}
-                        aria-label={t('app.godotPoseAnimation')}
-                      />
-                    </div>
-                    <button
-                      className="dock-btn dock-btn-primary"
-                      onClick={handleExportGodotPose}
-                      disabled={!imageFile || imageGodotExporting}
-                    >{imageGodotExporting ? t('app.exporting') : t('app.exportGodotPose')}</button>
-                    {imageGodotError && <p className="image-godot-error">{imageGodotError}</p>}
-                    {imageGodotExport && (
-                      <div className="image-godot-result">
-                        <span>{t('app.godotPoseDone', { name: imageGodotExport.basename })}</span>
-                        <div className="image-godot-downloads">
-                          <button type="button" onClick={() => handleDownloadGodotPose('bundle')}>{t('app.downloadGodotPoseBundle')}</button>
-                          <button type="button" onClick={() => handleDownloadGodotPose('scene')}>{t('app.downloadGodotPoseScene')}</button>
-                        </div>
+                  <details className="image-godot-export" aria-label={t('app.godotPoseTitle')}>
+                    <summary>{t('app.godotPoseTitle')}</summary>
+                    <div className="image-godot-body">
+                      <div className="image-godot-fields">
+                        <input
+                          value={videoParams.godotParams.characterName}
+                          onChange={(event) => updateImageGodotParam('characterName', event.target.value)}
+                          placeholder={t('app.godotPoseCharacter')}
+                          aria-label={t('app.godotPoseCharacter')}
+                        />
+                        <input
+                          value={videoParams.godotParams.actionName}
+                          onChange={(event) => updateImageGodotParam('actionName', event.target.value)}
+                          placeholder={t('app.godotPoseAction')}
+                          aria-label={t('app.godotPoseAction')}
+                        />
+                        <input
+                          value={videoParams.godotParams.animationName}
+                          onChange={(event) => updateImageGodotParam('animationName', event.target.value)}
+                          placeholder={t('app.godotPoseAnimation')}
+                          aria-label={t('app.godotPoseAnimation')}
+                        />
                       </div>
-                    )}
-                  </section>
+                      <button
+                        className="dock-btn dock-btn-primary"
+                        onClick={handleExportGodotPose}
+                        disabled={!imageFile || imageGodotExporting}
+                      >{imageGodotExporting ? t('app.exporting') : t('app.exportGodotPose')}</button>
+                      {imageGodotError && <p className="image-godot-error">{imageGodotError}</p>}
+                      {imageGodotExport && (
+                        <div className="image-godot-result">
+                          <span>{t('app.godotPoseDone', { name: imageGodotExport.basename })}</span>
+                          <div className="image-godot-downloads">
+                            <button type="button" onClick={() => handleDownloadGodotPose('bundle')}>{t('app.downloadGodotPoseBundle')}</button>
+                            <button type="button" onClick={() => handleDownloadGodotPose('scene')}>{t('app.downloadGodotPoseScene')}</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </details>
                 </div>
               ) : (
                 <div ref={videoDockRef} className="dock-portal-target" />
