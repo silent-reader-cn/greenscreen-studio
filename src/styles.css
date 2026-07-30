@@ -2773,13 +2773,13 @@ body {
 /* ===== Action clip review workbench ===== */
 .review-clip-panel {
   margin: 10px 0 14px;
-  padding: 12px;
-  border: 1px solid #e5e5e5;
-  border-radius: 10px;
-  background: #fafafa;
+  padding: 14px;
+  border: 1px solid #e1e2df;
+  border-radius: 12px;
+  background: #f7f7f4;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .review-clip-panel-empty {
@@ -2790,7 +2790,7 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
 }
 
 .review-clip-head h3 {
@@ -2799,42 +2799,167 @@ body {
   color: #222;
 }
 
+.review-clip-head-copy,
+.review-marker-head-copy {
+  min-width: 0;
+}
+
+.review-clip-head-copy .hint {
+  margin-top: 4px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .review-clip-create {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #e2e3df;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.review-clip-create-head,
+.review-clip-create-actions,
+.review-clip-list-head,
+.review-clip-list-title,
+.review-marker-title-row,
+.review-marker-head-actions {
+  display: flex;
   align-items: center;
 }
 
-.review-clip-create input[type="text"] {
-  grid-column: 1 / -1;
+.review-clip-create-head,
+.review-clip-create-actions,
+.review-clip-list-head {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.review-section-kicker,
+.review-clip-list-title h4 {
+  color: #292a28;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.review-range-chip,
+.review-count-badge,
+.review-status-chip {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-range-chip {
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid #dedfd9;
+  background: #f6f6f2;
+  color: #595b56;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.review-count-badge {
+  min-width: 22px;
+  min-height: 22px;
+  justify-content: center;
+  padding: 2px 7px;
+  background: #e9eae5;
+  color: #50514e;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.review-clip-name-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: #666862;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.review-clip-name-field input[type="text"] {
   width: 100%;
-  border: 1px solid #ddd;
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid #d5d6d0;
   border-radius: 6px;
-  padding: 6px 8px;
+  padding: 8px 10px;
+  background: #fff;
+  color: #222;
   font-size: 13px;
+  outline: none;
+}
+
+.review-clip-name-field input[type="text"]:focus,
+.review-marker-create input:focus,
+.review-marker-create select:focus,
+.review-marker-create textarea:focus,
+.review-marker-edit input:focus,
+.review-marker-edit select:focus,
+.review-marker-edit textarea:focus {
+  border-color: #7a7d74;
+  box-shadow: 0 0 0 2px rgba(80, 82, 76, 0.09);
 }
 
 .review-loop-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 2px;
   font-size: 12px;
   color: #555;
+  cursor: pointer;
+}
+
+.review-loop-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #1a1a1a;
+}
+
+.review-clip-create-actions .studio-primary-btn {
+  min-width: 112px;
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.review-clip-list-title,
+.review-marker-title-row {
+  gap: 7px;
+}
+
+.review-clip-list-head .hint {
+  min-width: 0;
+  text-align: right;
+  line-height: 1.35;
 }
 
 .review-clip-bulk {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-height: 30px;
 }
 
 .review-clip-bulk-actions {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.review-clip-bulk-actions button,
+.review-clip-head button,
+.review-marker-head-actions button {
+  white-space: nowrap;
 }
 
 .review-clip-error {
@@ -2846,21 +2971,21 @@ body {
 .review-clip-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  max-height: 280px;
+  gap: 7px;
+  max-height: 320px;
   overflow: auto;
 }
 
 .review-clip-item {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  flex-direction: column;
   gap: 8px;
-  padding: 8px 10px;
-  border: 1px solid #e8e8e8;
+  padding: 10px;
+  border: 1px solid #e0e1dd;
   border-radius: 8px;
   background: #fff;
   cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
 .review-clip-item:hover {
@@ -2869,9 +2994,17 @@ body {
 }
 
 .review-clip-item.selected {
-  border-color: #3366aa;
-  box-shadow: inset 0 0 0 1px rgba(51, 102, 170, 0.25);
-  background: #eef4ff;
+  border-color: #758aab;
+  box-shadow: inset 3px 0 0 #526d98;
+  background: #f5f8fc;
+}
+
+.review-clip-item-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
 }
 
 .review-clip-main {
@@ -2884,6 +3017,8 @@ body {
 .review-clip-main strong {
   font-size: 13px;
   color: #222;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .review-clip-main span {
@@ -2894,11 +3029,17 @@ body {
 
 .review-clip-actions {
   display: flex;
-  gap: 4px;
-  flex-shrink: 0;
+  width: 100%;
+  gap: 6px;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  max-width: 142px;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 8px;
+  border-top: 1px solid #dfe5ed;
+}
+
+.review-clip-actions .review-status-select {
+  margin-left: auto;
 }
 
 .review-checks {
@@ -2930,14 +3071,50 @@ body {
 }
 
 .review-status-select {
-  width: 100%;
-  min-width: 0;
+  width: auto;
+  min-width: 96px;
+  min-height: 30px;
   border: 1px solid #d5d5d5;
   border-radius: 5px;
   background: #fff;
   color: #333;
   padding: 4px 6px;
   font-size: 11px;
+}
+
+.review-status-chip {
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid #d9dadd;
+  background: #f2f3f4;
+  color: #575b61;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.review-status-chip.status-needs_review {
+  border-color: #e1c98f;
+  background: #fff8e8;
+  color: #72530c;
+}
+
+.review-status-chip.status-approved,
+.review-status-chip.status-verified_in_game {
+  border-color: #a8ceb4;
+  background: #edf8f0;
+  color: #28633a;
+}
+
+.review-status-chip.status-rejected {
+  border-color: #e3b0ad;
+  background: #fff0ef;
+  color: #8b302b;
+}
+
+.review-status-chip.status-exported {
+  border-color: #b7c1df;
+  background: #f0f3fb;
+  color: #445c91;
 }
 
 .review-clip-edit-row {
@@ -2948,7 +3125,8 @@ body {
 }
 
 .review-clip-edit-row input {
-  min-width: 120px;
+  min-width: 0;
+  flex: 1 1 140px;
   border: 1px solid #ddd;
   border-radius: 6px;
   padding: 4px 6px;
@@ -3051,7 +3229,7 @@ body {
 }
 
 .review-marker-editor {
-  padding-top: 10px;
+  padding-top: 12px;
   border-top: 1px solid #ddd;
   display: flex;
   flex-direction: column;
@@ -3062,7 +3240,7 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
 }
 
 .review-marker-head h4 {
@@ -3071,16 +3249,73 @@ body {
   font-size: 13px;
 }
 
+.review-marker-head-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.review-marker-clip-name {
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  color: #666;
+  font-size: 11px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-marker-head-actions {
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.review-marker-head-actions button {
+  min-height: 30px;
+}
+
+.review-marker-add-toggle {
+  min-width: 98px;
+}
+
 .review-marker-create {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 92px;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid #dedfd9;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.review-marker-create-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 2px;
+}
+
+.review-marker-create-title strong {
+  color: #292a28;
+  font-size: 12px;
+}
+
+.review-marker-create-title span {
+  color: #888;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .review-marker-create label {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
   color: #555;
   font-size: 11px;
@@ -3094,12 +3329,14 @@ body {
 .review-marker-edit textarea {
   width: 100%;
   min-width: 0;
+  min-height: 36px;
   border: 1px solid #d8d8d8;
   border-radius: 5px;
   background: #fff;
   color: #222;
-  padding: 5px 7px;
+  padding: 7px 8px;
   font: inherit;
+  outline: none;
 }
 
 .review-marker-create textarea,
@@ -3109,6 +3346,10 @@ body {
   font-size: 11px;
 }
 
+.review-marker-create .studio-primary-btn {
+  min-height: 38px;
+}
+
 .review-marker-wide {
   grid-column: 1 / -1;
 }
@@ -3116,15 +3357,17 @@ body {
 .review-marker-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   max-height: 260px;
   overflow: auto;
 }
 
 .review-marker-row {
-  min-height: 34px;
-  padding: 6px 8px;
-  border-bottom: 1px solid #e4e4e4;
+  min-height: 38px;
+  padding: 7px 8px;
+  border: 1px solid #e4e4e0;
+  border-radius: 7px;
+  background: #fff;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -3199,12 +3442,106 @@ body {
 }
 
 @media (max-width: 520px) {
+  .review-clip-panel {
+    margin: 8px 0 12px;
+    padding: 12px;
+    border-radius: 10px;
+  }
+
+  .review-clip-list-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .review-clip-list-head .hint {
+    text-align: left;
+  }
+
+  .review-clip-bulk-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .review-clip-bulk-actions button {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .review-clip-head button,
+  .review-clip-create-actions .studio-primary-btn,
+  .review-loop-toggle,
+  .review-clip-actions button,
+  .review-clip-actions .review-status-select,
+  .review-marker-create input,
+  .review-marker-create select,
+  .review-marker-create textarea,
+  .review-marker-create .studio-primary-btn,
+  .review-marker-actions button,
+  .review-marker-edit input,
+  .review-marker-edit select,
+  .review-marker-edit textarea {
+    min-height: 44px;
+  }
+
+  .review-marker-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .review-marker-head-actions {
+    width: 100%;
+    display: grid;
+    grid-template-columns: minmax(72px, 0.7fr) minmax(110px, 1fr);
+  }
+
+  .review-marker-head-actions button {
+    width: 100%;
+    min-height: 44px;
+  }
+
   .review-marker-row {
     align-items: flex-start;
     flex-direction: column;
   }
 
   .review-marker-actions {
-    align-self: flex-end;
+    align-self: stretch;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 360px) {
+  .review-clip-create-head,
+  .review-clip-create-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .review-range-chip {
+    align-self: flex-start;
+  }
+
+  .review-clip-create-actions .studio-primary-btn {
+    width: 100%;
+  }
+
+  .review-clip-bulk-actions,
+  .review-marker-head-actions,
+  .review-marker-create,
+  .review-marker-edit {
+    grid-template-columns: 1fr;
+  }
+
+  .review-marker-wide,
+  .review-marker-edit textarea,
+  .review-marker-edit .review-marker-actions {
+    grid-column: 1;
+  }
+
+  .review-clip-actions .review-status-select {
+    width: 100%;
+    margin-left: 0;
   }
 }

@@ -52,6 +52,7 @@ export default function SemanticMarkerEditor({
   const [frameDraft, setFrameDraft] = useState(clip?.startFrame ?? 0)
   const [labelDraft, setLabelDraft] = useState('')
   const [payloadDraft, setPayloadDraft] = useState('{}')
+  const [createOpen, setCreateOpen] = useState(false)
   const [editingId, setEditingId] = useState('')
   const [editDraft, setEditDraft] = useState(null)
   const requestVersionRef = useRef(0)
@@ -91,6 +92,7 @@ export default function SemanticMarkerEditor({
     setMarkers([])
     onMarkersChange?.([])
     setFrameDraft(clip?.startFrame ?? 0)
+    setCreateOpen(false)
     setEditingId('')
     setEditDraft(null)
   }, [clip?.endFrame, clip?.id, clip?.startFrame, onMarkersChange])
@@ -117,6 +119,7 @@ export default function SemanticMarkerEditor({
       setLabelDraft('')
       setPayloadDraft('{}')
       await refresh()
+      setCreateOpen(false)
     } catch (err) {
       setError(err.message || t('review.marker.createFailed'))
     } finally {
@@ -185,20 +188,40 @@ export default function SemanticMarkerEditor({
   return (
     <section className="review-marker-editor" aria-label={t('review.marker.title')}>
       <div className="review-marker-head">
-        <div>
-          <h4>{t('review.marker.title')}</h4>
-          <p className="hint">{t('review.marker.clipRange', {
-            name: clip.name,
+        <div className="review-marker-head-copy">
+          <div className="review-marker-title-row">
+            <h4>{t('review.marker.title')}</h4>
+            <span className="review-count-badge">{orderedMarkers.length}</span>
+          </div>
+          <p className="review-marker-clip-name" title={clip.name}>
+            {t('review.marker.currentClip', { name: clip.name })}
+          </p>
+          <span className="review-range-chip">{t('review.marker.frameRange', {
             start: minFrame,
             end: maxFrame,
-          })}</p>
+          })}</span>
         </div>
-        <button type="button" className="studio-mini-btn" onClick={() => void refresh()} disabled={loading || busy}>
-          {loading ? t('review.marker.loading') : t('review.refresh')}
-        </button>
+        <div className="review-marker-head-actions">
+          <button type="button" className="studio-mini-btn" onClick={() => void refresh()} disabled={loading || busy}>
+            {loading ? t('review.marker.loading') : t('review.refresh')}
+          </button>
+          <button
+            type="button"
+            className={`${createOpen ? 'studio-mini-btn' : 'studio-primary-btn'} review-marker-add-toggle`}
+            aria-expanded={createOpen}
+            onClick={() => setCreateOpen((open) => !open)}
+            disabled={disabled || busy}
+          >
+            {createOpen ? t('review.marker.closeCreate') : t('review.marker.newMarker')}
+          </button>
+        </div>
       </div>
 
-      <div className="review-marker-create">
+      {createOpen && <div className="review-marker-create">
+        <div className="review-marker-create-title review-marker-wide">
+          <strong>{t('review.marker.createTitle')}</strong>
+          <span>{t('review.marker.createHint', { start: minFrame, end: maxFrame })}</span>
+        </div>
         <label>
           <span>{t('review.marker.type')}</span>
           <select value={typeDraft} onChange={(event) => setTypeDraft(event.target.value)} disabled={disabled || busy}>
@@ -240,7 +263,7 @@ export default function SemanticMarkerEditor({
         <button type="button" className="studio-primary-btn review-marker-wide" onClick={() => void handleCreate()} disabled={disabled || busy}>
           {t('review.marker.add')}
         </button>
-      </div>
+      </div>}
 
       {error && <p className="review-clip-error">{error}</p>}
 

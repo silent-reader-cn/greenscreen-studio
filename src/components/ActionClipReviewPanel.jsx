@@ -333,7 +333,7 @@ export default function ActionClipReviewPanel({
   return (
     <div className="review-clip-panel">
       <div className="review-clip-head">
-        <div>
+        <div className="review-clip-head-copy">
           <h3>{t('review.title')}</h3>
           <p className="hint">{t('review.subtitle', { source: sourceLabel || assetId })}</p>
         </div>
@@ -343,41 +343,67 @@ export default function ActionClipReviewPanel({
       </div>
 
       <div className="review-clip-create">
-        <input
-          type="text"
-          value={nameDraft}
-          placeholder={t('review.namePlaceholder')}
-          onChange={(e) => setNameDraft(e.target.value)}
-          disabled={disabled || busy}
-        />
-        <label className="review-loop-toggle">
+        <div className="review-clip-create-head">
+          <span className="review-section-kicker">{t('review.newClip')}</span>
+          <span className="review-range-chip">
+            {t('review.currentRange', {
+              start: range?.startFrame ?? 0,
+              end: Math.max(0, (range?.endFrame ?? 0) - 1),
+            })}
+          </span>
+        </div>
+        <label className="review-clip-name-field">
+          <span>{t('review.name')}</span>
           <input
-            type="checkbox"
-            checked={loopDraft}
-            onChange={(e) => setLoopDraft(e.target.checked)}
+            type="text"
+            value={nameDraft}
+            placeholder={t('review.namePlaceholder')}
+            onChange={(e) => setNameDraft(e.target.value)}
             disabled={disabled || busy}
           />
-          {t('review.loop')}
         </label>
-        <button
-          type="button"
-          className="studio-primary-btn"
-          onClick={() => void handleCreate()}
-          disabled={disabled || busy || !range || !(range.endFrame > range.startFrame)}
-        >
-          {t('review.createFromRange', {
-            start: range?.startFrame ?? 0,
-            end: Math.max(0, (range?.endFrame ?? 0) - 1),
-          })}
-        </button>
+        <div className="review-clip-create-actions">
+          <label className="review-loop-toggle">
+            <input
+              type="checkbox"
+              checked={loopDraft}
+              onChange={(e) => setLoopDraft(e.target.checked)}
+              disabled={disabled || busy}
+            />
+            <span>{t('review.loop')}</span>
+          </label>
+          <button
+            type="button"
+            className="studio-primary-btn"
+            onClick={() => void handleCreate()}
+            disabled={disabled || busy || !range || !(range.endFrame > range.startFrame)}
+            aria-label={t('review.createFromRange', {
+              start: range?.startFrame ?? 0,
+              end: Math.max(0, (range?.endFrame ?? 0) - 1),
+            })}
+            title={t('review.createFromRange', {
+              start: range?.startFrame ?? 0,
+              end: Math.max(0, (range?.endFrame ?? 0) - 1),
+            })}
+          >
+            {t('review.saveClip')}
+          </button>
+        </div>
       </div>
 
-      <div className="review-clip-bulk">
+      <div className="review-clip-list-head">
+        <div className="review-clip-list-title">
+          <h4>{t('review.clipList')}</h4>
+          <span className="review-count-badge">{orderedClips.length}</span>
+        </div>
         <span className="hint">
           {selectedClipIds.length > 0
             ? t('review.selectedCount', { count: selectedClipIds.length })
             : t('review.selectHint')}
         </span>
+      </div>
+
+      <div className="review-clip-bulk">
         <div className="review-clip-bulk-actions">
           <button
             type="button"
@@ -407,6 +433,7 @@ export default function ActionClipReviewPanel({
         )}
         {orderedClips.map((clip) => {
           const selected = selectedSet.has(String(clip.id))
+          const primary = String(primarySelected?.id || '') === String(clip.id)
           const editing = editingId === clip.id
           const editable = isClipEditable(clip.status)
           const nextStatuses = availableClipStatuses(clip.status)
@@ -415,105 +442,111 @@ export default function ActionClipReviewPanel({
               key={clip.id}
               role="option"
               aria-selected={selected}
-              className={`review-clip-item ${selected ? 'selected' : ''}`}
+              className={`review-clip-item ${selected ? 'selected' : ''} ${primary ? 'primary' : ''}`}
               onClick={(event) => handleSelect(clip, event)}
             >
-              <div className="review-clip-main">
-                {editing ? (
-                  <form
-                    className="review-clip-edit-row"
-                    onClick={(e) => e.stopPropagation()}
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      void handleRename(clip)
-                    }}
-                  >
-                    <input
-                      autoFocus
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      disabled={busy || !editable}
-                      title={!editable ? t('review.reviewLocked') : undefined}
-                    />
-                    <button type="submit" className="studio-mini-btn" disabled={busy}>{t('review.saveName')}</button>
-                    <button
-                      type="button"
-                      className="studio-mini-btn"
-                      onClick={() => setEditingId('')}
-                      disabled={busy}
+              <div className="review-clip-item-head">
+                <div className="review-clip-main">
+                  {editing ? (
+                    <form
+                      className="review-clip-edit-row"
+                      onClick={(e) => e.stopPropagation()}
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        void handleRename(clip)
+                      }}
                     >
-                      {t('review.cancelEdit')}
-                    </button>
-                  </form>
-                ) : (
-                  <>
-                    <strong>{clip.name}</strong>
-                    <span>
-                      {t('review.clipMeta', {
-                        start: clip.startFrame,
-                        end: Math.max(clip.startFrame, clip.endFrame - 1),
-                        status: statusLabel(clip.status),
-                        version: clip.version,
-                        loop: clip.loop ? t('common.yes') : t('common.no'),
-                      })}
-                    </span>
-                    {clip.reviewChecks?.checks && (
-                      <div className="review-checks">
-                        {clip.reviewChecks.checks.map((item) => (
-                          <span key={item.id} className={`review-check status-${item.status}`}>
-                            {t(`review.checks.${item.id}`)}: {t(`review.checks.status.${item.status}`)}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
+                      <input
+                        autoFocus
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        disabled={busy || !editable}
+                        title={!editable ? t('review.reviewLocked') : undefined}
+                      />
+                      <button type="submit" className="studio-mini-btn" disabled={busy}>{t('review.saveName')}</button>
+                      <button
+                        type="button"
+                        className="studio-mini-btn"
+                        onClick={() => setEditingId('')}
+                        disabled={busy}
+                      >
+                        {t('review.cancelEdit')}
+                      </button>
+                    </form>
+                  ) : (
+                    <>
+                      <strong>{clip.name}</strong>
+                      <span>
+                        {t('review.clipMetaCompact', {
+                          start: clip.startFrame,
+                          end: Math.max(clip.startFrame, clip.endFrame - 1),
+                          version: clip.version,
+                          loop: clip.loop ? t('common.yes') : t('common.no'),
+                        })}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <span className={`review-status-chip status-${clip.status}`}>{statusLabel(clip.status)}</span>
               </div>
-              <div className="review-clip-actions" onClick={(e) => e.stopPropagation()}>
-                <button
-                  type="button"
-                  className="studio-mini-btn"
-                  onClick={() => {
-                    setEditingId(clip.id)
-                    setEditName(clip.name)
-                  }}
-                  disabled={busy || !editable}
-                  title={!editable ? t('review.reviewLocked') : undefined}
-                >
-                  {t('review.rename')}
-                </button>
-                <button
-                  type="button"
-                  className="studio-mini-btn"
-                  onClick={() => void handleToggleLoop(clip)}
-                  disabled={busy || !editable}
-                  title={!editable ? t('review.reviewLocked') : undefined}
-                >
-                  {clip.loop ? t('review.unloop') : t('review.loop')}
-                </button>
-                <select
-                  className="review-status-select"
-                  aria-label={t('review.statusControl', { name: clip.name })}
-                  value={clip.status}
-                  onChange={(event) => void handleStatusChange(clip, event.target.value)}
-                  disabled={busy || nextStatuses.length === 0}
-                >
-                  <option value={clip.status}>{statusLabel(clip.status)}</option>
-                  {nextStatuses.map((status) => (
-                    <option key={status} value={status}>{statusLabel(status)}</option>
+
+              {clip.reviewChecks?.checks && (
+                <div className="review-checks">
+                  {clip.reviewChecks.checks.map((item) => (
+                    <span key={item.id} className={`review-check status-${item.status}`}>
+                      {t(`review.checks.${item.id}`)}: {t(`review.checks.status.${item.status}`)}
+                    </span>
                   ))}
-                </select>
-                {clip.status === 'approved' && (
+                </div>
+              )}
+
+              {primary && (
+                <div className="review-clip-actions" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
                     className="studio-mini-btn"
-                    onClick={() => void handleQueueExportTask(clip)}
-                    disabled={busy || disabled}
+                    onClick={() => {
+                      setEditingId(clip.id)
+                      setEditName(clip.name)
+                    }}
+                    disabled={busy || !editable}
+                    title={!editable ? t('review.reviewLocked') : undefined}
                   >
-                    {t('review.queueExportTask')}
+                    {t('review.rename')}
                   </button>
-                )}
-              </div>
+                  <button
+                    type="button"
+                    className="studio-mini-btn"
+                    onClick={() => void handleToggleLoop(clip)}
+                    disabled={busy || !editable}
+                    title={!editable ? t('review.reviewLocked') : undefined}
+                  >
+                    {clip.loop ? t('review.unloop') : t('review.loop')}
+                  </button>
+                  <select
+                    className="review-status-select"
+                    aria-label={t('review.statusControl', { name: clip.name })}
+                    value={clip.status}
+                    onChange={(event) => void handleStatusChange(clip, event.target.value)}
+                    disabled={busy || nextStatuses.length === 0}
+                  >
+                    <option value={clip.status}>{statusLabel(clip.status)}</option>
+                    {nextStatuses.map((status) => (
+                      <option key={status} value={status}>{statusLabel(status)}</option>
+                    ))}
+                  </select>
+                  {clip.status === 'approved' && (
+                    <button
+                      type="button"
+                      className="studio-mini-btn"
+                      onClick={() => void handleQueueExportTask(clip)}
+                      disabled={busy || disabled}
+                    >
+                      {t('review.queueExportTask')}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}

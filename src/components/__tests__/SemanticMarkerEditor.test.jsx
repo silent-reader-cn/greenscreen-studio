@@ -75,6 +75,8 @@ describe('SemanticMarkerEditor', () => {
       expect.objectContaining({ id: 'marker_1', frame: 12, type: 'windup_end' }),
     ])
 
+    expect(screen.queryByLabelText(t('review.marker.payload'))).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: t('review.marker.newMarker') }))
     fireEvent.change(screen.getByLabelText(t('review.marker.type')), { target: { value: 'active_start' } })
     fireEvent.change(screen.getByLabelText(t('review.marker.frame')), { target: { value: '24' } })
     fireEvent.change(screen.getByLabelText(t('review.marker.label')), { target: { value: 'damage window' } })

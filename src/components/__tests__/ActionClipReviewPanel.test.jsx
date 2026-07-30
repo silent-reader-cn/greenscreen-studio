@@ -113,11 +113,14 @@ describe('ActionClipReviewPanel', () => {
     const idle = await screen.findByText('idle')
     const attack = screen.getByText('attack')
 
+    expect(screen.queryByRole('button', { name: t('review.rename') })).toBeNull()
+
     fireEvent.click(idle)
     expect(props.onSelectionChange).toHaveBeenLastCalledWith(['clip_1'])
     expect(props.onApplyClipRange).toHaveBeenCalledWith(expect.objectContaining({ id: 'clip_1' }))
 
     rerender(<ActionClipReviewPanel {...props} selectedClipIds={['clip_1']} />)
+    expect(screen.getByRole('button', { name: t('review.rename') })).toBeTruthy()
     fireEvent.click(screen.getByText('attack'), { ctrlKey: true })
     expect(props.onSelectionChange).toHaveBeenLastCalledWith(['clip_1', 'clip_2'])
 
@@ -128,7 +131,7 @@ describe('ActionClipReviewPanel', () => {
   it('creates, renames, updates the range, and deletes clips through the API', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const onSelectionChange = vi.fn()
-    const { rerender } = renderPanel({ onSelectionChange })
+    const { rerender, props } = renderPanel({ onSelectionChange })
     await screen.findByText('idle')
 
     const nameInput = screen.getByPlaceholderText(t('review.namePlaceholder'))
@@ -136,6 +139,8 @@ describe('ActionClipReviewPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: t('review.createFromRange', { start: 30, end: 47 }) }))
     await screen.findByText('recovery')
     expect(onSelectionChange).toHaveBeenLastCalledWith(['clip_3'])
+
+    rerender(<ActionClipReviewPanel {...props} selectedClipIds={['clip_3']} />)
 
     const recoveryItem = screen.getByText('recovery').closest('[role="option"]')
     fireEvent.click(within(recoveryItem).getByRole('button', { name: t('review.rename') }))
@@ -206,7 +211,7 @@ describe('ActionClipReviewPanel', () => {
       expect.objectContaining({ method: 'POST' }),
     ))
     expect(screen.getByRole('button', { name: t('review.updateRange') }).disabled).toBe(true)
-    expect(screen.getByRole('button', { name: t('review.marker.add') }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: t('review.marker.newMarker') }).disabled).toBe(true)
   })
 
   it('requires confirmation before approving a clip with automated warnings', async () => {
