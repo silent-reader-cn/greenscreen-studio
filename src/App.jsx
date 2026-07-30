@@ -1,4 +1,15 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import {
+  Download,
+  Eye,
+  FolderInput,
+  Image as ImageIcon,
+  Layers3,
+  MonitorUp,
+  SlidersHorizontal,
+  Upload,
+  Video,
+} from 'lucide-react'
 import { applyKeying, composeToCanvas, autoCropKeyed, measureAlphaHeight } from './lib/keying.js'
 import { clamp, cropImageData, getRegionOverlayStyle, makeRegionFromPoints } from './lib/region.js'
 import KeyingPanel from './components/KeyingPanel.jsx'
@@ -10,6 +21,7 @@ import ProfileSwitcher from './components/ProfileSwitcher.jsx'
 import CollapsiblePanel from './components/CollapsiblePanel.jsx'
 import StudioPanel from './components/StudioPanel.jsx'
 import ActionClipReviewPanel from './components/ActionClipReviewPanel.jsx'
+import WorkspaceSidebar from './components/WorkspaceSidebar.jsx'
 import { formatBytes as formatLocalizedBytes, formatDateTime, formatDuration as formatLocalizedDuration, t, uiLanguage } from './i18n.js'
 
 // ===== 默认参数 =====
@@ -560,8 +572,10 @@ export default function App() {
   const [mediaMode, setMediaMode] = useState('image')  // 'image' | 'video'
   // Mobile: toggle between preview canvas and settings/export panels
   const [mobilePane, setMobilePane] = useState('preview') // 'preview' | 'settings'
+  const [activeTool, setActiveTool] = useState('source')
   const [videoDockTarget, setVideoDockTarget] = useState(null)
   const videoDockRef = useRef(null)
+  const fileInputRef = useRef(null)
   const [clipboardImport, setClipboardImport] = useState(null)
   const clipboardImportRequestRef = useRef(0)
 
@@ -622,6 +636,7 @@ export default function App() {
   // 切换模式时保留另一边状态，避免 Tab 来回切换导致预览丢失
   const switchMode = useCallback((mode) => {
     setMediaMode(mode)
+    setActiveTool('source')
     setRegionSelectionMode(false)
     setRegionDraft(null)
   }, [])
@@ -1065,6 +1080,32 @@ export default function App() {
     img.src = url
   }, [])
 
+  const handleMediaFiles = useCallback((rawFiles) => {
+    const videos = []
+    const images = []
+
+    for (const raw of Array.from(rawFiles || [])) {
+      const kind = getMediaKind(raw)
+      const file = normalizeMediaFile(raw, kind)
+      if (!file || !kind) continue
+      if (kind === 'video') videos.push(file)
+      else if (kind === 'image') images.push(file)
+    }
+
+    if (videos.length > 0) {
+      switchMode('video')
+      setDroppedVideoFiles(videos)
+      setMobilePane('preview')
+      return
+    }
+
+    if (images.length > 0) {
+      switchMode('image')
+      handleFileLoad(images[0])
+      setMobilePane('preview')
+    }
+  }, [handleFileLoad, switchMode])
+
   const handleCancelClipboardImport = useCallback(() => {
     clipboardImportRequestRef.current += 1
     setClipboardImport(null)
@@ -1085,7 +1126,7 @@ export default function App() {
 
     if (kind === 'video') {
       switchMode('video')
-      setDroppedVideoFile(file)
+      setDroppedVideoFiles([file])
     }
   }, [clipboardImport, handleFileLoad, switchMode])
 
@@ -1144,29 +1185,7 @@ export default function App() {
       event.preventDefault()
       setDragOver(false)
 
-      const rawFiles = Array.from(event.dataTransfer?.files || [])
-      if (rawFiles.length === 0) return
-
-      const videos = []
-      const images = []
-      for (const raw of rawFiles) {
-        const kind = getMediaKind(raw)
-        const file = normalizeMediaFile(raw, kind)
-        if (!file || !kind) continue
-        if (kind === 'video') videos.push(file)
-        else if (kind === 'image') images.push(file)
-      }
-
-      if (videos.length > 0) {
-        switchMode('video')
-        setDroppedVideoFiles(videos)
-        return
-      }
-
-      if (images.length > 0) {
-        switchMode('image')
-        handleFileLoad(images[0])
-      }
+      handleMediaFiles(event.dataTransfer?.files)
     }
 
     document.addEventListener('dragover', onDragOver)
@@ -1177,7 +1196,7 @@ export default function App() {
       document.removeEventListener('dragleave', onDragLeave)
       document.removeEventListener('drop', onDrop)
     }
-  }, [handleFileLoad, switchMode])
+  }, [handleMediaFiles])
 
   // ===== 导出 =====
   const handleExportGodotPose = async () => {
@@ -1282,42 +1301,108 @@ export default function App() {
     }
   }
 
+  const currentAssetName = mediaMode === 'video' ? videoFile?.name : imageFile?.name
+  const openFilePicker = () => fileInputRef.current?.click()
+
   return (
     <div className={`app mobile-pane-${mobilePane}`}>
-        <header className="header">
-        <div className="header-copy">
-          <h1>🎬 {t('app.title')}</h1>
-          <p>{t('app.tagline')}</p>
+      <header className="header">
+        <div className="header-brand">
+          <span className="header-brand-mark" aria-hidden="true">
+            <Layers3 size={19} strokeWidth={1.8} />
+          </span>
+          <div className="header-copy">
+            <h1>{t('app.title')}</h1>
+            <p title={currentAssetName || t('app.noAsset')}>
+              {currentAssetName || t('app.noAsset')}
+            </p>
+          </div>
         </div>
         <div className="header-actions">
+          <div className="header-profiles desktop-profiles">
+            <ProfileSwitcher
+              profiles={profiles}
+              activeProfileId={activeProfileId}
+              onSelect={handleSelectProfile}
+              onCreate={handleCreateProfile}
+              onRename={handleRenameProfile}
+              onDelete={handleDeleteProfile}
+            />
+          </div>
           <StudioPanel onOpenVideoAsset={handleOpenProjectVideo} />
-          <ProfileSwitcher
-            profiles={profiles}
-            activeProfileId={activeProfileId}
-            onSelect={handleSelectProfile}
-            onCreate={handleCreateProfile}
-            onRename={handleRenameProfile}
-            onDelete={handleDeleteProfile}
-          />
+          <button type="button" className="header-import-btn" onClick={openFilePicker}>
+            <Upload size={16} aria-hidden="true" />
+            <span>{t('app.importAsset')}</span>
+          </button>
         </div>
       </header>
 
-        <nav className="mobile-nav" aria-label={t('app.mobileNavLabel')}>
-          <button
-            type="button"
-            className={`mobile-nav-btn ${mobilePane === 'preview' ? 'active' : ''}`}
-            onClick={() => setMobilePane('preview')}
-          >{t('app.mobilePreview')}</button>
-          <button
-            type="button"
-            className={`mobile-nav-btn ${mobilePane === 'settings' ? 'active' : ''}`}
-            onClick={() => setMobilePane('settings')}
-          >{t('app.mobileSettings')}</button>
-        </nav>
+      <input
+        ref={fileInputRef}
+        className="visually-hidden"
+        type="file"
+        accept="image/*,video/*,.mov,.mkv,.avi"
+        multiple
+        onChange={(event) => {
+          handleMediaFiles(event.target.files)
+          event.target.value = ''
+        }}
+      />
 
-        <main className="main">
-          <aside className="sidebar">
-            <div className="sidebar-scroll">
+      <nav className="mobile-nav" aria-label={t('app.mobileNavLabel')}>
+        <button
+          type="button"
+          className={`mobile-nav-btn ${mobilePane === 'preview' ? 'active' : ''}`}
+          onClick={() => setMobilePane('preview')}
+        >
+          <MonitorUp size={18} aria-hidden="true" />
+          <span>{t('app.mobilePreview')}</span>
+        </button>
+        <button
+          type="button"
+          className={`mobile-nav-btn ${mobilePane === 'settings' ? 'active' : ''}`}
+          onClick={() => setMobilePane('settings')}
+        >
+          <SlidersHorizontal size={18} aria-hidden="true" />
+          <span>{t('app.mobileSettings')}</span>
+        </button>
+      </nav>
+
+      <main className="main">
+        <WorkspaceSidebar
+          activeTool={activeTool}
+          mediaMode={mediaMode}
+          onToolChange={setActiveTool}
+        >
+          <section
+            className="workspace-panel workspace-panel-source"
+            hidden={activeTool !== 'source'}
+            aria-label={t('app.workspaceSource')}
+          >
+            <div className="source-chooser">
+              <span className="source-chooser-icon" aria-hidden="true">
+                <FolderInput size={20} strokeWidth={1.8} />
+              </span>
+              <strong title={currentAssetName || t('app.noAsset')}>
+                {currentAssetName || t('app.noAsset')}
+              </strong>
+              <button type="button" onClick={openFilePicker}>
+                <Upload size={15} aria-hidden="true" />
+                {t('app.importAsset')}
+              </button>
+            </div>
+
+            <div className="mobile-profile-settings">
+              <ProfileSwitcher
+                profiles={profiles}
+                activeProfileId={activeProfileId}
+                onSelect={handleSelectProfile}
+                onCreate={handleCreateProfile}
+                onRename={handleRenameProfile}
+                onDelete={handleDeleteProfile}
+              />
+            </div>
+
               <FileMetaPanel
                 mediaMode={mediaMode}
                 imageFile={imageFile}
@@ -1332,25 +1417,13 @@ export default function App() {
                 videoFile={videoFile}
                 videoInfo={videoInfo}
               />
-              {mediaMode === 'video' && (
-                <VideoPanel
-                  keyingParams={keyingParams}
-                  layoutParams={layoutParams}
-                  videoParams={videoParams}
-                  onVideoParamsChange={setVideoParams}
-                  onVideoUpload={handleVideoUpload}
-                  range={frameRange}
-                  onRangeChange={handleRangeChange}
-                  region={videoRegion}
-                  droppedFiles={droppedVideoFiles}
-                  dockTarget={videoDockTarget}
-                  reviewProjectId={reviewContext?.projectId || ''}
-                  reviewAssetId={reviewContext?.assetId || ''}
-                  reviewClipId={reviewClips.find((clip) => selectedReviewClipIds.some((id) => String(id) === String(clip.id)))?.id || ''}
-                />
-              )}
-
-              {mediaMode === 'video' && (
+          </section>
+          <section
+            className="workspace-panel workspace-panel-review"
+            hidden={activeTool !== 'review'}
+            aria-label={t('app.workspaceReview')}
+          >
+            {mediaMode === 'video' && (
                 <ActionClipReviewPanel
                   projectId={reviewContext?.projectId || ''}
                   assetId={reviewContext?.assetId || ''}
@@ -1367,9 +1440,22 @@ export default function App() {
                   layoutParams={layoutParams}
                   region={videoRegion}
                 />
-              )}
+            )}
+          </section>
 
-              <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
+          <section
+            className="workspace-panel workspace-panel-keying"
+            hidden={activeTool !== 'keying'}
+            aria-label={t('app.workspaceKeying')}
+          >
+            <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
+          </section>
+
+          <section
+            className="workspace-panel workspace-panel-layout"
+            hidden={activeTool !== 'layout'}
+            aria-label={t('app.workspaceLayout')}
+          >
               <LayoutPanel
                 params={layoutParams}
                 onChange={setLayoutParams}
@@ -1377,9 +1463,32 @@ export default function App() {
                 canAutoDetectSourceCharacterHeight={mediaMode === 'video' && Boolean(videoFile)}
                 onAutoDetectSourceCharacterHeight={handleAutoDetectSourceCharacterHeight}
               />
-            </div>
+          </section>
 
-            <div className="sidebar-dock">
+          <section
+            className="workspace-panel workspace-panel-export"
+            hidden={activeTool !== 'export'}
+            aria-label={t('app.workspaceExport')}
+          >
+            {mediaMode === 'video' && (
+              <VideoPanel
+                keyingParams={keyingParams}
+                layoutParams={layoutParams}
+                videoParams={videoParams}
+                onVideoParamsChange={setVideoParams}
+                onVideoUpload={handleVideoUpload}
+                range={frameRange}
+                onRangeChange={handleRangeChange}
+                region={videoRegion}
+                droppedFiles={droppedVideoFiles}
+                dockTarget={videoDockTarget}
+                reviewProjectId={reviewContext?.projectId || ''}
+                reviewAssetId={reviewContext?.assetId || ''}
+                reviewClipId={reviewClips.find((clip) => selectedReviewClipIds.some((id) => String(id) === String(clip.id)))?.id || ''}
+              />
+            )}
+
+            <div className="sidebar-dock workspace-export-actions">
               <p className="dock-label">{t('app.exportActions')}</p>
               {mediaMode === 'image' ? (
                 <div className="dock-actions">
@@ -1390,12 +1499,18 @@ export default function App() {
                     className="dock-btn dock-btn-primary"
                     onClick={() => handleExport('greenscreen')}
                     disabled={!processingImageData || exporting}
-                  >{exporting ? t('app.exporting') : `💾 ${t('app.exportGreenscreen')}`}</button>
+                  >
+                    <Download size={15} aria-hidden="true" />
+                    {exporting ? t('app.exporting') : t('app.exportGreenscreen')}
+                  </button>
                   <button
                     className="dock-btn dock-btn-secondary"
                     onClick={() => handleExport('transparent')}
                     disabled={!processingImageData || exporting}
-                  >{exporting ? t('app.exporting') : `💾 ${t('app.exportTransparent')}`}</button>
+                  >
+                    <Download size={15} aria-hidden="true" />
+                    {exporting ? t('app.exporting') : t('app.exportTransparent')}
+                  </button>
                   <details className="image-godot-export" aria-label={t('app.godotPoseTitle')}>
                     <summary>{t('app.godotPoseTitle')}</summary>
                     <div className="image-godot-body">
@@ -1441,29 +1556,48 @@ export default function App() {
                 <div ref={videoDockRef} className="dock-portal-target" />
               )}
             </div>
-          </aside>
+          </section>
+        </WorkspaceSidebar>
 
-          <section className="preview-area">
-            <div className="tab-bar">
-              <div className="mode-switcher">
-                <button
-                  className={`mode-btn ${mediaMode === 'image' ? 'active' : ''}`}
-                  onClick={() => switchMode('image')}
-                >🖼️ {t('app.image')}</button>
-                <button
-                  className={`mode-btn ${mediaMode === 'video' ? 'active' : ''}`}
-                  onClick={() => switchMode('video')}
-                >🎬 {t('app.video')}</button>
-              </div>
+        <section className="preview-area">
+          <div className="tab-bar">
+            <div className="mode-switcher" aria-label={t('app.mobileNavLabel')}>
+              <button
+                className={`mode-btn ${mediaMode === 'image' ? 'active' : ''}`}
+                onClick={() => switchMode('image')}
+                aria-pressed={mediaMode === 'image'}
+              >
+                <ImageIcon size={15} aria-hidden="true" />
+                {t('app.image')}
+              </button>
+              <button
+                className={`mode-btn ${mediaMode === 'video' ? 'active' : ''}`}
+                onClick={() => switchMode('video')}
+                aria-pressed={mediaMode === 'video'}
+              >
+                <Video size={15} aria-hidden="true" />
+                {t('app.video')}
+              </button>
+            </div>
+            <div className="preview-mode-tabs">
               <button
                 className={`tab ${previewMode === 'keying' ? 'active' : ''}`}
                 onClick={() => setPreviewMode('keying')}
-              >{t('app.keyingPreview')}</button>
+                aria-pressed={previewMode === 'keying'}
+              >
+                <Eye size={15} aria-hidden="true" />
+                {t('app.keyingPreview')}
+              </button>
               <button
                 className={`tab ${previewMode === 'composite' ? 'active' : ''}`}
                 onClick={() => setPreviewMode('composite')}
-              >{t('app.compositePreview')}</button>
+                aria-pressed={previewMode === 'composite'}
+              >
+                <Layers3 size={15} aria-hidden="true" />
+                {t('app.compositePreview')}
+              </button>
             </div>
+          </div>
             <div className="canvas-wrapper" ref={imagePreviewWrapperRef}>
               {mediaMode === 'image' ? (
                 imageData ? (
@@ -1487,7 +1621,7 @@ export default function App() {
                     )}
                   </div>
                 ) : (
-                  <PreviewCanvas />
+                  <PreviewCanvas onChoose={openFilePicker} />
                 )
               ) : (
                 <VideoPreview
@@ -1507,6 +1641,7 @@ export default function App() {
                   reviewClips={reviewClips}
                   reviewMarkers={reviewMarkers}
                   selectedReviewClipIds={selectedReviewClipIds}
+                  onChoose={openFilePicker}
                   onSelectReviewClip={(clip, event) => {
                     if (!clip?.id) return
                     const id = String(clip.id)
@@ -1531,7 +1666,7 @@ export default function App() {
       {dragOver && (
         <div className="drop-overlay">
           <div className="drop-overlay-content">
-            <span className="drop-overlay-icon">📁</span>
+            <span className="drop-overlay-icon"><FolderInput size={34} aria-hidden="true" /></span>
             <p className="drop-overlay-text">{t('app.dropText')}</p>
             <p className="drop-overlay-hint">{t('app.dropHint')}</p>
             <p className="drop-overlay-hint">{t('app.dropMultiHint')}</p>

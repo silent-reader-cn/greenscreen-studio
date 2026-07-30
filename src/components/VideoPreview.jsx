@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { FileVideo, Upload } from 'lucide-react'
 import { applyKeying, composeToCanvas, cropKeyedToBounds, expandBoundsToSourceCenter, findAlphaBounds } from '../lib/keying.js'
 import { clamp, cropImageData, getRegionOverlayStyle, makeRegionFromPoints, normalizeRegion } from '../lib/region.js'
 import { clipTimelineStyle } from '../lib/actionReviewClips.js'
@@ -89,6 +90,7 @@ export default function VideoPreview({
   reviewMarkers = [],
   selectedReviewClipIds = [],
   onSelectReviewClip,
+  onChoose,
 }) {
   const [frameTime, setFrameTime] = useState(0)        // 当前选中的时间点（秒）
   const [frameImageData, setFrameImageData] = useState(null)  // 当前帧的 ImageData
@@ -824,10 +826,12 @@ export default function VideoPreview({
   if (!videoFile) {
     return (
       <div className="video-preview-hint">
-        <div className="placeholder-icon">🎬</div>
-        <p>{t('preview.emptyVideoTitle')}</p>
-        <p className="hint">{t('preview.emptyVideoHintA')}</p>
-        <p className="hint">{t('preview.emptyVideoHintB')}</p>
+        <div className="placeholder-icon" aria-hidden="true"><FileVideo size={30} /></div>
+        <p>{t('app.noAsset')}</p>
+        <button type="button" className="empty-preview-action" onClick={onChoose}>
+          <Upload size={16} aria-hidden="true" />
+          {t('app.importAsset')}
+        </button>
       </div>
     )
   }
