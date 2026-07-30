@@ -43,4 +43,32 @@ describe('WorkspaceSidebar', () => {
     expect(screen.getByRole('button', { name: t('app.workspaceExport') })).toBeTruthy()
     expect(screen.getByText(t('app.video'))).toBeTruthy()
   })
+
+  it('exposes the three-stage mobile parameter sheet controls', () => {
+    const onMobileSheetStateChange = vi.fn()
+    const onMobileSheetHandleClick = vi.fn()
+
+    render(
+      <WorkspaceSidebar
+        activeTool="keying"
+        mediaMode="image"
+        mobileSheetState="half"
+        onMobileSheetStateChange={onMobileSheetStateChange}
+        onMobileSheetHandleClick={onMobileSheetHandleClick}
+        onToolChange={() => {}}
+      >
+        <p>keying panel</p>
+      </WorkspaceSidebar>,
+    )
+
+    expect(screen.getByText(t('app.mobileSheetHalf'))).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: t('app.mobileSheetCollapse') }))
+    expect(onMobileSheetStateChange).toHaveBeenCalledWith('collapsed')
+
+    fireEvent.click(screen.getByRole('button', { name: t('app.mobileSheetExpand') }))
+    expect(onMobileSheetStateChange).toHaveBeenCalledWith('full')
+
+    fireEvent.click(screen.getByRole('button', { name: t('app.mobileSheetDragLabel') }))
+    expect(onMobileSheetHandleClick).toHaveBeenCalledOnce()
+  })
 })

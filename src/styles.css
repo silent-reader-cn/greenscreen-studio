@@ -5130,3 +5130,249 @@ body {
   from { transform: translateY(16px); opacity: 0; }
   to { transform: translateY(0); opacity: 1; }
 }
+
+/* ===== Three-stage mobile parameter sheet ===== */
+.mobile-sheet-handle {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .app {
+    padding-bottom: 0;
+  }
+
+  .app > .main {
+    position: relative;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .mobile-nav {
+    display: none !important;
+  }
+
+  .preview-area {
+    position: absolute;
+    inset: 0 0 var(--mobile-sheet-height, min(48%, 430px));
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    display: flex !important;
+    transition: bottom 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .app.mobile-sheet-collapsed {
+    --mobile-sheet-height: calc(112px + env(safe-area-inset-bottom, 0));
+  }
+
+  .app.mobile-sheet-half {
+    --mobile-sheet-height: clamp(300px, 48%, 430px);
+  }
+
+  .app.mobile-sheet-full {
+    --mobile-sheet-height: calc(100% - 148px);
+  }
+
+  .app.mobile-sheet-dragging .preview-area {
+    bottom: var(--mobile-sheet-drag-height);
+    transition: none;
+  }
+
+  .sidebar.workspace-sidebar.mobile-sheet-panel {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    width: 100%;
+    min-width: 0;
+    height: var(--mobile-sheet-height, min(48%, 430px));
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 52px 60px minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid var(--workspace-border);
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 16px 16px 0 0;
+    background: var(--workspace-surface);
+    box-shadow: 0 -10px 32px rgba(23, 33, 43, 0.14);
+    transition: height 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .app.mobile-sheet-dragging .mobile-sheet-panel {
+    height: var(--mobile-sheet-drag-height);
+    transition: none;
+  }
+
+  .mobile-sheet-handle {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px 4px 12px;
+    background: var(--workspace-surface);
+    border-bottom: 1px solid var(--workspace-border);
+  }
+
+  .mobile-sheet-drag-target {
+    min-width: 0;
+    height: 43px;
+    padding: 7px 4px 3px;
+    display: grid;
+    grid-template-rows: 4px minmax(0, 1fr);
+    gap: 4px;
+    border: 0;
+    background: transparent;
+    color: var(--workspace-text);
+    cursor: ns-resize;
+    touch-action: none;
+    user-select: none;
+    text-align: left;
+  }
+
+  .mobile-sheet-grip {
+    width: 34px;
+    height: 4px;
+    margin: 0 auto;
+    border-radius: 999px;
+    background: var(--workspace-border-strong);
+  }
+
+  .mobile-sheet-current {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--workspace-accent);
+  }
+
+  .mobile-sheet-current strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--workspace-text);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-sheet-current small {
+    flex: 0 0 auto;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: var(--workspace-accent-soft);
+    color: var(--workspace-accent);
+    font-size: 9px;
+    font-weight: 700;
+  }
+
+  .mobile-sheet-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .mobile-sheet-actions button {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--workspace-border);
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-surface-soft);
+    color: var(--workspace-text-muted);
+    cursor: pointer;
+  }
+
+  .mobile-sheet-actions button:hover:not(:disabled),
+  .mobile-sheet-actions button:focus-visible {
+    border-color: var(--workspace-accent-border);
+    background: var(--workspace-accent-soft);
+    color: var(--workspace-accent);
+    outline: none;
+  }
+
+  .mobile-sheet-actions button:disabled {
+    opacity: 0.38;
+    cursor: default;
+  }
+
+  .mobile-sheet-panel .workspace-rail {
+    grid-row: 2;
+    min-height: 60px;
+    padding: 5px 8px;
+    background: var(--workspace-surface-soft);
+  }
+
+  .mobile-sheet-panel .workspace-tool-btn {
+    min-height: 48px;
+  }
+
+  .mobile-sheet-panel .workspace-inspector {
+    grid-row: 3;
+    min-height: 0;
+  }
+
+  .mobile-sheet-panel.state-collapsed .workspace-inspector {
+    display: none;
+  }
+
+  .mobile-sheet-panel.state-collapsed {
+    grid-template-rows: 52px 60px;
+  }
+
+  .mobile-sheet-panel.is-dragging,
+  .mobile-sheet-panel.is-dragging * {
+    cursor: ns-resize !important;
+  }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .app > .main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 42%);
+    grid-template-areas: "preview settings";
+  }
+
+  .preview-area {
+    position: relative;
+    inset: auto;
+    bottom: auto;
+    grid-area: preview;
+  }
+
+  .app.mobile-sheet-dragging .preview-area {
+    bottom: auto;
+  }
+
+  .sidebar.workspace-sidebar.mobile-sheet-panel,
+  .app.mobile-sheet-dragging .mobile-sheet-panel {
+    position: relative;
+    inset: auto;
+    grid-area: settings;
+    width: 100%;
+    height: 100%;
+    grid-template-rows: 52px minmax(0, 1fr);
+    border-top: 0;
+    border-left: 1px solid var(--workspace-border);
+    border-radius: 0;
+    box-shadow: -8px 0 24px rgba(23, 33, 43, 0.08);
+    transition: none;
+  }
+
+  .mobile-sheet-handle {
+    display: none;
+  }
+
+  .mobile-sheet-panel .workspace-rail {
+    grid-row: 1;
+  }
+
+  .mobile-sheet-panel .workspace-inspector,
+  .mobile-sheet-panel.state-collapsed .workspace-inspector {
+    grid-row: 2;
+    display: grid;
+  }
+}

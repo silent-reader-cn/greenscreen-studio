@@ -6,8 +6,6 @@ import {
   FolderInput,
   Image as ImageIcon,
   Layers3,
-  MonitorUp,
-  SlidersHorizontal,
   Upload,
   Video,
 } from 'lucide-react'
@@ -45,6 +43,8 @@ const DEFAULT_LAYOUT = {
   // 0 = 自动 fit 人物框；>0 = 源画面人物站立身高（px），跨段统一 scale
   sourceCharacterHeight: 0,
 }
+
+const MOBILE_SHEET_STEPS = ['collapsed', 'half', 'full']
 
 const DEFAULT_SPRITE_PARAMS = {
   frameWidth: 128,
@@ -571,9 +571,14 @@ export default function App() {
   const [imageGodotExport, setImageGodotExport] = useState(null)
   const [imageGodotError, setImageGodotError] = useState('')
   const [mediaMode, setMediaMode] = useState('image')  // 'image' | 'video'
-  // Mobile: toggle between preview canvas and settings/export panels
-  const [mobilePane, setMobilePane] = useState('preview') // 'preview' | 'settings'
+  // Mobile: keep the preview visible while settings use a three-stage bottom sheet.
+  const [mobileSheetState, setMobileSheetState] = useState('half')
+  const [mobileSheetDragging, setMobileSheetDragging] = useState(false)
   const [activeTool, setActiveTool] = useState('source')
+  const appRef = useRef(null)
+  const mobileSheetRef = useRef(null)
+  const mobileSheetDragRef = useRef(null)
+  const mobileSheetClickSuppressedRef = useRef(false)
   const [videoDockTarget, setVideoDockTarget] = useState(null)
   const videoDockRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -1305,8 +1310,98 @@ export default function App() {
   const currentAssetName = mediaMode === 'video' ? videoFile?.name : imageFile?.name
   const openFilePicker = () => fileInputRef.current?.click()
 
+  const handleWorkspaceToolChange = useCallback((tool) => {
+    setActiveTool(tool)
+    setMobileSheetState((state) => state === 'collapsed' ? 'half' : state)
+  }, [])
+
+  const handleMobileSheetPointerDown = useCallback((event) => {
+    const sheet = mobileSheetRef.current
+    const app = appRef.current
+    if (!sheet || !app || event.button > 0) return
+
+    const containerHeight = sheet.parentElement?.getBoundingClientRect().height || window.innerHeight
+    mobileSheetDragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight: sheet.getBoundingClientRect().height,
+      containerHeight,
+      startState: mobileSheetState,
+    }
+    mobileSheetClickSuppressedRef.current = false
+    app.style.setProperty('--mobile-sheet-drag-height', `${sheet.getBoundingClientRect().height}px`)
+    setMobileSheetDragging(true)
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    event.preventDefault()
+  }, [mobileSheetState])
+
+  const handleMobileSheetPointerMove = useCallback((event) => {
+    const drag = mobileSheetDragRef.current
+    const app = appRef.current
+    if (!drag || drag.pointerId !== event.pointerId || !app) return
+
+    const minHeight = Math.min(112, drag.containerHeight)
+    const maxHeight = Math.max(minHeight, drag.containerHeight - 8)
+    const nextHeight = Math.max(
+      minHeight,
+      Math.min(maxHeight, drag.startHeight - (event.clientY - drag.startY)),
+    )
+    app.style.setProperty('--mobile-sheet-drag-height', `${Math.round(nextHeight)}px`)
+    event.preventDefault()
+  }, [])
+
+  const finishMobileSheetDrag = useCallback((event) => {
+    const drag = mobileSheetDragRef.current
+    const app = appRef.current
+    const sheet = mobileSheetRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+
+    const deltaY = event.clientY - drag.startY
+    const currentHeight = sheet?.getBoundingClientRect().height || drag.startHeight
+    const currentIndex = MOBILE_SHEET_STEPS.indexOf(drag.startState)
+    let nextIndex = currentIndex
+
+    if (Math.abs(deltaY) >= 48) {
+      nextIndex = Math.max(0, Math.min(MOBILE_SHEET_STEPS.length - 1, currentIndex + (deltaY < 0 ? 1 : -1)))
+    } else {
+      const ratio = currentHeight / Math.max(1, drag.containerHeight)
+      nextIndex = ratio < 0.28 ? 0 : ratio > 0.72 ? 2 : 1
+    }
+
+    setMobileSheetState(MOBILE_SHEET_STEPS[nextIndex])
+    mobileSheetClickSuppressedRef.current = Math.abs(deltaY) > 8
+    setMobileSheetDragging(false)
+    mobileSheetDragRef.current = null
+    app?.style.removeProperty('--mobile-sheet-drag-height')
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+  }, [])
+
+  const handleMobileSheetHandleClick = useCallback(() => {
+    if (mobileSheetClickSuppressedRef.current) {
+      mobileSheetClickSuppressedRef.current = false
+      return
+    }
+    setMobileSheetState((state) => state === 'collapsed' ? 'half' : 'collapsed')
+  }, [])
+
+  useEffect(() => {
+    if (!mobileSheetDragging) return undefined
+
+    document.addEventListener('pointermove', handleMobileSheetPointerMove, { passive: false })
+    document.addEventListener('pointerup', finishMobileSheetDrag)
+    document.addEventListener('pointercancel', finishMobileSheetDrag)
+    return () => {
+      document.removeEventListener('pointermove', handleMobileSheetPointerMove)
+      document.removeEventListener('pointerup', finishMobileSheetDrag)
+      document.removeEventListener('pointercancel', finishMobileSheetDrag)
+    }
+  }, [finishMobileSheetDrag, handleMobileSheetPointerMove, mobileSheetDragging])
+
   return (
-    <div className={`app mobile-pane-${mobilePane}`}>
+    <div
+      ref={appRef}
+      className={`app mobile-sheet-${mobileSheetState} ${mobileSheetDragging ? 'mobile-sheet-dragging' : ''}`}
+    >
       <header className="header">
         <div className="header-brand">
           <span className="header-brand-mark" aria-hidden="true">
@@ -1350,30 +1445,19 @@ export default function App() {
         }}
       />
 
-      <nav className="mobile-nav" aria-label={t('app.mobileNavLabel')}>
-        <button
-          type="button"
-          className={`mobile-nav-btn ${mobilePane === 'preview' ? 'active' : ''}`}
-          onClick={() => setMobilePane('preview')}
-        >
-          <MonitorUp size={18} aria-hidden="true" />
-          <span>{t('app.mobilePreview')}</span>
-        </button>
-        <button
-          type="button"
-          className={`mobile-nav-btn ${mobilePane === 'settings' ? 'active' : ''}`}
-          onClick={() => setMobilePane('settings')}
-        >
-          <SlidersHorizontal size={18} aria-hidden="true" />
-          <span>{t('app.mobileSettings')}</span>
-        </button>
-      </nav>
-
       <main className="main">
         <WorkspaceSidebar
+          sheetRef={mobileSheetRef}
           activeTool={activeTool}
           mediaMode={mediaMode}
-          onToolChange={setActiveTool}
+          mobileSheetState={mobileSheetState}
+          mobileSheetDragging={mobileSheetDragging}
+          onMobileSheetStateChange={setMobileSheetState}
+          onMobileSheetPointerDown={handleMobileSheetPointerDown}
+          onMobileSheetPointerMove={handleMobileSheetPointerMove}
+          onMobileSheetPointerUp={finishMobileSheetDrag}
+          onMobileSheetHandleClick={handleMobileSheetHandleClick}
+          onToolChange={handleWorkspaceToolChange}
         >
           <section
             className="workspace-panel workspace-panel-source"

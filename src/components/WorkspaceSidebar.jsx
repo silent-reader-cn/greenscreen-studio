@@ -3,6 +3,8 @@ import {
   Clapperboard,
   Download,
   Frame,
+  Maximize2,
+  Minimize2,
   SlidersHorizontal,
   Upload,
   WandSparkles,
@@ -18,8 +20,16 @@ const TOOL_DEFINITIONS = [
 ]
 
 export default function WorkspaceSidebar({
+  sheetRef,
   activeTool,
   mediaMode,
+  mobileSheetState = 'half',
+  mobileSheetDragging = false,
+  onMobileSheetStateChange = () => {},
+  onMobileSheetPointerDown = () => {},
+  onMobileSheetPointerMove = () => {},
+  onMobileSheetPointerUp = () => {},
+  onMobileSheetHandleClick = () => {},
   onToolChange,
   children,
 }) {
@@ -28,7 +38,47 @@ export default function WorkspaceSidebar({
   const CurrentIcon = currentTool.icon || SlidersHorizontal
 
   return (
-    <aside className="sidebar workspace-sidebar" aria-label={t('app.workspaceNavLabel')}>
+    <aside
+      ref={sheetRef}
+      className={`sidebar workspace-sidebar mobile-sheet-panel state-${mobileSheetState} ${mobileSheetDragging ? 'is-dragging' : ''}`}
+      aria-label={t('app.workspaceNavLabel')}
+    >
+      <header className="mobile-sheet-handle">
+        <button
+          type="button"
+          className="mobile-sheet-drag-target"
+          onPointerDown={onMobileSheetPointerDown}
+          onPointerMove={onMobileSheetPointerMove}
+          onPointerUp={onMobileSheetPointerUp}
+          onPointerCancel={onMobileSheetPointerUp}
+          onClick={onMobileSheetHandleClick}
+          aria-label={t('app.mobileSheetDragLabel')}
+        >
+          <span className="mobile-sheet-grip" aria-hidden="true" />
+          <span className="mobile-sheet-current">
+            <CurrentIcon size={17} strokeWidth={1.8} aria-hidden="true" />
+            <strong>{t(currentTool.labelKey)}</strong>
+            <small>{t(`app.mobileSheet${mobileSheetState[0].toUpperCase()}${mobileSheetState.slice(1)}`)}</small>
+          </span>
+        </button>
+        <div className="mobile-sheet-actions">
+          <button
+            type="button"
+            onClick={() => onMobileSheetStateChange('collapsed')}
+            disabled={mobileSheetState === 'collapsed'}
+            aria-label={t('app.mobileSheetCollapse')}
+          >
+            <Minimize2 size={17} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onMobileSheetStateChange(mobileSheetState === 'full' ? 'half' : 'full')}
+            aria-label={mobileSheetState === 'full' ? t('app.mobileSheetHalf') : t('app.mobileSheetExpand')}
+          >
+            <Maximize2 size={17} aria-hidden="true" />
+          </button>
+        </div>
+      </header>
       <nav className="workspace-rail" aria-label={t('app.workspaceNavLabel')}>
         {tools.map(({ id, icon: Icon, labelKey }) => {
           const active = id === currentTool.id
