@@ -55,4 +55,4 @@ flowchart LR
 - [x] **AI collaboration gate**: Queue and claim export work only for approved clips; include immutable clip and marker data in the task payload. (commit `5fa1219`)
 - [x] **Automated review checks**: Surface loop-boundary, foreground-area, feet-anchor, crop, and frame-jitter warnings before approval. (commit `937f21c`)
 - [x] **Godot handoff**: Include an import-friendly event track and a minimal Godot dispatcher reference in exported metadata. (commit `081ec86`)
-- [x] **End-to-end verification**: Test project persistence, API validation, UI editing, export artifacts, and a real Godot import smoke path.
+- [x] **End-to-end verification**: Test project persistence, API validation, UI editing, export artifacts, and a real Godot import smoke path. (commit `04e84d5`)
