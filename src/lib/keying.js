@@ -118,6 +118,11 @@ function erodeAlpha(data, width, height, radius) {
     for (let x = 0; x < width; x++) {
       const idx = (y * width + x) * 4 + 3; // alpha index
 
+      // 侵蚀只会修改半透明边缘。完全不透明像素按当前算法不会
+      // 被改写，完全透明像素也已经是目标值；提前跳过可避免对整张
+      // 画面的大多数像素反复扫描圆形邻域，保证滑块实时反馈。
+      if (original[idx] === 255 || original[idx] === 0) continue;
+
       // 检查周围 radius 范围内是否有透明像素
       let hasTransparent = false;
       for (let dy = -r; dy <= r && !hasTransparent; dy++) {
@@ -135,7 +140,7 @@ function erodeAlpha(data, width, height, radius) {
       }
 
       // 如果附近有透明像素，当前像素也变透明（侵蚀）
-      if (hasTransparent && original[idx] < 255) {
+      if (hasTransparent) {
         data[idx] = 0;
       }
     }

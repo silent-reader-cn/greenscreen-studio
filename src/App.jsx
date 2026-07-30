@@ -806,7 +806,7 @@ export default function App() {
     pendingProjectVideoRef.current = nextContext ? file : null
     switchMode('video')
     setPreviewMode('keying')
-    setMobilePane('preview')
+    setMobileSheetState('collapsed')
     setDroppedVideoFiles([file])
   }, [switchMode])
 
@@ -902,7 +902,7 @@ export default function App() {
 
     setMediaMode('image')
     setPreviewMode('keying')
-    setMobilePane('preview')
+    setMobileSheetState('collapsed')
     setImageRegion(null)
     setRegionDraft(null)
     setRegionSelectionMode(true)
@@ -981,7 +981,7 @@ export default function App() {
 
     setMediaMode('video')
     setPreviewMode('keying')
-    setMobilePane('preview')
+    setMobileSheetState('collapsed')
     setResultJobId(null)
     setResultVideoFormat(null)
     setVideoRegion(null)
@@ -1101,14 +1101,14 @@ export default function App() {
     if (videos.length > 0) {
       switchMode('video')
       setDroppedVideoFiles(videos)
-      setMobilePane('preview')
+      setMobileSheetState('collapsed')
       return
     }
 
     if (images.length > 0) {
       switchMode('image')
       handleFileLoad(images[0])
-      setMobilePane('preview')
+      setMobileSheetState('collapsed')
     }
   }, [handleFileLoad, switchMode])
 
