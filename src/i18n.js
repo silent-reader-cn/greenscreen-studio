@@ -343,6 +343,8 @@ const dictionaries = {
       statusTransitionInvalid: 'That review-state transition is not allowed',
       statusTransitionFailed: 'Failed to update review state',
       reviewLocked: 'Return this clip to review before editing its content',
+      queueExportTask: 'Queue AI export',
+      exportTaskFailed: 'Failed to queue export task',
       status: {
         draft: 'draft',
         needs_review: 'needs review',
@@ -741,6 +743,8 @@ const dictionaries = {
       statusTransitionInvalid: '不允许这样切换审阅状态',
       statusTransitionFailed: '更新审阅状态失败',
       reviewLocked: '请先把该 clip 退回待审，再编辑内容',
+      queueExportTask: '排队 AI 导出',
+      exportTaskFailed: '排队导出任务失败',
       status: {
         draft: '草稿',
         needs_review: '待审',

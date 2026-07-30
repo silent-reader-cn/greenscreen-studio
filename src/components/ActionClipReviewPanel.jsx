@@ -262,6 +262,23 @@ export default function ActionClipReviewPanel({
     }
   }, [busy, projectId, refresh])
 
+  const handleQueueExportTask = useCallback(async (clip) => {
+    if (!projectId || !clip || busy) return
+    setBusy(true)
+    setError('')
+    try {
+      await api(`/api/projects/${projectId}/clips/${clip.id}/export-task`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      await refresh()
+    } catch (err) {
+      setError(err.message || t('review.exportTaskFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }, [busy, projectId, refresh])
+
   const handleDeleteSelected = useCallback(async () => {
     if (!projectId || selectedClipIds.length === 0 || busy) return
     const names = orderedClips
@@ -457,6 +474,16 @@ export default function ActionClipReviewPanel({
                     <option key={status} value={status}>{statusLabel(status)}</option>
                   ))}
                 </select>
+                {clip.status === 'approved' && (
+                  <button
+                    type="button"
+                    className="studio-mini-btn"
+                    onClick={() => void handleQueueExportTask(clip)}
+                    disabled={busy || disabled}
+                  >
+                    {t('review.queueExportTask')}
+                  </button>
+                )}
               </div>
             </div>
           )

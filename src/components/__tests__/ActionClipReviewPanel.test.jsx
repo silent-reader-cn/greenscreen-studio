@@ -25,6 +25,10 @@ function createApiMock() {
     const method = options.method || 'GET'
     if (method === 'GET') return jsonResponse({ clips })
 
+    if (method === 'POST' && String(url).endsWith('/export-task')) {
+      return jsonResponse({ id: 'task_1', payload: { type: 'action_clip_export' } }, 201)
+    }
+
     if (method === 'POST') {
       const body = JSON.parse(options.body)
       const clip = { id: 'clip_3', version: 1, ...body }
@@ -160,6 +164,11 @@ describe('ActionClipReviewPanel', () => {
     const idleItem = screen.getByText('idle').closest('[role="option"]')
     expect(within(idleItem).getByRole('button', { name: t('review.rename') }).disabled).toBe(true)
     expect(within(idleItem).getByRole('button', { name: t('review.unloop') }).disabled).toBe(true)
+    fireEvent.click(within(idleItem).getByRole('button', { name: t('review.queueExportTask') }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      '/api/projects/project_1/clips/clip_1/export-task',
+      expect.objectContaining({ method: 'POST' }),
+    ))
     expect(screen.getByRole('button', { name: t('review.updateRange') }).disabled).toBe(true)
     expect(screen.getByRole('button', { name: t('review.marker.add') }).disabled).toBe(true)
   })

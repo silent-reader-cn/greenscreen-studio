@@ -404,6 +404,7 @@ export function getCapabilities(projectRoot = DEFAULT_PROJECT_ROOT) {
           'add_project_asset',
           'list_project_tasks',
           'create_project_task',
+          'create_action_clip_export_task',
           'claim_next_task',
           'complete_task',
           'post_project_message',
@@ -1524,6 +1525,24 @@ export function createGreenscreenMcpServer(options = {}) {
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (args) => toolResult(store.createTask(args.projectId, args)));
+
+  registerLoggedTool('create_action_clip_export_task', {
+    title: 'Create Action Clip Export Task',
+    description: 'Queue AI export work for one approved action clip and include immutable clip + marker data in the task payload.',
+    inputSchema: {
+      projectId: z.string(),
+      clipId: z.string(),
+      title: z.string().optional(),
+      description: z.string().optional(),
+      priority: z.enum(['high', 'normal', 'low']).optional(),
+      request: z.record(z.string(), z.unknown()).optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  }, async ({ projectId, clipId, ...options }) => toolResult(store.createActionClipExportTask(projectId, {
+    clipId,
+    ...options,
+    assignee: 'ai',
+  })));
 
   registerLoggedTool('claim_next_task', {
     title: 'Claim Next Collaboration Task',

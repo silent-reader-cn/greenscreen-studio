@@ -5,7 +5,7 @@ import path from 'node:path'
 import { createRequire } from 'node:module'
 
 const require = createRequire(import.meta.url)
-const { createProjectStore, closeShared } = require('../lib/projectStore.cjs')
+const { createProjectStore, closeShared, ACTION_CLIP_EXPORT_TASK_TYPE } = require('../lib/projectStore.cjs')
 const { createMcpRuntime, readMcpLogs, getMcpStatus, getMcpConfig } = require('../lib/mcpRuntime.cjs')
 const { mountStudioApi, createStudioServices } = require('../lib/studioApi.cjs')
 const express = require('express')
@@ -149,6 +149,72 @@ describe('projectStore + mcpRuntime + studio API', () => {
     expect(messages.some((m) => m.body === 'exported')).toBe(true)
   })
 
+  it('queues and claims action clip export tasks only for current approved snapshots', () => {
+    const project = store.createProject({ name: 'export gate' })
+    const sourcePath = path.join(tmpDir, 'source.mp4')
+    fs.writeFileSync(sourcePath, 'video bytes')
+    const asset = store.addAsset(project.id, {
+      kind: 'video',
+      role: 'source',
+      filePath: sourcePath,
+      originalName: 'source.mp4',
+      mimeType: 'video/mp4',
+    })
+    const clip = store.createActionClip(project.id, {
+      assetId: asset.id,
+      name: 'attack_SE',
+      startFrame: 10,
+      endFrame: 30,
+      loop: false,
+    })
+    const marker = store.addActionMarker(clip.id, { frame: 18, type: 'hit', payload: { hitbox: 'slash_a' } })
+    expect(() => store.createActionClipExportTask(project.id, { clipId: clip.id })).toThrow(/approved clips/)
+
+    store.updateActionClip(clip.id, { status: 'needs_review' })
+    const approved = store.updateActionClip(clip.id, { status: 'approved' })
+    const task = store.createActionClipExportTask(project.id, {
+      clipId: clip.id,
+      priority: 'high',
+      request: { target: 'godot' },
+    })
+    expect(task.payload).toMatchObject({
+      type: ACTION_CLIP_EXPORT_TASK_TYPE,
+      schemaVersion: 1,
+      clipId: clip.id,
+      clip: { id: clip.id, status: 'approved', version: approved.version, startFrame: 10, endFrame: 30 },
+      request: { target: 'godot' },
+    })
+    expect(task.payload.markers).toEqual([expect.objectContaining({ id: marker.id, frame: 18, payload: { hitbox: 'slash_a' } })])
+    expect(() => store.updateTask(task.id, { payload: { ...task.payload, extra: true } })).toThrow(/immutable/)
+
+    const claimed = store.claimNextTask({ workerId: 'agent-export' })
+    expect(claimed.id).toBe(task.id)
+    expect(claimed.payload.clip.status).toBe('approved')
+    expect(claimed.claimedBy).toBe('agent-export')
+
+    const staleClip = store.createActionClip(project.id, {
+      assetId: asset.id,
+      name: 'recovery_SE',
+      startFrame: 40,
+      endFrame: 55,
+    })
+    store.addActionMarker(staleClip.id, { frame: 44, type: 'note', payload: { before: true } })
+    store.updateActionClip(staleClip.id, { status: 'needs_review' })
+    store.updateActionClip(staleClip.id, { status: 'approved' })
+    const staleTask = store.createActionClipExportTask(project.id, { clipId: staleClip.id, priority: 'high' })
+    store.updateActionClip(staleClip.id, { status: 'needs_review' })
+    store.addActionMarker(staleClip.id, { frame: 45, type: 'sfx', payload: { sound: 'slash' } })
+    store.updateActionClip(staleClip.id, { status: 'approved' })
+    const fallbackTask = store.createTask(project.id, { title: 'General follow-up', priority: 'normal' })
+
+    const next = store.claimNextTask({ workerId: 'agent-export' })
+    expect(next.id).toBe(fallbackTask.id)
+    expect(store.getTask(staleTask.id)).toMatchObject({
+      status: 'cancelled',
+      result: { code: 'TASK_EXPORT_SNAPSHOT_STALE' },
+    })
+  })
+
   it('records MCP runtime logs and status', async () => {
     const runtime = createMcpRuntime({ dataDir: tmpDir, toolCount: 3, heartbeatIntervalMs: 50 })
     await runtime.start()
@@ -262,6 +328,27 @@ describe('projectStore + mcpRuntime + studio API', () => {
       .send({ status: 'approved' })
     expect(approvedClipRes.status).toBe(200)
     expect(approvedClipRes.body.status).toBe('approved')
+    const exportTaskRes = await request(app)
+      .post(`/api/projects/${projectId}/clips/${clipId}/export-task`)
+      .send({ request: { target: 'godot' } })
+    expect(exportTaskRes.status).toBe(201)
+    expect(exportTaskRes.body.payload).toMatchObject({
+      type: ACTION_CLIP_EXPORT_TASK_TYPE,
+      clipId,
+      clip: { status: 'approved' },
+      request: { target: 'godot' },
+    })
+    const mutateExportPayloadRes = await request(app)
+      .patch(`/api/collab/tasks/${exportTaskRes.body.id}`)
+      .send({ payload: { ...exportTaskRes.body.payload, clipId: 'replacement' } })
+    expect(mutateExportPayloadRes.status).toBe(409)
+    expect(mutateExportPayloadRes.body.code).toBe('TASK_EXPORT_PAYLOAD_IMMUTABLE')
+    const exportClaimRes = await request(app)
+      .post('/api/collab/tasks/claim-next')
+      .send({ workerId: 'codex-export' })
+    expect(exportClaimRes.status).toBe(200)
+    expect(exportClaimRes.body.claimed).toBe(true)
+    expect(exportClaimRes.body.task.id).toBe(exportTaskRes.body.id)
     const lockedMarkerRes = await request(app)
       .post(`/api/projects/${projectId}/clips/${clipId}/markers`)
       .send({ frame: 55, type: 'note' })
