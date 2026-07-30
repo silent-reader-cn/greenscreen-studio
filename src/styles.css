@@ -3551,14 +3551,26 @@ body {
   --workspace-bg: #eef1f4;
   --workspace-surface: #ffffff;
   --workspace-surface-soft: #f6f8fa;
+  --workspace-surface-raised: #ffffff;
+  --workspace-surface-muted: #edf2f4;
   --workspace-border: #dce2e7;
   --workspace-border-strong: #c8d0d8;
   --workspace-text: #17212b;
   --workspace-text-muted: #66727e;
   --workspace-accent: #16805a;
   --workspace-accent-soft: #e3f2ec;
+  --workspace-accent-border: #b9dfd1;
   --workspace-info: #2f6fed;
   --workspace-warning: #b97914;
+  --workspace-danger: #b42318;
+  --workspace-danger-soft: #fff1f0;
+  --workspace-focus: 0 0 0 3px rgba(22, 128, 90, 0.14);
+  --workspace-shadow-sm: 0 2px 8px rgba(23, 33, 43, 0.08);
+  --workspace-shadow-lg: 0 22px 64px rgba(23, 33, 43, 0.2);
+  --workspace-overlay: rgba(18, 29, 35, 0.46);
+  --workspace-radius-sm: 6px;
+  --workspace-radius-md: 8px;
+  --workspace-radius-lg: 12px;
 }
 
 body {
@@ -4286,4 +4298,835 @@ body {
   *, *::before, *::after {
     scroll-behavior: auto !important;
   }
+}
+
+/* ===== Unified component surfaces ===== */
+.panel,
+.file-meta-panel {
+  background: var(--workspace-surface);
+  border-color: var(--workspace-border);
+  border-radius: var(--workspace-radius-md);
+}
+
+.panel-toggle {
+  min-height: 44px;
+  padding: 11px 12px;
+  border-bottom-color: var(--workspace-border);
+}
+
+.panel-toggle:hover {
+  background: var(--workspace-surface-soft);
+}
+
+.panel-title {
+  color: var(--workspace-text);
+}
+
+.panel-title-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.panel-title-content svg {
+  color: var(--workspace-accent);
+}
+
+.panel-summary {
+  background: var(--workspace-accent-soft);
+  border-color: var(--workspace-accent-border);
+  color: var(--workspace-accent);
+}
+
+.file-meta-panel .panel-summary {
+  color: var(--workspace-accent);
+}
+
+.panel-caret {
+  color: var(--workspace-text-muted);
+}
+
+.panel-body {
+  padding: 12px;
+  background: var(--workspace-surface);
+}
+
+.layout-group,
+.toggle-row,
+.info-box,
+.file-meta-empty {
+  border: 1px solid var(--workspace-border);
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface-soft);
+}
+
+.layout-group {
+  margin-bottom: 10px;
+  padding: 10px;
+}
+
+.toggle-row {
+  margin-bottom: 10px;
+  padding: 10px;
+}
+
+.info-box {
+  margin: 10px 0;
+  padding: 10px;
+  color: var(--workspace-text-muted);
+}
+
+.info-box .calc-result {
+  color: var(--workspace-text);
+}
+
+.info-box .calc-result-muted {
+  color: var(--workspace-text-muted);
+  font-weight: 550;
+}
+
+.group-label,
+.slider-row label,
+.color-row label,
+.toggle-label,
+.file-meta-empty p {
+  color: var(--workspace-text);
+}
+
+.input-row label,
+.toggle-hint,
+.opt-label,
+.exact-frame-field label,
+.sprite-param-row label,
+.file-meta-grid span,
+.file-region-status span,
+.file-meta-empty .hint {
+  color: var(--workspace-text-muted);
+}
+
+.input-row input,
+.sprite-param-row input,
+.exact-frame-field input,
+.review-clip-name-field input[type="text"],
+.review-marker-create input,
+.review-marker-create select,
+.review-marker-create textarea,
+.review-marker-edit input,
+.review-marker-edit select,
+.review-marker-edit textarea,
+.review-status-select {
+  border-color: var(--workspace-border-strong);
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+}
+
+.input-row input:focus,
+.sprite-param-row input:focus,
+.exact-frame-field input:focus,
+.review-clip-name-field input[type="text"]:focus,
+.review-marker-create input:focus,
+.review-marker-create select:focus,
+.review-marker-create textarea:focus,
+.review-marker-edit input:focus,
+.review-marker-edit select:focus,
+.review-marker-edit textarea:focus,
+.review-status-select:focus {
+  border-color: var(--workspace-accent);
+  box-shadow: var(--workspace-focus);
+  outline: none;
+}
+
+.toggle-label input[type="checkbox"],
+.review-loop-toggle input,
+.sprite-checkbox input {
+  accent-color: var(--workspace-accent);
+}
+
+.slider-control input[type="range"] {
+  background: var(--workspace-border);
+}
+
+.slider-control input[type="range"]::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--workspace-accent);
+  border: 2px solid var(--workspace-surface);
+  box-shadow: 0 0 0 1px var(--workspace-accent);
+}
+
+.slider-control input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: var(--workspace-accent);
+  border: 2px solid var(--workspace-surface);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--workspace-accent);
+}
+
+.slider-value,
+.file-meta-name,
+.file-meta-grid strong,
+.file-region-status strong {
+  color: var(--workspace-text);
+}
+
+.color-row input[type="color"] {
+  width: 42px;
+  height: 30px;
+  border-color: var(--workspace-border-strong);
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface);
+}
+
+.btn-reset,
+.btn-preset,
+.opt-btn,
+.godot-clip-save,
+.godot-pack-btn,
+.file-region-btn.secondary {
+  border-color: var(--workspace-border-strong);
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+}
+
+.btn-reset:hover,
+.btn-preset:hover,
+.opt-btn:hover:not(.active),
+.godot-clip-save:hover:not(:disabled),
+.godot-pack-btn:hover:not(:disabled),
+.file-region-btn.secondary:hover {
+  border-color: var(--workspace-accent-border);
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+}
+
+.opt-btn.active,
+.file-region-btn {
+  border-color: var(--workspace-accent);
+  background: var(--workspace-accent);
+  color: #ffffff;
+}
+
+.opt-btn.active:hover,
+.file-region-btn:hover {
+  border-color: #116f4e;
+  background: #116f4e;
+}
+
+.godot-clip-tools {
+  border-top-color: var(--workspace-border);
+}
+
+.godot-clip-item {
+  border-color: var(--workspace-border);
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface-soft);
+}
+
+/* Profile menus */
+.profile-more-btn:hover,
+.profile-more-btn.active,
+.profile-add:hover {
+  border-color: var(--workspace-accent-border);
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+}
+
+.profile-label {
+  color: var(--workspace-text-muted);
+}
+
+.profile-chip {
+  border-color: var(--workspace-border-strong);
+  background: var(--workspace-surface-soft);
+  color: var(--workspace-text);
+}
+
+.profile-chip.active {
+  border-color: var(--workspace-accent);
+  background: var(--workspace-accent);
+  color: #ffffff;
+}
+
+.profile-chip:not(.active):hover {
+  border-color: var(--workspace-accent-border);
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+}
+
+.profile-dropdown,
+.profile-context-menu {
+  background: var(--workspace-surface-raised);
+  border-color: var(--workspace-border);
+  border-radius: var(--workspace-radius-md);
+  box-shadow: var(--workspace-shadow-lg);
+}
+
+.profile-dropdown-title {
+  color: var(--workspace-text-muted);
+}
+
+.profile-context-menu button {
+  border-radius: var(--workspace-radius-sm);
+  color: var(--workspace-text);
+}
+
+.profile-context-menu button:hover {
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+}
+
+/* Clipboard confirmation dialog */
+.clipboard-modal-backdrop,
+.studio-media-backdrop {
+  background: var(--workspace-overlay);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+.clipboard-modal {
+  padding: 20px;
+  background: var(--workspace-surface-raised);
+  border-color: var(--workspace-border);
+  border-radius: var(--workspace-radius-lg);
+  box-shadow: var(--workspace-shadow-lg);
+}
+
+.clipboard-modal-icon {
+  background: var(--workspace-accent-soft);
+  border-color: var(--workspace-accent-border);
+  border-radius: var(--workspace-radius-md);
+  color: var(--workspace-accent);
+}
+
+.clipboard-modal h2 {
+  color: var(--workspace-text);
+}
+
+.clipboard-modal p,
+.clipboard-meta-grid dt {
+  color: var(--workspace-text-muted);
+}
+
+.clipboard-meta-grid {
+  background: var(--workspace-surface-soft);
+  border-color: var(--workspace-border);
+  border-radius: var(--workspace-radius-md);
+}
+
+.clipboard-meta-grid dd {
+  color: var(--workspace-text);
+}
+
+.clipboard-btn {
+  min-height: 38px;
+  border-radius: var(--workspace-radius-sm);
+}
+
+.clipboard-btn.primary {
+  background: var(--workspace-accent);
+  border-color: var(--workspace-accent);
+}
+
+.clipboard-btn.primary:hover {
+  background: #116f4e;
+  border-color: #116f4e;
+  opacity: 1;
+}
+
+.clipboard-btn.secondary {
+  background: var(--workspace-surface);
+  border-color: var(--workspace-border-strong);
+  color: var(--workspace-text);
+}
+
+.clipboard-btn.secondary:hover {
+  background: var(--workspace-accent-soft);
+  border-color: var(--workspace-accent-border);
+  color: var(--workspace-accent);
+}
+
+/* Project, collaboration, and MCP drawer */
+.studio-toggle {
+  border-color: var(--workspace-border-strong);
+  background: var(--workspace-surface);
+  color: var(--workspace-text-muted);
+}
+
+.studio-toggle.active,
+.studio-toggle:hover {
+  border-color: var(--workspace-accent-border);
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+}
+
+.studio-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: var(--workspace-overlay);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: fadeIn 0.15s ease-out;
+}
+
+.studio-drawer {
+  top: 70px;
+  z-index: 91;
+  background: var(--workspace-surface-raised);
+  border-color: var(--workspace-border);
+  border-radius: var(--workspace-radius-lg);
+  box-shadow: var(--workspace-shadow-lg);
+}
+
+.studio-drawer-header {
+  padding: 15px 16px 13px;
+  border-bottom-color: var(--workspace-border);
+  background: var(--workspace-surface);
+}
+
+.studio-drawer-header strong,
+.studio-detail h3,
+.studio-list-item strong {
+  color: var(--workspace-text);
+}
+
+.studio-sub,
+.studio-detail p,
+.studio-task p,
+.studio-message p,
+.studio-list-item span,
+.studio-empty {
+  color: var(--workspace-text-muted);
+}
+
+.studio-tabs {
+  margin: 12px 14px 0;
+  padding: 3px;
+  border: 1px solid var(--workspace-border);
+  border-radius: var(--workspace-radius-md);
+  background: var(--workspace-surface-soft);
+}
+
+.studio-tabs button {
+  border: 0;
+  border-radius: var(--workspace-radius-sm);
+  background: transparent;
+  color: var(--workspace-text-muted);
+}
+
+.studio-tabs button:hover {
+  color: var(--workspace-text);
+}
+
+.studio-tabs button.active {
+  border-color: transparent;
+  background: var(--workspace-surface);
+  color: var(--workspace-accent);
+  box-shadow: var(--workspace-shadow-sm);
+}
+
+.studio-body {
+  padding: 12px 14px 16px;
+  background: var(--workspace-surface);
+}
+
+.studio-create-row {
+  border-bottom-color: var(--workspace-border);
+}
+
+.studio-create-row input,
+.studio-create-col input,
+.studio-create-col textarea {
+  border-color: var(--workspace-border-strong);
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+  outline: none;
+}
+
+.studio-create-row input:focus,
+.studio-create-col input:focus,
+.studio-create-col textarea:focus {
+  border-color: var(--workspace-accent);
+  box-shadow: var(--workspace-focus);
+}
+
+.studio-primary-btn,
+.studio-mini-btn,
+.studio-danger-btn {
+  border-radius: var(--workspace-radius-sm);
+}
+
+.studio-primary-btn {
+  border-color: var(--workspace-accent);
+  background: var(--workspace-accent);
+  color: #ffffff;
+}
+
+.studio-primary-btn:hover:not(:disabled) {
+  border-color: #116f4e;
+  background: #116f4e;
+}
+
+.studio-mini-btn {
+  border-color: var(--workspace-border-strong);
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+}
+
+.studio-mini-btn:hover:not(:disabled) {
+  border-color: var(--workspace-accent-border);
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+}
+
+.studio-danger-btn {
+  border-color: #efb7b2;
+  background: var(--workspace-surface);
+  color: var(--workspace-danger);
+}
+
+.studio-danger-btn:hover:not(:disabled) {
+  background: var(--workspace-danger-soft);
+}
+
+.studio-list,
+.studio-detail,
+.studio-logs,
+.studio-messages {
+  border-color: var(--workspace-border);
+  border-radius: var(--workspace-radius-md);
+  background: var(--workspace-surface-soft);
+}
+
+.studio-list-item {
+  border-radius: var(--workspace-radius-sm);
+}
+
+.studio-list-item.active {
+  background: var(--workspace-accent-soft);
+}
+
+.studio-list-item.active strong {
+  color: var(--workspace-accent);
+}
+
+.studio-list-item:hover:not(.active) {
+  background: var(--workspace-surface);
+}
+
+.studio-detail {
+  background: var(--workspace-surface);
+}
+
+.studio-row,
+.studio-task,
+.studio-message,
+.studio-log {
+  border-top-color: var(--workspace-border);
+}
+
+.studio-task {
+  background: var(--workspace-surface-soft);
+  border-color: var(--workspace-border);
+  border-radius: var(--workspace-radius-md);
+}
+
+.studio-chip {
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+}
+
+.studio-messages,
+.studio-logs {
+  background: var(--workspace-surface);
+}
+
+.studio-media-dialog {
+  padding: 16px;
+  background: var(--workspace-surface-raised);
+  border-color: var(--workspace-border);
+  border-radius: var(--workspace-radius-lg);
+  box-shadow: var(--workspace-shadow-lg);
+}
+
+.studio-media-player,
+.studio-media-image {
+  border-radius: var(--workspace-radius-md);
+}
+
+/* Action review cards */
+.review-clip-panel {
+  border-color: var(--workspace-border);
+  background: var(--workspace-surface-soft);
+}
+
+.review-clip-head h3,
+.review-section-kicker,
+.review-clip-list-title h4 {
+  color: var(--workspace-text);
+}
+
+.review-clip-panel-empty,
+.review-clip-name-field,
+.review-loop-toggle {
+  color: var(--workspace-text-muted);
+}
+
+.review-clip-create,
+.review-clip-item,
+.review-marker-panel {
+  border-color: var(--workspace-border);
+  background: var(--workspace-surface);
+}
+
+.review-range-chip,
+.review-count-badge {
+  border-color: var(--workspace-accent-border);
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+}
+
+.review-clip-item.selected {
+  border-color: var(--workspace-accent);
+  background: var(--workspace-accent-soft);
+  box-shadow: 0 0 0 1px var(--workspace-accent);
+}
+
+.review-status-select {
+  color: var(--workspace-text);
+}
+
+.review-marker-editor {
+  border-top-color: var(--workspace-border);
+}
+
+.review-marker-head h4,
+.review-marker-create-title strong,
+.review-marker-summary strong {
+  color: var(--workspace-text);
+}
+
+.review-marker-clip-name,
+.review-marker-create-title span,
+.review-marker-summary code,
+.review-marker-create label {
+  color: var(--workspace-text-muted);
+}
+
+.review-marker-create,
+.review-marker-row {
+  border-color: var(--workspace-border);
+  border-radius: var(--workspace-radius-md);
+  background: var(--workspace-surface);
+}
+
+.studio-toggle:focus-visible,
+.studio-tabs button:focus-visible,
+.studio-primary-btn:focus-visible,
+.studio-mini-btn:focus-visible,
+.studio-danger-btn:focus-visible,
+.clipboard-btn:focus-visible,
+.btn-reset:focus-visible,
+.btn-preset:focus-visible,
+.opt-btn:focus-visible,
+.dock-btn:focus-visible,
+.profile-chip-main:focus-visible,
+.profile-chip-delete:focus-visible,
+.profile-more-btn:focus-visible,
+.profile-add:focus-visible {
+  outline: none;
+  box-shadow: var(--workspace-focus);
+}
+
+/* Video and export controls that appear after media is loaded */
+.dock-hint,
+.image-godot-export {
+  border-color: var(--workspace-border);
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface-soft);
+  color: var(--workspace-text-muted);
+}
+
+.image-godot-export > summary {
+  color: var(--workspace-text);
+}
+
+.dock-btn-primary {
+  border-color: var(--workspace-accent);
+  background: var(--workspace-accent);
+  color: #ffffff;
+}
+
+.dock-btn-primary:hover:not(:disabled) {
+  border-color: #116f4e;
+  background: #116f4e;
+  opacity: 1;
+}
+
+.dock-btn-secondary,
+.godot-clip-mirror,
+.btn-range-reset {
+  border-color: var(--workspace-border-strong);
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+}
+
+.dock-btn-secondary:hover:not(:disabled),
+.godot-clip-mirror:hover:not(:disabled),
+.btn-range-reset:hover:not(:disabled) {
+  border-color: var(--workspace-accent-border);
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+  opacity: 1;
+}
+
+.godot-clip-delete {
+  border-color: var(--workspace-border-strong);
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface);
+  color: var(--workspace-text-muted);
+}
+
+.godot-clip-delete:hover:not(:disabled) {
+  border-color: #efb7b2;
+  background: var(--workspace-danger-soft);
+  color: var(--workspace-danger);
+}
+
+.godot-clip-main strong {
+  color: var(--workspace-text);
+}
+
+.godot-clip-main span,
+.godot-clip-thumb-empty,
+.sprite-hint,
+.range-field label,
+.range-info,
+.progress-text {
+  color: var(--workspace-text-muted);
+}
+
+.range-num {
+  border-color: var(--workspace-border-strong);
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+}
+
+.range-num:focus {
+  border-color: var(--workspace-accent);
+  box-shadow: var(--workspace-focus);
+}
+
+.range-num:disabled,
+.godot-clip-save:disabled {
+  background: var(--workspace-surface-muted);
+  color: var(--workspace-text-muted);
+}
+
+.progress-bar-container {
+  background: var(--workspace-border);
+}
+
+.progress-bar {
+  background: var(--workspace-accent);
+}
+
+.error-msg {
+  border-color: #efb7b2;
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-danger-soft);
+  color: var(--workspace-danger);
+}
+
+.success-msg {
+  border-color: var(--workspace-accent-border);
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+}
+
+.drop-overlay {
+  background: var(--workspace-overlay);
+}
+
+.drop-overlay-content {
+  border: 1px solid var(--workspace-border);
+  border-radius: var(--workspace-radius-lg);
+  background: var(--workspace-surface-raised);
+  box-shadow: var(--workspace-shadow-lg);
+}
+
+.drop-overlay-text {
+  color: var(--workspace-text);
+}
+
+.drop-overlay-hint {
+  color: var(--workspace-text-muted);
+}
+
+@media (max-width: 900px) {
+  .studio-drawer {
+    top: auto;
+    max-height: min(84dvh, 760px);
+    border-radius: 16px 16px 0 0;
+    border-bottom: 0;
+  }
+
+  .studio-drawer-header {
+    padding-top: 16px;
+  }
+
+  .studio-tabs {
+    margin-top: 10px;
+  }
+
+  .clipboard-modal {
+    padding: 18px;
+  }
+}
+
+@media (max-width: 520px) {
+  .panel-body {
+    padding: 10px;
+  }
+
+  .clipboard-modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .clipboard-modal {
+    width: 100%;
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 16px 16px 0 0;
+    padding-bottom: calc(18px + env(safe-area-inset-bottom, 0));
+    animation-name: sheetIn;
+  }
+
+  .clipboard-modal-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .clipboard-btn {
+    min-height: 44px;
+  }
+
+  .studio-header-actions .studio-mini-btn,
+  .studio-tabs button {
+    min-height: 40px;
+  }
+}
+
+@keyframes sheetIn {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }

@@ -318,6 +318,17 @@ export default function StudioPanel({ onOpenVideoAsset }) {
     }
   }
 
+  useEffect(() => {
+    if (!open) return undefined
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [open])
+
   return (
     <>
       <button
@@ -331,7 +342,9 @@ export default function StudioPanel({ onOpenVideoAsset }) {
       </button>
 
       {open && (
-        <div className="studio-drawer" role="dialog" aria-label={t('studio.panelTitle')}>
+        <>
+          <div className="studio-drawer-backdrop" aria-hidden="true" onClick={() => setOpen(false)} />
+          <div className="studio-drawer" role="dialog" aria-modal="true" aria-label={t('studio.panelTitle')}>
           <div className="studio-drawer-header">
             <div>
               <strong>{t('studio.panelTitle')}</strong>
@@ -567,7 +580,8 @@ export default function StudioPanel({ onOpenVideoAsset }) {
               </div>
             </div>
           )}
-        </div>
+          </div>
+        </>
       )}
 
       {previewAsset && selectedId && (

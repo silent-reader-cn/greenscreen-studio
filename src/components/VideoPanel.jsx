@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
+import { Clapperboard } from 'lucide-react'
 import CollapsiblePanel from './CollapsiblePanel.jsx'
 import { formatBytes, t } from '../i18n.js'
 import { parseExplicitFrameList } from '../lib/frameSelection.js'
@@ -1103,7 +1104,11 @@ export default function VideoPanel({
   return (
     <>
       {videoInfo && (
-        <CollapsiblePanel title={`🎬 ${t('videoPanel.title')}`} summary={summary} className="video-panel">
+        <CollapsiblePanel
+          title={<span className="panel-title-content"><Clapperboard size={15} />{t('videoPanel.title')}</span>}
+          summary={summary}
+          className="video-panel"
+        >
           <div className="video-options">
             <div className="opt-group">
               <p className="opt-label">{t('videoPanel.exportType')}</p>

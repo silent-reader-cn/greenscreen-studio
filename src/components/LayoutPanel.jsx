@@ -1,4 +1,5 @@
 import React from 'react'
+import { Ruler } from 'lucide-react'
 import CollapsiblePanel from './CollapsiblePanel.jsx'
 import { t } from '../i18n.js'
 
@@ -46,7 +47,10 @@ export default function LayoutPanel({
   const previewScale = lockedScale ?? fitScale
 
   return (
-    <CollapsiblePanel title={`📐 ${t('layout.title')}`} summary={summary}>
+    <CollapsiblePanel
+      title={<span className="panel-title-content"><Ruler size={15} />{t('layout.title')}</span>}
+      summary={summary}
+    >
       <div className="layout-group">
         <p className="group-label">{t('layout.canvasSize')}</p>
         <div className="dual-input">
@@ -137,10 +141,10 @@ export default function LayoutPanel({
             {sourceCharacterHeight > 0 ? ` (${t('layout.scaleLocked')})` : ''}
           </p>
           {params.autoCrop !== false && (
-            <p className="calc-result" style={{color: '#666'}}>{t('layout.autoCropOn')}</p>
+            <p className="calc-result calc-result-muted">{t('layout.autoCropOn')}</p>
           )}
           {params.autoCrop !== false && params.sourceCenterAnchor !== false && (
-            <p className="calc-result" style={{color: '#666'}}>{t('layout.sourceCenterAnchorOn')}</p>
+            <p className="calc-result calc-result-muted">{t('layout.sourceCenterAnchorOn')}</p>
           )}
         </div>
       )}

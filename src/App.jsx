@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import {
   Download,
   Eye,
+  FileText,
   FolderInput,
   Image as ImageIcon,
   Layers3,
@@ -1708,7 +1709,9 @@ function ClipboardImportDialog({ importItem, onCancel, onConfirm }) {
         onClick={event => event.stopPropagation()}
       >
         <div className="clipboard-modal-header">
-          <span className="clipboard-modal-icon" aria-hidden="true">{isImage ? '🖼️' : '🎬'}</span>
+          <span className="clipboard-modal-icon" aria-hidden="true">
+            {isImage ? <ImageIcon size={20} /> : <Video size={20} />}
+          </span>
           <div>
             <h2 id="clipboard-import-title">{t('clipboard.title')}</h2>
             <p>{t('clipboard.body', { kind: kindLabel })}</p>
@@ -1772,7 +1775,7 @@ function FileMetaPanel({
 
   return (
     <CollapsiblePanel
-      title={`📄 ${t('file.title')}`}
+      title={<span className="panel-title-content"><FileText size={15} />{t('file.title')}</span>}
       summary={summary}
       defaultCollapsed
       className="file-meta-panel"

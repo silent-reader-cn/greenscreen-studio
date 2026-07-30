@@ -1,4 +1,5 @@
 import React from 'react'
+import { Palette } from 'lucide-react'
 import CollapsiblePanel from './CollapsiblePanel.jsx'
 import { t } from '../i18n.js'
 
@@ -24,7 +25,10 @@ export default function KeyingPanel({ params, onChange }) {
   const summary = t('keying.summary', { tolerance: params.tolerance, feather: params.feather })
 
   return (
-    <CollapsiblePanel title={`🎨 ${t('keying.title')}`} summary={summary}>
+    <CollapsiblePanel
+      title={<span className="panel-title-content"><Palette size={15} />{t('keying.title')}</span>}
+      summary={summary}
+    >
       <div className="color-row">
         <label>{t('keying.keyColor')}</label>
         <input
