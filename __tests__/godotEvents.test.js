@@ -36,6 +36,12 @@ describe('Godot events artifact', () => {
     expect(artifact).toMatchObject({
       schemaVersion: 1,
       frameConvention: { origin: 0, clipEndExclusive: true },
+      godot: {
+        methodTrackFormat: 'godot_animation_method_track_v1',
+        dispatchMethod: 'dispatch_action_event',
+        dispatcherNodePath: 'ActionEventDispatcher',
+        eventArgumentType: 'Dictionary',
+      },
       tracks: [{
         sourceTimebase: {
           unit: 'source_frame',
@@ -81,6 +87,30 @@ describe('Godot events artifact', () => {
         exactSourceFrame: false,
       }),
     ])
+    expect(artifact.tracks[0].godotMethodTrack).toEqual({
+      format: 'godot_animation_method_track_v1',
+      type: 'method',
+      targetNodePath: 'ActionEventDispatcher',
+      method: 'dispatch_action_event',
+      keys: [
+        {
+          timeSeconds: 0.1,
+          transition: 1,
+          value: {
+            method: 'dispatch_action_event',
+            args: [expect.objectContaining({ id: 'exact', type: 'active_start', animationFrame: 1 })],
+          },
+        },
+        {
+          timeSeconds: 0.2,
+          transition: 1,
+          value: {
+            method: 'dispatch_action_event',
+            args: [expect.objectContaining({ id: 'late', payload: { hitbox: 'slash_a', damage: 12 } })],
+          },
+        },
+      ],
+    })
   })
 
   it('creates an empty synthetic track for generic exports', () => {
@@ -105,6 +135,7 @@ describe('Godot events artifact', () => {
         loop: true,
       },
       events: [],
+      godotMethodTrack: { keys: [] },
     })
   })
 

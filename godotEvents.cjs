@@ -1,4 +1,7 @@
 const GODOT_EVENTS_SCHEMA_VERSION = 1;
+const GODOT_METHOD_TRACK_FORMAT = 'godot_animation_method_track_v1';
+const GODOT_EVENT_DISPATCH_METHOD = 'dispatch_action_event';
+const GODOT_EVENT_DISPATCHER_NODE_PATH = 'ActionEventDispatcher';
 
 function copyJsonObject(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -25,6 +28,23 @@ function mapSourceFrame(sourceFrame, sourceFrames) {
     animationFrame,
     mappedSourceFrame: sourceFrames[animationFrame],
     exactSourceFrame: sourceFrames[animationFrame] === sourceFrame,
+  };
+}
+
+function buildGodotMethodTrack(events) {
+  return {
+    format: GODOT_METHOD_TRACK_FORMAT,
+    type: 'method',
+    targetNodePath: GODOT_EVENT_DISPATCHER_NODE_PATH,
+    method: GODOT_EVENT_DISPATCH_METHOD,
+    keys: events.map((event) => ({
+      timeSeconds: event.animationTimeSeconds,
+      transition: 1,
+      value: {
+        method: GODOT_EVENT_DISPATCH_METHOD,
+        args: [copyJsonObject(event)],
+      },
+    })),
   };
 }
 
@@ -104,6 +124,7 @@ function buildTrack(track) {
       sourceFrames: [...sourceFrames],
     },
     events,
+    godotMethodTrack: buildGodotMethodTrack(events),
   };
 }
 
@@ -118,12 +139,22 @@ function buildGodotEvents({ tracks = [] } = {}) {
       clipStartInclusive: true,
       clipEndExclusive: true,
     },
+    godot: {
+      methodTrackFormat: GODOT_METHOD_TRACK_FORMAT,
+      dispatchMethod: GODOT_EVENT_DISPATCH_METHOD,
+      dispatcherNodePath: GODOT_EVENT_DISPATCHER_NODE_PATH,
+      eventArgumentType: 'Dictionary',
+    },
     tracks: tracks.map(buildTrack),
   };
 }
 
 module.exports = {
   GODOT_EVENTS_SCHEMA_VERSION,
+  GODOT_METHOD_TRACK_FORMAT,
+  GODOT_EVENT_DISPATCH_METHOD,
+  GODOT_EVENT_DISPATCHER_NODE_PATH,
   buildGodotEvents,
+  buildGodotMethodTrack,
   mapSourceFrame,
 };

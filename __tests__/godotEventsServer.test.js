@@ -242,6 +242,7 @@ describe('reviewed Godot event export', () => {
         .send(godotRequest(reviewedJobId, approved.id, { startFrame: 10, endFrame: 20 }))
       expect(exported.status).toBe(200)
       expect(exported.body.artifacts.events).toEqual(expect.objectContaining({ filename: 'events.json' }))
+      expect(exported.body.artifacts.dispatcher).toEqual(expect.objectContaining({ filename: 'action_event_dispatcher.gd' }))
 
       const eventsResponse = await request(app)
         .get(`/api/video/godot-artifact/${reviewedJobId}/events`)
@@ -266,6 +267,24 @@ describe('reviewed Godot event export', () => {
           payload: { hitbox: 'slash_a' },
         }),
       ])
+      expect(events.tracks[0].godotMethodTrack).toMatchObject({
+        format: 'godot_animation_method_track_v1',
+        type: 'method',
+        targetNodePath: 'ActionEventDispatcher',
+        method: 'dispatch_action_event',
+        keys: [
+          { timeSeconds: 0.1, value: { method: 'dispatch_action_event' } },
+          { timeSeconds: 0.2, value: { method: 'dispatch_action_event' } },
+        ],
+      })
+
+      const dispatcherResponse = await request(app)
+        .get(`/api/video/godot-artifact/${reviewedJobId}/dispatcher`)
+      expect(dispatcherResponse.status).toBe(200)
+      expect(dispatcherResponse.headers['content-disposition']).toContain('filename="action_event_dispatcher.gd"')
+      const dispatcherScript = dispatcherResponse.body.toString('utf8')
+      expect(dispatcherScript).toContain('class_name GreenscreenActionEventDispatcher')
+      expect(dispatcherScript).toContain('func dispatch_action_event(event: Dictionary) -> void:')
 
       const metadataResponse = await request(app)
         .get(`/api/video/godot-artifact/${reviewedJobId}/metadata`)
@@ -275,6 +294,21 @@ describe('reviewed Godot event export', () => {
         trackCount: 1,
         eventCount: 2,
         reviewedClipId: approved.id,
+        importTrack: {
+          format: 'godot_animation_method_track_v1',
+          type: 'method',
+          targetNodePath: 'ActionEventDispatcher',
+          method: 'dispatch_action_event',
+        },
+        dispatcher: {
+          resourcePath: 'res://action_event_dispatcher.gd',
+          className: 'GreenscreenActionEventDispatcher',
+          nodeName: 'ActionEventDispatcher',
+          attachAsChildOf: 'AnimatedSprite2D',
+          spritePath: '..',
+          signal: 'action_event',
+          method: 'dispatch_action_event',
+        },
       })
 
       const bundleResponse = await request(app)
@@ -287,6 +321,7 @@ describe('reviewed Godot event export', () => {
         })
       const entries = new AdmZip(bundleResponse.body).getEntries().map((entry) => entry.entryName)
       expect(entries).toContain('events.json')
+      expect(entries).toContain('action_event_dispatcher.gd')
       expect(entries.some((entry) => /_events\.json$/.test(entry) && entry !== 'events.json')).toBe(false)
     } finally {
       if (reviewedJobId) await request(require('../server.cjs').app).delete(`/api/video/${reviewedJobId}`)

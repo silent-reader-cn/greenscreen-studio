@@ -27,6 +27,10 @@ const {
 } = require('./videoProcessor.cjs');
 const { createGodotBundle } = require('./godotBundle.cjs');
 const { buildGodotEvents } = require('./godotEvents.cjs');
+const {
+  GODOT_EVENT_DISPATCHER_FILENAME,
+  buildGodotEventDispatcherScript,
+} = require('./godotEventDispatcher.cjs');
 const { buildGodotExportBasename } = require('./godotNaming.cjs');
 const { buildActionClipReviewChecks } = require('./reviewChecks.cjs');
 
@@ -783,6 +787,7 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
     const scenePath = path.join(tmpDir, `${basename}.tscn`);
     const metadataPath = path.join(tmpDir, `${basename}_metadata.json`);
     const eventsPath = path.join(tmpDir, `${basename}_${jobId}_${Date.now()}_events.json`);
+    const dispatcherPath = path.join(tmpDir, `${basename}_${jobId}_${Date.now()}_action_event_dispatcher.gd`);
     const bundlePath = path.join(tmpDir, `${basename}.zip`);
 
     for (const outputPath of Object.values(job.godotOutputPaths || {})) safeUnlink(outputPath);
@@ -842,6 +847,21 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
         trackCount: godotEvents.tracks.length,
         eventCount: godotEvents.tracks.reduce((total, track) => total + track.events.length, 0),
         reviewedClipId: reviewedClipExport?.bundle.clip.id || null,
+        importTrack: {
+          format: godotEvents.godot.methodTrackFormat,
+          type: 'method',
+          targetNodePath: godotEvents.godot.dispatcherNodePath,
+          method: godotEvents.godot.dispatchMethod,
+        },
+        dispatcher: {
+          resourcePath: `res://${GODOT_EVENT_DISPATCHER_FILENAME}`,
+          className: 'GreenscreenActionEventDispatcher',
+          nodeName: godotEvents.godot.dispatcherNodePath,
+          attachAsChildOf: 'AnimatedSprite2D',
+          spritePath: '..',
+          signal: 'action_event',
+          method: godotEvents.godot.dispatchMethod,
+        },
       },
       cleanup: result.cleanup,
       warnings: result.warnings,
@@ -856,12 +876,14 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
     }), 'utf8');
     fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2), 'utf8');
     fs.writeFileSync(eventsPath, JSON.stringify(godotEvents, null, 2), 'utf8');
+    fs.writeFileSync(dispatcherPath, buildGodotEventDispatcherScript(), 'utf8');
     await createGodotBundle(bundlePath, [
       atlasPath,
       spriteFramesPath,
       scenePath,
       metadataPath,
       { path: eventsPath, name: 'events.json' },
+      { path: dispatcherPath, name: GODOT_EVENT_DISPATCHER_FILENAME },
     ]);
     job.godotOutputPaths = {
       bundle: bundlePath,
@@ -870,8 +892,12 @@ app.post('/api/video/export-godot-spriteframes', express.json({ limit: '10mb' })
       scene: scenePath,
       metadata: metadataPath,
       events: eventsPath,
+      dispatcher: dispatcherPath,
     };
-    job.godotOutputNames = { events: 'events.json' };
+    job.godotOutputNames = {
+      events: 'events.json',
+      dispatcher: GODOT_EVENT_DISPATCHER_FILENAME,
+    };
     job.status = 'done';
     job.progress = { current: result.frameCount, total: result.frameCount, percent: 100 };
 
