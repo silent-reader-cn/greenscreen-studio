@@ -370,14 +370,14 @@ export default function StudioPanel({ onOpenVideoAsset }) {
             </div>
           </div>
 
-          <div className="studio-tabs">
-            <button type="button" className={tab === 'projects' ? 'active' : ''} onClick={() => setTab('projects')}>
+          <div className="studio-tabs" role="tablist" aria-label={t('studio.panelTitle')}>
+            <button type="button" role="tab" aria-selected={tab === 'projects'} className={tab === 'projects' ? 'active' : ''} onClick={() => setTab('projects')}>
               {t('studio.tabProjects')}
             </button>
-            <button type="button" className={tab === 'collab' ? 'active' : ''} onClick={() => setTab('collab')}>
+            <button type="button" role="tab" aria-selected={tab === 'collab'} className={tab === 'collab' ? 'active' : ''} onClick={() => setTab('collab')}>
               {t('studio.tabCollab')}
             </button>
-            <button type="button" className={tab === 'mcp' ? 'active' : ''} onClick={() => setTab('mcp')}>
+            <button type="button" role="tab" aria-selected={tab === 'mcp'} className={tab === 'mcp' ? 'active' : ''} onClick={() => setTab('mcp')}>
               {t('studio.tabMcp')}
             </button>
           </div>
@@ -386,7 +386,7 @@ export default function StudioPanel({ onOpenVideoAsset }) {
 
           {tab === 'projects' && (
             <div className="studio-body">
-              <div className="studio-create-row">
+              <div className="studio-create-row studio-project-create">
                 <input
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
@@ -528,7 +528,7 @@ export default function StudioPanel({ onOpenVideoAsset }) {
                       ))}
                       {(bundle?.messages || []).length === 0 && <p className="studio-empty">{t('studio.noMessages')}</p>}
                     </div>
-                    <div className="studio-create-row">
+                    <div className="studio-create-row studio-message-create">
                       <input
                         value={messageBody}
                         onChange={(e) => setMessageBody(e.target.value)}

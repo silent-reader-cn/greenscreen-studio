@@ -6057,6 +6057,7 @@ body {
 
 /* Project drawer and media dialog share the same form rhythm. */
 .studio-drawer {
+  --studio-control-height: 40px;
   overflow: hidden;
 }
 
@@ -6069,11 +6070,40 @@ body {
   gap: 6px;
 }
 
+.studio-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 3px;
+  min-height: calc(var(--studio-control-height) + 8px);
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  overflow: hidden;
+  scrollbar-width: none;
+}
+
+.studio-tabs::-webkit-scrollbar {
+  display: none;
+}
+
 .studio-tabs button,
 .studio-primary-btn,
 .studio-mini-btn,
 .studio-danger-btn {
-  min-height: 38px;
+  box-sizing: border-box;
+  height: var(--studio-control-height);
+  min-height: var(--studio-control-height);
+  padding-top: 0;
+  padding-bottom: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.studio-tabs button {
+  width: 100%;
+  min-width: 0;
 }
 
 .studio-create-row {
@@ -6083,7 +6113,29 @@ body {
 .studio-create-row input,
 .studio-create-col input,
 .studio-create-col textarea {
-  min-height: 40px;
+  box-sizing: border-box;
+  min-height: var(--studio-control-height);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.studio-create-row input,
+.studio-create-col input {
+  height: var(--studio-control-height);
+}
+
+.studio-create-col textarea {
+  min-height: calc(var(--studio-control-height) * 2);
+  resize: vertical;
+}
+
+.studio-detail-head > div {
+  min-width: 0;
+}
+
+.studio-detail-head .studio-danger-btn,
+.studio-asset-actions button {
+  flex: 0 0 auto;
 }
 
 .studio-list-item {
@@ -6153,8 +6205,63 @@ body {
   }
 
   .studio-drawer {
+    --studio-control-height: 44px;
     height: min(88dvh, 780px);
     max-height: min(88dvh, 780px);
+  }
+
+  .studio-body {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .studio-split {
+    min-height: 0;
+  }
+
+  .studio-list,
+  .studio-detail,
+  .studio-messages,
+  .studio-logs {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .studio-code {
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: visible;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .studio-create-row {
+    align-items: stretch;
+  }
+
+  .studio-create-row input,
+  .studio-create-col input,
+  .studio-create-col textarea {
+    font-size: 16px;
+  }
+
+  .studio-project-create {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+
+  .studio-message-create {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .studio-create-row .studio-primary-btn {
+    min-width: 72px;
+  }
+
+  .studio-detail-head .studio-danger-btn {
+    min-width: 72px;
   }
 }
 
@@ -6187,13 +6294,8 @@ body {
     min-height: 44px;
   }
 
-  .studio-tabs {
-    overflow-x: auto;
-  }
-
   .studio-tabs button {
-    min-width: 92px;
-    min-height: 44px;
+    min-width: 0;
   }
 
   .studio-header-actions .studio-mini-btn,
@@ -6208,7 +6310,23 @@ body {
     gap: 8px;
   }
 
-  .studio-list {
-    max-height: 150px;
+  .studio-project-create {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .studio-project-create .studio-primary-btn {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (min-width: 381px) and (max-width: 520px) {
+  .studio-project-create {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+
+  .studio-project-create .studio-primary-btn {
+    grid-column: auto;
+    width: auto;
   }
 }
