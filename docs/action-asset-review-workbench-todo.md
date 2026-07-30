@@ -52,7 +52,7 @@ flowchart LR
 - [x] **Semantic markers**: Add, move, edit, and remove typed frame markers within a selected clip. (commit `774eaf4`)
 - [x] **Approval gate**: Move clips through `draft`, `needs_review`, `approved`, `exported`, `verified_in_game`, and `rejected`. (commit `f746ebc`)
 - [x] **Godot event artifact**: Export approved clip events as `events.json` beside the atlas, SpriteFrames, scene, metadata, and ZIP. (commit `9017557`)
-- [x] **AI collaboration gate**: Queue and claim export work only for approved clips; include immutable clip and marker data in the task payload.
-- [ ] **Automated review checks**: Surface loop-boundary, foreground-area, feet-anchor, crop, and frame-jitter warnings before approval.
+- [x] **AI collaboration gate**: Queue and claim export work only for approved clips; include immutable clip and marker data in the task payload. (commit `5fa1219`)
+- [x] **Automated review checks**: Surface loop-boundary, foreground-area, feet-anchor, crop, and frame-jitter warnings before approval.
 - [ ] **Godot handoff**: Include an import-friendly event track and a minimal Godot dispatcher reference in exported metadata.
 - [ ] **End-to-end verification**: Test project persistence, API validation, UI editing, export artifacts, and a real Godot import smoke path.

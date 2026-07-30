@@ -345,6 +345,15 @@ const dictionaries = {
       reviewLocked: 'Return this clip to review before editing its content',
       queueExportTask: 'Queue AI export',
       exportTaskFailed: 'Failed to queue export task',
+      checks: {
+        foreground_area: 'Foreground area',
+        feet_anchor: 'Feet anchor',
+        crop: 'Crop boundary',
+        frame_jitter: 'Frame jitter',
+        loop_boundary: 'Loop boundary',
+        confirmWarnings: '{count} automated review warning(s) remain. Approve anyway?',
+        status: { pass: 'pass', warning: 'warning', skipped: 'skipped' },
+      },
       status: {
         draft: 'draft',
         needs_review: 'needs review',
@@ -745,6 +754,15 @@ const dictionaries = {
       reviewLocked: '请先把该 clip 退回待审，再编辑内容',
       queueExportTask: '排队 AI 导出',
       exportTaskFailed: '排队导出任务失败',
+      checks: {
+        foreground_area: '前景面积',
+        feet_anchor: '脚底锚点',
+        crop: '裁剪边界',
+        frame_jitter: '帧抖动',
+        loop_boundary: '循环边界',
+        confirmWarnings: '仍有 {count} 项自动审核警告，仍要批准吗？',
+        status: { pass: '通过', warning: '警告', skipped: '跳过' },
+      },
       status: {
         draft: '草稿',
         needs_review: '待审',

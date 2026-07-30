@@ -22,10 +22,13 @@ const {
   selectSpriteFrames,
   buildGodotAnimatedSpriteScene,
   renderGodotClipPreview,
+  scanStableVideoCrop,
+  loadAlgorithms,
 } = require('./videoProcessor.cjs');
 const { createGodotBundle } = require('./godotBundle.cjs');
 const { buildGodotEvents } = require('./godotEvents.cjs');
 const { buildGodotExportBasename } = require('./godotNaming.cjs');
+const { buildActionClipReviewChecks } = require('./reviewChecks.cjs');
 
 // 加载 polyfill（必须在引入 keying.js 之前）
 require('./src/lib/canvas-polyfill.js');
@@ -545,6 +548,77 @@ app.post('/api/video/export-spritesheet', express.json({ limit: '10mb' }), async
       job.error = err.message;
     }
     if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/video/review-checks
+ * Analyze one needs-review clip against its bound upload before approval.
+ */
+app.post('/api/video/review-checks', express.json({ limit: '2mb' }), async (req, res) => {
+  try {
+    const { jobId, clipId, params = {} } = req.body || {};
+    const job = videoJobs.get(jobId);
+    if (!job) return res.status(404).json({ error: 'job not found', code: 'VIDEO_JOB_NOT_FOUND' });
+    if (!job.projectId || !job.assetId) {
+      return res.status(409).json({ error: 'review checks require a project-bound video upload', code: 'CLIP_JOB_CONTEXT_REQUIRED' });
+    }
+    const bundle = studioServices.store.getActionClipBundle(String(clipId || ''));
+    if (!bundle) return res.status(404).json({ error: 'review clip not found', code: 'CLIP_NOT_FOUND' });
+    const { clip } = bundle;
+    if (clip.projectId !== job.projectId || clip.assetId !== job.assetId) {
+      return res.status(409).json({ error: 'review clip does not belong to the uploaded project asset', code: 'CLIP_JOB_CONTEXT_MISMATCH' });
+    }
+    if (clip.status !== 'needs_review') {
+      return res.status(409).json({ error: 'clip must need review before automated checks run', code: 'CLIP_REVIEW_CHECKS_STATUS_INVALID' });
+    }
+
+    await loadAlgorithms();
+    const totalFrames = job.info.frameCount || Math.round(job.info.fps * job.info.duration);
+    const stableCrop = await scanStableVideoCrop(job.inputPath, {
+      startFrame: clip.startFrame,
+      endFrame: clip.endFrame,
+      totalFrames,
+      fps: job.info.fps,
+      frameBytes: job.info.width * job.info.height * 4,
+      srcW: job.info.width,
+      srcH: job.info.height,
+      params: {
+        keying: params.keying || {},
+        cleanup: params.cleanup || {},
+        region: params.region || null,
+      },
+      layout: params.layout || {},
+    });
+    const loopResult = clip.loop
+      ? await findLoopEndFrame(job.inputPath, clip.startFrame, job.info.fps, totalFrames, {
+          maxSearch: Math.max(2, clip.endFrame - clip.startFrame + 1),
+          minSpacing: 1,
+          earlyFrameExclusion: 1,
+          maxCandidates: 5,
+          params: {
+            keying: params.keying || {},
+            layout: params.layout || {},
+            cleanup: params.cleanup || {},
+            region: params.region || null,
+            mode: 'transparent',
+          },
+          sourceWidth: job.info.width,
+          sourceHeight: job.info.height,
+        })
+      : null;
+    const report = buildActionClipReviewChecks({
+      clip,
+      stableCrop,
+      loopResult,
+      layout: params.layout || {},
+    });
+    studioServices.store.setActionClipReviewChecks(clip.id, report);
+    res.json(report);
+  } catch (err) {
+    console.error('Action clip review checks failed:', err);
+    const status = String(err.code || '').startsWith('CLIP_REVIEW_CHECKS_') ? 409 : 500;
+    res.status(status).json({ error: err.message, code: err.code });
   }
 });
 

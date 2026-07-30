@@ -1362,6 +1362,10 @@ export default function App() {
                   onClipsChange={setReviewClips}
                   onMarkersChange={setReviewMarkers}
                   onApplyClipRange={handleApplyReviewClipRange}
+                  videoJobId={videoInfo?.jobId || ''}
+                  keyingParams={keyingParams}
+                  layoutParams={layoutParams}
+                  region={videoRegion}
                 />
               )}
 

@@ -2901,6 +2901,34 @@ body {
   max-width: 142px;
 }
 
+.review-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.review-checks .review-check {
+  padding: 2px 5px;
+  border: 1px solid #d7dde5;
+  border-radius: 4px;
+  background: #f5f7fa;
+  color: #46505c;
+  font-size: 10px;
+}
+
+.review-checks .review-check.status-pass {
+  border-color: #9fc9ad;
+  background: #edf8f0;
+  color: #216b39;
+}
+
+.review-checks .review-check.status-warning {
+  border-color: #e2b96e;
+  background: #fff7e8;
+  color: #7a4b00;
+}
+
 .review-status-select {
   width: 100%;
   min-width: 0;

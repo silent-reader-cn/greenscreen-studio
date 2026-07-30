@@ -20,7 +20,21 @@ function createFakeVideoProcessor() {
     }),
     processVideo: vi.fn(),
     exportSpriteSheet: vi.fn(),
-    findLoopEndFrame: vi.fn(),
+    findLoopEndFrame: vi.fn().mockResolvedValue({ candidates: [], scores: [], warnings: [] }),
+    loadAlgorithms: vi.fn().mockResolvedValue(undefined),
+    scanStableVideoCrop: vi.fn().mockResolvedValue({
+      scan: {
+        rawBounds: { x: 120, y: 80, width: 480, height: 760 },
+        metrics: {
+          sampleFrameCount: 10,
+          foregroundFrameCount: 10,
+          foregroundAreaRatio: { min: 0.1, max: 0.12, mean: 0.11 },
+          edgeContacts: { left: 0, right: 0, top: 0, bottom: 0, frameCount: 0 },
+          feet: { maxBottomDeltaRatio: 0.01 },
+          jitter: { maxCenterDeltaRatio: 0.01, maxAreaChangeRatio: 0.02 },
+        },
+      },
+    }),
     renderGodotClipPreview: vi.fn(),
     selectSpriteFrames: vi.fn((selection, totalFrames) => {
       const range = selection.range || { startFrame: 0, endFrame: totalFrames }
@@ -130,7 +144,6 @@ describe('reviewed Godot event export', () => {
         payload: { hitbox: 'slash_a' },
       })
       studioServices.store.updateActionClip(approved.id, { status: 'needs_review' })
-      studioServices.store.updateActionClip(approved.id, { status: 'approved' })
       const otherApproved = studioServices.store.createActionClip(project.id, {
         assetId: otherAsset.id,
         name: 'other_attack',
@@ -138,6 +151,13 @@ describe('reviewed Godot event export', () => {
         endFrame: 60,
       })
       studioServices.store.updateActionClip(otherApproved.id, { status: 'needs_review' })
+      const otherPending = studioServices.store.getActionClip(otherApproved.id)
+      studioServices.store.setActionClipReviewChecks(otherApproved.id, {
+        schemaVersion: 1,
+        clip: { id: otherPending.id, version: otherPending.version },
+        summary: { status: 'pass', warningCount: 0, passCount: 5, skippedCount: 0 },
+        checks: [],
+      })
       studioServices.store.updateActionClip(otherApproved.id, { status: 'approved' })
       const draft = studioServices.store.createActionClip(project.id, {
         assetId: asset.id,
@@ -154,6 +174,30 @@ describe('reviewed Godot event export', () => {
       expect(reviewedUpload.status).toBe(200)
       expect(reviewedUpload.body).toMatchObject({ projectId: project.id, assetId: asset.id })
       reviewedJobId = reviewedUpload.body.jobId
+
+      const checksResponse = await request(app)
+        .post('/api/video/review-checks')
+        .send({
+          jobId: reviewedJobId,
+          clipId: approved.id,
+          params: { keying: {}, layout: { anchor: 'feet' } },
+        })
+      expect(checksResponse.status).toBe(200)
+      expect(checksResponse.body).toMatchObject({
+        clip: { id: approved.id, version: 2 },
+        summary: { status: 'pass', warningCount: 0, passCount: 4, skippedCount: 1 },
+      })
+      expect(checksResponse.body.checks.map((entry) => entry.id)).toEqual([
+        'foreground_area',
+        'feet_anchor',
+        'crop',
+        'frame_jitter',
+        'loop_boundary',
+      ])
+      expect(studioServices.store.getActionClip(approved.id).reviewChecks).toMatchObject({
+        clip: { id: approved.id, version: 2 },
+      })
+      studioServices.store.updateActionClip(approved.id, { status: 'approved' })
 
       const invalidAssetUpload = await request(app)
         .post('/api/video/upload')

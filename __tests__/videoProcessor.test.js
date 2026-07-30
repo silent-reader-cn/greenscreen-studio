@@ -500,6 +500,50 @@ describe('getVideoWorkerCount', () => {
   })
 })
 
+describe('summarizeFrameBounds', () => {
+  let summarizeFrameBounds
+
+  beforeEach(async () => {
+    vi.resetModules()
+    const mod = await import('../../videoProcessor.cjs')
+    summarizeFrameBounds = mod.summarizeFrameBounds
+  })
+
+  it('summarizes foreground coverage, area, feet movement, and consecutive frame jitter', () => {
+    const summary = summarizeFrameBounds([
+      { frame: 4, bounds: { minX: 10, minY: 20, maxX: 29, maxY: 79 } },
+      { frame: 5, bounds: { minX: 12, minY: 20, maxX: 31, maxY: 79 } },
+      { frame: 6, bounds: null },
+      { frame: 7, bounds: { minX: 12, minY: 22, maxX: 31, maxY: 91 } },
+    ], 100, 100)
+
+    expect(summary).toMatchObject({
+      sampleFrameCount: 4,
+      foregroundFrameCount: 3,
+      edgeContacts: { left: 0, right: 0, top: 0, bottom: 0, frameCount: 0 },
+      feet: { maxBottomDelta: 0, maxBottomDeltaRatio: 0 },
+    })
+    expect(summary.foregroundAreaRatio.min).toBeCloseTo(0.12)
+    expect(summary.foregroundAreaRatio.max).toBeCloseTo(0.14)
+    expect(summary.foregroundAreaRatio.mean).toBeCloseTo(0.126667)
+    expect(summary.jitter.maxCenterDelta).toBeCloseTo(2)
+    expect(summary.jitter.maxCenterDeltaRatio).toBeCloseTo(2 / Math.hypot(100, 100))
+    expect(summary.jitter.maxAreaChangeRatio).toBe(0)
+  })
+
+  it('counts each source edge and only counts an edge-touching frame once', () => {
+    const summary = summarizeFrameBounds([
+      { frame: 0, bounds: { minX: 0, minY: 0, maxX: 20, maxY: 99 } },
+      { frame: 1, bounds: { minX: 80, minY: 20, maxX: 99, maxY: 50 } },
+      { frame: 2, bounds: null },
+    ], 100, 100)
+
+    expect(summary.edgeContacts).toEqual({ left: 1, right: 1, top: 1, bottom: 1, frameCount: 2 })
+    expect(summary.sampleFrameCount).toBe(3)
+    expect(summary.foregroundFrameCount).toBe(2)
+  })
+})
+
 describe('selectSpriteFrames', () => {
   let selectSpriteFrames
 

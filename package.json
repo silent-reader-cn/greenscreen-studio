@@ -62,6 +62,7 @@
       "dist/**/*",
       "server.cjs",
       "godot*.cjs",
+      "reviewChecks.cjs",
       "lib/**/*",
       "videoProcessor.cjs",
       "videoFrameWorker.cjs",

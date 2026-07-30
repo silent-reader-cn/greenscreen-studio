@@ -11,6 +11,25 @@ const { mountStudioApi, createStudioServices } = require('../lib/studioApi.cjs')
 const express = require('express')
 const request = require('supertest')
 
+function saveCurrentReviewChecks(store, clipId, overrides = {}) {
+  const clip = store.getActionClip(clipId)
+  return store.setActionClipReviewChecks(clipId, {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    clip: {
+      id: clip.id,
+      version: clip.version,
+      status: clip.status,
+      startFrame: clip.startFrame,
+      endFrame: clip.endFrame,
+      loop: clip.loop,
+    },
+    summary: { status: 'pass', warningCount: 0, passCount: 5, skippedCount: 0 },
+    checks: [],
+    ...overrides,
+  })
+}
+
 describe('projectStore + mcpRuntime + studio API', () => {
   let tmpDir
   let store
@@ -103,8 +122,12 @@ describe('projectStore + mcpRuntime + studio API', () => {
     })).toThrow(/start in draft/)
     const submitted = store.updateActionClip(attack.id, { status: 'needs_review' })
     expect(submitted.status).toBe('needs_review')
+    expect(() => store.updateActionClip(attack.id, { status: 'approved' })).toThrow(/review checks/)
+    saveCurrentReviewChecks(store, attack.id)
+    expect(() => store.updateActionClip(attack.id, { status: 'approved', endFrame: 61 })).toThrow(/review checks/)
     const approved = store.updateActionClip(attack.id, { status: 'approved' })
     expect(approved.status).toBe('approved')
+    expect(approved.reviewChecks).toMatchObject({ clip: { id: attack.id, version: submitted.version } })
     expect(approved.version).toBe(3)
     expect(() => store.addActionMarker(attack.id, { frame: 50, type: 'note' })).toThrow(/return to review/)
     expect(() => store.updateActionMarker(hit.id, { frame: 50 })).toThrow(/return to review/)
@@ -171,6 +194,7 @@ describe('projectStore + mcpRuntime + studio API', () => {
     expect(() => store.createActionClipExportTask(project.id, { clipId: clip.id })).toThrow(/approved clips/)
 
     store.updateActionClip(clip.id, { status: 'needs_review' })
+    saveCurrentReviewChecks(store, clip.id)
     const approved = store.updateActionClip(clip.id, { status: 'approved' })
     const task = store.createActionClipExportTask(project.id, {
       clipId: clip.id,
@@ -200,10 +224,12 @@ describe('projectStore + mcpRuntime + studio API', () => {
     })
     store.addActionMarker(staleClip.id, { frame: 44, type: 'note', payload: { before: true } })
     store.updateActionClip(staleClip.id, { status: 'needs_review' })
+    saveCurrentReviewChecks(store, staleClip.id)
     store.updateActionClip(staleClip.id, { status: 'approved' })
     const staleTask = store.createActionClipExportTask(project.id, { clipId: staleClip.id, priority: 'high' })
     store.updateActionClip(staleClip.id, { status: 'needs_review' })
     store.addActionMarker(staleClip.id, { frame: 45, type: 'sfx', payload: { sound: 'slash' } })
+    saveCurrentReviewChecks(store, staleClip.id)
     store.updateActionClip(staleClip.id, { status: 'approved' })
     const fallbackTask = store.createTask(project.id, { title: 'General follow-up', priority: 'normal' })
 
@@ -323,6 +349,12 @@ describe('projectStore + mcpRuntime + studio API', () => {
       .send({ status: 'needs_review' })
     expect(submittedClipRes.status).toBe(200)
     expect(submittedClipRes.body.status).toBe('needs_review')
+    const missingChecksRes = await request(app)
+      .patch(`/api/projects/${projectId}/clips/${clipId}`)
+      .send({ status: 'approved' })
+    expect(missingChecksRes.status).toBe(409)
+    expect(missingChecksRes.body.code).toBe('CLIP_REVIEW_CHECKS_REQUIRED')
+    saveCurrentReviewChecks(mounted.store, clipId)
     const approvedClipRes = await request(app)
       .patch(`/api/projects/${projectId}/clips/${clipId}`)
       .send({ status: 'approved' })

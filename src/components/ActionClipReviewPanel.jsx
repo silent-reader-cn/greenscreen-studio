@@ -49,6 +49,10 @@ export default function ActionClipReviewPanel({
   onClipsChange,
   onMarkersChange,
   onApplyClipRange,
+  videoJobId = '',
+  keyingParams = {},
+  layoutParams = {},
+  region = null,
   disabled = false,
 }) {
   const [clips, setClips] = useState([])
@@ -250,6 +254,22 @@ export default function ActionClipReviewPanel({
     setBusy(true)
     setError('')
     try {
+      if (nextStatus === 'approved') {
+        const report = await api('/api/video/review-checks', {
+          method: 'POST',
+          body: JSON.stringify({
+            jobId: videoJobId,
+            clipId: clip.id,
+            params: { keying: keyingParams, layout: layoutParams, region },
+          }),
+        })
+        if (report.summary?.warningCount > 0 && !window.confirm(t('review.checks.confirmWarnings', {
+          count: report.summary.warningCount,
+        }))) {
+          await refresh()
+          return
+        }
+      }
       await api(`/api/projects/${projectId}/clips/${clip.id}`, {
         method: 'PATCH',
         body: JSON.stringify(built.payload),
@@ -260,7 +280,7 @@ export default function ActionClipReviewPanel({
     } finally {
       setBusy(false)
     }
-  }, [busy, projectId, refresh])
+  }, [busy, keyingParams, layoutParams, projectId, refresh, region, videoJobId])
 
   const handleQueueExportTask = useCallback(async (clip) => {
     if (!projectId || !clip || busy) return
@@ -437,6 +457,15 @@ export default function ActionClipReviewPanel({
                         loop: clip.loop ? t('common.yes') : t('common.no'),
                       })}
                     </span>
+                    {clip.reviewChecks?.checks && (
+                      <div className="review-checks">
+                        {clip.reviewChecks.checks.map((item) => (
+                          <span key={item.id} className={`review-check status-${item.status}`}>
+                            {t(`review.checks.${item.id}`)}: {t(`review.checks.status.${item.status}`)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
               </div>

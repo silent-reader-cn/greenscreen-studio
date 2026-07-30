@@ -15,7 +15,7 @@ function jsonResponse(data, status = 200) {
   }
 }
 
-function createApiMock() {
+function createApiMock({ reviewWarningCount = 0 } = {}) {
   let clips = [
     { id: 'clip_1', assetId: 'asset_1', name: 'idle', startFrame: 0, endFrame: 12, loop: true, status: 'draft', version: 1 },
     { id: 'clip_2', assetId: 'asset_1', name: 'attack', startFrame: 12, endFrame: 30, loop: false, status: 'needs_review', version: 2 },
@@ -27,6 +27,30 @@ function createApiMock() {
 
     if (method === 'POST' && String(url).endsWith('/export-task')) {
       return jsonResponse({ id: 'task_1', payload: { type: 'action_clip_export' } }, 201)
+    }
+
+    if (method === 'POST' && String(url) === '/api/video/review-checks') {
+      const body = JSON.parse(options.body)
+      const clip = clips.find((entry) => entry.id === body.clipId)
+      const report = {
+        schemaVersion: 1,
+        clip: { id: clip.id, version: clip.version },
+        summary: {
+          status: reviewWarningCount > 0 ? 'warning' : 'pass',
+          warningCount: reviewWarningCount,
+          passCount: 5 - reviewWarningCount,
+          skippedCount: 0,
+        },
+        checks: [
+          { id: 'foreground_area', status: reviewWarningCount > 0 ? 'warning' : 'pass' },
+          { id: 'feet_anchor', status: 'pass' },
+          { id: 'crop', status: 'pass' },
+          { id: 'frame_jitter', status: 'pass' },
+          { id: 'loop_boundary', status: 'pass' },
+        ],
+      }
+      clips = clips.map((entry) => entry.id === body.clipId ? { ...entry, reviewChecks: report } : entry)
+      return jsonResponse(report)
     }
 
     if (method === 'POST') {
@@ -61,6 +85,9 @@ function renderPanel(overrides = {}) {
     sourceLabel: 'hero.mp4',
     range: { startFrame: 30, endFrame: 48 },
     totalFrames: 90,
+    videoJobId: 'video_job_1',
+    keyingParams: { tolerance: 40 },
+    layoutParams: { anchor: 'feet' },
     selectedClipIds: [],
     onSelectionChange: vi.fn(),
     onClipsChange: vi.fn(),
@@ -160,6 +187,15 @@ describe('ActionClipReviewPanel', () => {
       statusSelect = screen.getByLabelText(t('review.statusControl', { name: 'idle' }))
       expect(statusSelect.value).toBe('approved')
     })
+    expect(fetch).toHaveBeenCalledWith('/api/video/review-checks', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        jobId: 'video_job_1',
+        clipId: 'clip_1',
+        params: { keying: { tolerance: 40 }, layout: { anchor: 'feet' }, region: null },
+      }),
+    }))
+    expect(screen.getByText(`${t('review.checks.foreground_area')}: ${t('review.checks.status.pass')}`)).toBeTruthy()
 
     const idleItem = screen.getByText('idle').closest('[role="option"]')
     expect(within(idleItem).getByRole('button', { name: t('review.rename') }).disabled).toBe(true)
@@ -171,5 +207,23 @@ describe('ActionClipReviewPanel', () => {
     ))
     expect(screen.getByRole('button', { name: t('review.updateRange') }).disabled).toBe(true)
     expect(screen.getByRole('button', { name: t('review.marker.add') }).disabled).toBe(true)
+  })
+
+  it('requires confirmation before approving a clip with automated warnings', async () => {
+    vi.stubGlobal('fetch', createApiMock({ reviewWarningCount: 1 }))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderPanel({ selectedClipIds: ['clip_2'] })
+    await screen.findByText('attack')
+
+    const statusSelect = screen.getByLabelText(t('review.statusControl', { name: 'attack' }))
+    fireEvent.change(statusSelect, { target: { value: 'approved' } })
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith(t('review.checks.confirmWarnings', { count: 1 })))
+    expect(screen.getByLabelText(t('review.statusControl', { name: 'attack' })).value).toBe('needs_review')
+    expect(fetch).not.toHaveBeenCalledWith(
+      '/api/projects/project_1/clips/clip_2',
+      expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ status: 'approved' }) }),
+    )
+    expect(screen.getByText(`${t('review.checks.foreground_area')}: ${t('review.checks.status.warning')}`)).toBeTruthy()
   })
 })

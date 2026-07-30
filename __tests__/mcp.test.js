@@ -21,6 +21,24 @@ const require = createRequire(import.meta.url)
 const ffmpegPath = require('ffmpeg-static')
 const { createProjectStore, ACTION_CLIP_EXPORT_TASK_TYPE } = require('../lib/projectStore.cjs')
 
+function saveCurrentReviewChecks(store, clipId) {
+  const clip = store.getActionClip(clipId)
+  store.setActionClipReviewChecks(clipId, {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    clip: {
+      id: clip.id,
+      version: clip.version,
+      status: clip.status,
+      startFrame: clip.startFrame,
+      endFrame: clip.endFrame,
+      loop: clip.loop,
+    },
+    summary: { status: 'pass', warningCount: 0, passCount: 5, skippedCount: 0 },
+    checks: [],
+  })
+}
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const projectRoot = path.resolve(__dirname, '..')
@@ -255,6 +273,7 @@ describe('Greenscreen Studio MCP protocol surface', () => {
     const clip = store.createActionClip(project.id, { assetId: asset.id, name: 'attack_SE', startFrame: 0, endFrame: 12 })
     store.addActionMarker(clip.id, { frame: 6, type: 'hit', payload: { hitbox: 'slash_a' } })
     store.updateActionClip(clip.id, { status: 'needs_review' })
+    saveCurrentReviewChecks(store, clip.id)
     store.updateActionClip(clip.id, { status: 'approved' })
 
     const server = createGreenscreenMcpServer({ projectRoot, baseDir: projectRoot, dataDir: protocolTmpDir, store })

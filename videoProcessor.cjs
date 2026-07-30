@@ -1028,6 +1028,83 @@ function boundsToCropBox(bounds) {
   };
 }
 
+function summarizeFrameBounds(frameEntries, sourceWidth, sourceHeight) {
+  const width = Math.max(1, Number(sourceWidth) || 1);
+  const height = Math.max(1, Number(sourceHeight) || 1);
+  const sourceArea = width * height;
+  const diagonal = Math.hypot(width, height);
+  const areas = [];
+  const foregroundFrames = [];
+  const edgeContacts = { left: 0, right: 0, top: 0, bottom: 0 };
+
+  for (const entry of frameEntries || []) {
+    const bounds = entry?.bounds || null;
+    if (!bounds) continue;
+    const boxWidth = Math.max(0, bounds.maxX - bounds.minX + 1);
+    const boxHeight = Math.max(0, bounds.maxY - bounds.minY + 1);
+    const area = boxWidth * boxHeight;
+    const touches = {
+      left: bounds.minX <= 1,
+      right: bounds.maxX >= width - 2,
+      top: bounds.minY <= 1,
+      bottom: bounds.maxY >= height - 2,
+    };
+    for (const side of Object.keys(touches)) {
+      if (touches[side]) edgeContacts[side]++;
+    }
+    areas.push(area / sourceArea);
+    foregroundFrames.push({
+      frame: entry.frame,
+      centerX: (bounds.minX + bounds.maxX) / 2,
+      centerY: (bounds.minY + bounds.maxY) / 2,
+      bottomY: bounds.maxY,
+      area,
+      touchesEdge: Object.values(touches).some(Boolean),
+    });
+  }
+
+  let maxCenterDelta = 0;
+  let maxBottomDelta = 0;
+  let maxAreaChangeRatio = 0;
+  for (let index = 1; index < foregroundFrames.length; index++) {
+    const previous = foregroundFrames[index - 1];
+    const current = foregroundFrames[index];
+    if (Number(current.frame) !== Number(previous.frame) + 1) continue;
+    maxCenterDelta = Math.max(maxCenterDelta, Math.hypot(
+      current.centerX - previous.centerX,
+      current.centerY - previous.centerY,
+    ));
+    maxBottomDelta = Math.max(maxBottomDelta, Math.abs(current.bottomY - previous.bottomY));
+    maxAreaChangeRatio = Math.max(
+      maxAreaChangeRatio,
+      Math.abs(current.area - previous.area) / Math.max(1, previous.area),
+    );
+  }
+
+  return {
+    sampleFrameCount: (frameEntries || []).length,
+    foregroundFrameCount: foregroundFrames.length,
+    foregroundAreaRatio: {
+      min: areas.length ? Math.min(...areas) : 0,
+      max: areas.length ? Math.max(...areas) : 0,
+      mean: areas.length ? areas.reduce((sum, value) => sum + value, 0) / areas.length : 0,
+    },
+    edgeContacts: {
+      ...edgeContacts,
+      frameCount: foregroundFrames.filter((entry) => entry.touchesEdge).length,
+    },
+    feet: {
+      maxBottomDelta,
+      maxBottomDeltaRatio: maxBottomDelta / height,
+    },
+    jitter: {
+      maxCenterDelta,
+      maxCenterDeltaRatio: maxCenterDelta / diagonal,
+      maxAreaChangeRatio,
+    },
+  };
+}
+
 function getStableCropCenterAxes(layout = {}) {
   const anchor = layout.anchor || 'center';
   return {
@@ -1298,6 +1375,7 @@ async function scanStableVideoCrop(inputPath, {
   let scannedFrameCount = 0;
   let foregroundFrameCount = 0;
   let scanRegion = null;
+  const frameEntries = [];
 
   for (let frame = startFrame; frame < endFrame; frame++) {
     const cachedFrame = entry.frames.get(frame);
@@ -1308,6 +1386,7 @@ async function scanStableVideoCrop(inputPath, {
       unionBounds = mergeAlphaBounds(unionBounds, bounds);
       foregroundFrameCount++;
     }
+    frameEntries.push({ frame, bounds });
     scannedFrameCount++;
   }
 
@@ -1333,6 +1412,7 @@ async function scanStableVideoCrop(inputPath, {
       sourceHeight: scanRegion.height,
       processingRegion: scanRegion,
       rawBounds: boundsToCropBox(unionBounds),
+      metrics: summarizeFrameBounds(frameEntries, scanRegion.width, scanRegion.height),
     },
   };
 
@@ -2631,6 +2711,7 @@ module.exports = {
   cropKeyedToBounds,
   createLoopHashLayout,
   applyStableCropLayout,
+  summarizeFrameBounds,
   scanStableVideoCrop,
   getVideoWorkerCount,
   getFrameAlphaBounds,
