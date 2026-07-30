@@ -1,36 +1,29 @@
 import React from 'react'
-import { Palette } from 'lucide-react'
-import CollapsiblePanel from './CollapsiblePanel.jsx'
+import { RotateCcw } from 'lucide-react'
 import { t } from '../i18n.js'
 
 const Slider = ({ label, value, min, max, step, unit, onChange }) => (
-  <div className="slider-row">
-    <label>{label}</label>
-    <div className="slider-control">
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
-      <span className="slider-value">{value}{unit}</span>
-    </div>
-  </div>
+  <label className="slider-row">
+    <span className="parameter-row-label">{label}</span>
+    <input
+      type="range"
+      aria-label={label}
+      min={min}
+      max={max}
+      step={step}
+      value={value}
+      onChange={(e) => onChange(Number(e.target.value))}
+    />
+    <output className="slider-value">{value}{unit}</output>
+  </label>
 )
 
 export default function KeyingPanel({ params, onChange }) {
   const update = (key, val) => onChange({ ...params, [key]: val })
-  const summary = t('keying.summary', { tolerance: params.tolerance, feather: params.feather })
-
   return (
-    <CollapsiblePanel
-      title={<span className="panel-title-content"><Palette size={15} />{t('keying.title')}</span>}
-      summary={summary}
-    >
-      <div className="color-row">
-        <label>{t('keying.keyColor')}</label>
+    <section className="parameter-panel keying-parameter-panel" aria-label={t('keying.title')}>
+      <label className="color-row">
+        <span className="parameter-row-label">{t('keying.keyColor')}</span>
         <input
           type="color"
           value={`#${params.keyColor.map(c => c.toString(16).padStart(2, '0')).join('')}`}
@@ -42,7 +35,7 @@ export default function KeyingPanel({ params, onChange }) {
             update('keyColor', [r, g, b])
           }}
         />
-      </div>
+      </label>
 
       <Slider
         label={t('keying.tolerance')}
@@ -70,6 +63,7 @@ export default function KeyingPanel({ params, onChange }) {
       />
 
       <button
+        type="button"
         className="btn-reset"
         onClick={() => onChange({
           keyColor: [0, 255, 0],
@@ -78,7 +72,10 @@ export default function KeyingPanel({ params, onChange }) {
           feather: 15,
           edgeShrink: 0,
         })}
-      >{t('keying.reset')}</button>
-    </CollapsiblePanel>
+      >
+        <RotateCcw size={14} aria-hidden="true" />
+        {t('keying.reset')}
+      </button>
+    </section>
   )
 }

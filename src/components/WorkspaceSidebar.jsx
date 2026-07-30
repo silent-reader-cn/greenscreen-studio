@@ -3,8 +3,6 @@ import {
   Clapperboard,
   Download,
   Frame,
-  Maximize2,
-  Minimize2,
   SlidersHorizontal,
   Upload,
   WandSparkles,
@@ -54,30 +52,13 @@ export default function WorkspaceSidebar({
           onClick={onMobileSheetHandleClick}
           aria-label={t('app.mobileSheetDragLabel')}
         >
-          <span className="mobile-sheet-grip" aria-hidden="true" />
-          <span className="mobile-sheet-current">
-            <CurrentIcon size={17} strokeWidth={1.8} aria-hidden="true" />
-            <strong>{t(currentTool.labelKey)}</strong>
-            <small>{t(`app.mobileSheet${mobileSheetState[0].toUpperCase()}${mobileSheetState.slice(1)}`)}</small>
+          <span className="mobile-sheet-grip-wrap" aria-hidden="true">
+            <span className="mobile-sheet-grip" />
+          </span>
+          <span className="visually-hidden">
+            {t(currentTool.labelKey)} · {t(`app.mobileSheet${mobileSheetState[0].toUpperCase()}${mobileSheetState.slice(1)}`)}
           </span>
         </button>
-        <div className="mobile-sheet-actions">
-          <button
-            type="button"
-            onClick={() => onMobileSheetStateChange('collapsed')}
-            disabled={mobileSheetState === 'collapsed'}
-            aria-label={t('app.mobileSheetCollapse')}
-          >
-            <Minimize2 size={17} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onMobileSheetStateChange(mobileSheetState === 'full' ? 'half' : 'full')}
-            aria-label={mobileSheetState === 'full' ? t('app.mobileSheetHalf') : t('app.mobileSheetExpand')}
-          >
-            <Maximize2 size={17} aria-hidden="true" />
-          </button>
-        </div>
       </header>
       <nav className="workspace-rail" aria-label={t('app.workspaceNavLabel')}>
         {tools.map(({ id, icon: Icon, labelKey }) => {

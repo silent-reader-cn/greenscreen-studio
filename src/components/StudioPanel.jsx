@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '../i18n.js'
+import { useAppDialog } from './AppDialog.jsx'
 
 const MAX_LOGS = 80
 
@@ -40,6 +41,7 @@ function formatTime(value) {
 }
 
 export default function StudioPanel({ onOpenVideoAsset }) {
+  const dialog = useAppDialog()
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState('projects') // projects | collab | mcp
   const [projects, setProjects] = useState([])
@@ -175,7 +177,10 @@ export default function StudioPanel({ onOpenVideoAsset }) {
 
   const handleDeleteProject = async () => {
     if (!selectedId) return
-    if (!confirm(t('studio.deleteConfirm', { name: selected?.name || selectedId }))) return
+    if (!await dialog.confirm(t('studio.deleteConfirm', { name: selected?.name || selectedId }), {
+      title: t('studio.delete'),
+      tone: 'danger',
+    })) return
     setBusy(true)
     try {
       await api(`/api/projects/${selectedId}`, { method: 'DELETE' })

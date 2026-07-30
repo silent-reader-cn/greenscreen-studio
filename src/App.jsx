@@ -21,6 +21,7 @@ import CollapsiblePanel from './components/CollapsiblePanel.jsx'
 import StudioPanel from './components/StudioPanel.jsx'
 import ActionClipReviewPanel from './components/ActionClipReviewPanel.jsx'
 import WorkspaceSidebar from './components/WorkspaceSidebar.jsx'
+import { useAppDialog } from './components/AppDialog.jsx'
 import { formatBytes as formatLocalizedBytes, formatDateTime, formatDuration as formatLocalizedDuration, t, uiLanguage } from './i18n.js'
 
 // ===== 默认参数 =====
@@ -543,6 +544,7 @@ function saveParams(keying, layout) {
 }
 
 export default function App() {
+  const dialog = useAppDialog()
   // ===== 从 localStorage 恢复 profiles / 参数 =====
   const initialProfileStateRef = useRef(null)
   if (!initialProfileStateRef.current) {
@@ -739,16 +741,19 @@ export default function App() {
     })
   }, [])
 
-  const handleDeleteProfile = useCallback((profileId) => {
+  const handleDeleteProfile = useCallback(async (profileId) => {
     const profile = profiles.find(item => item.id === profileId)
     if (!profile) return
 
     if (profiles.length <= 1) {
-      alert(t('profile.keepOne'))
+      await dialog.alert(t('profile.keepOne'), { title: t('profile.label'), tone: 'warning' })
       return
     }
 
-    if (!confirm(t('profile.deleteConfirm', { name: profile.name }))) return
+    if (!await dialog.confirm(t('profile.deleteConfirm', { name: profile.name }), {
+      title: t('profile.deleteLabel', { name: profile.name }),
+      tone: 'danger',
+    })) return
 
     const remainingProfiles = profiles.filter(item => item.id !== profileId)
     setProfiles(remainingProfiles)
@@ -762,7 +767,7 @@ export default function App() {
       setVideoParams(nextParams.video)
       setFrameRange(resolveFrameRangeForVideo(nextParams.frameRange, videoInfo))
     }
-  }, [activeProfileId, profiles, videoInfo])
+  }, [activeProfileId, dialog, profiles, videoInfo])
 
   const handleVideoUpload = useCallback((file, info) => {
     setVideoFile(file)
@@ -1010,14 +1015,14 @@ export default function App() {
       const height = measureSourceCharacterHeight(firstFrame, keyingParams, videoRegion)
 
       if (height <= 0) {
-        alert(t('layout.autoDetectHeightNoForeground'))
+        await dialog.alert(t('layout.autoDetectHeightNoForeground'), { title: t('layout.sourceCharacterHeight'), tone: 'warning' })
         return
       }
       setLayoutParams(prev => ({ ...prev, sourceCharacterHeight: height }))
     } catch (err) {
-      alert(`${t('layout.autoDetectHeightFailed')}: ${err.message}`)
+      await dialog.alert(`${t('layout.autoDetectHeightFailed')}: ${err.message}`, { title: t('layout.sourceCharacterHeight'), tone: 'danger' })
     }
-  }, [keyingParams, mediaMode, videoFile, videoRegion])
+  }, [dialog, keyingParams, mediaMode, videoFile, videoRegion])
 
   const renderPreview = useCallback(() => {
     if (!processingImageData) return
@@ -1301,7 +1306,7 @@ export default function App() {
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
-      alert(`${t('app.exportFailed')}: ${err.message}`)
+      await dialog.alert(`${t('app.exportFailed')}: ${err.message}`, { title: t('app.exportActions'), tone: 'danger' })
     } finally {
       setExporting(false)
     }
@@ -1340,7 +1345,7 @@ export default function App() {
     const app = appRef.current
     if (!drag || drag.pointerId !== event.pointerId || !app) return
 
-    const minHeight = Math.min(112, drag.containerHeight)
+    const minHeight = Math.min(86, drag.containerHeight)
     const maxHeight = Math.max(minHeight, drag.containerHeight - 8)
     const nextHeight = Math.max(
       minHeight,
@@ -1381,7 +1386,10 @@ export default function App() {
       mobileSheetClickSuppressedRef.current = false
       return
     }
-    setMobileSheetState((state) => state === 'collapsed' ? 'half' : 'collapsed')
+    setMobileSheetState((state) => {
+      const currentIndex = MOBILE_SHEET_STEPS.indexOf(state)
+      return MOBILE_SHEET_STEPS[(Math.max(0, currentIndex) + 1) % MOBILE_SHEET_STEPS.length]
+    })
   }, [])
 
   useEffect(() => {

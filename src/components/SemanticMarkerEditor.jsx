@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { t } from '../i18n.js'
+import { useAppDialog } from './AppDialog.jsx'
 import {
   MARKER_TYPES,
   buildCreateMarkerPayload,
@@ -44,6 +45,7 @@ export default function SemanticMarkerEditor({
   disabled = false,
   onMarkersChange,
 }) {
+  const dialog = useAppDialog()
   const [markers, setMarkers] = useState([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -164,10 +166,10 @@ export default function SemanticMarkerEditor({
 
   const handleDelete = useCallback(async (marker) => {
     if (!projectId || !clip?.id || disabled || busy) return
-    if (!window.confirm(t('review.marker.deleteConfirm', {
+    if (!await dialog.confirm(t('review.marker.deleteConfirm', {
       type: markerTypeLabel(marker.type),
       frame: marker.frame,
-    }))) return
+    }), { title: t('review.marker.delete'), tone: 'danger' })) return
     setBusy(true)
     setError('')
     try {
@@ -178,7 +180,7 @@ export default function SemanticMarkerEditor({
     } finally {
       setBusy(false)
     }
-  }, [busy, clip?.id, disabled, projectId, refresh])
+  }, [busy, clip?.id, dialog, disabled, projectId, refresh])
 
   if (!clip) return null
 

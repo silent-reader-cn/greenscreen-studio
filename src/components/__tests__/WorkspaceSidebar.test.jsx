@@ -45,7 +45,6 @@ describe('WorkspaceSidebar', () => {
   })
 
   it('exposes the three-stage mobile parameter sheet controls', () => {
-    const onMobileSheetStateChange = vi.fn()
     const onMobileSheetHandleClick = vi.fn()
 
     render(
@@ -53,7 +52,6 @@ describe('WorkspaceSidebar', () => {
         activeTool="keying"
         mediaMode="image"
         mobileSheetState="half"
-        onMobileSheetStateChange={onMobileSheetStateChange}
         onMobileSheetHandleClick={onMobileSheetHandleClick}
         onToolChange={() => {}}
       >
@@ -61,14 +59,12 @@ describe('WorkspaceSidebar', () => {
       </WorkspaceSidebar>,
     )
 
-    expect(screen.getByText(t('app.mobileSheetHalf'))).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: t('app.mobileSheetCollapse') }))
-    expect(onMobileSheetStateChange).toHaveBeenCalledWith('collapsed')
-
-    fireEvent.click(screen.getByRole('button', { name: t('app.mobileSheetExpand') }))
-    expect(onMobileSheetStateChange).toHaveBeenCalledWith('full')
-
-    fireEvent.click(screen.getByRole('button', { name: t('app.mobileSheetDragLabel') }))
+    const dragHandle = screen.getByRole('button', { name: t('app.mobileSheetDragLabel') })
+    expect(dragHandle.textContent).toContain(t('app.mobileSheetHalf'))
+    expect(dragHandle.querySelector('.visually-hidden')).toBeTruthy()
+    fireEvent.click(dragHandle)
     expect(onMobileSheetHandleClick).toHaveBeenCalledOnce()
+    expect(screen.queryByRole('button', { name: t('app.mobileSheetCollapse') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('app.mobileSheetExpand') })).toBeNull()
   })
 })

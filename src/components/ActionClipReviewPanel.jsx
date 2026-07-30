@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { t } from '../i18n.js'
 import SemanticMarkerEditor from './SemanticMarkerEditor.jsx'
+import { useAppDialog } from './AppDialog.jsx'
 import {
   availableClipStatuses,
   buildClipStatusTransition,
@@ -55,6 +56,7 @@ export default function ActionClipReviewPanel({
   region = null,
   disabled = false,
 }) {
+  const dialog = useAppDialog()
   const [clips, setClips] = useState([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -263,9 +265,9 @@ export default function ActionClipReviewPanel({
             params: { keying: keyingParams, layout: layoutParams, region },
           }),
         })
-        if (report.summary?.warningCount > 0 && !window.confirm(t('review.checks.confirmWarnings', {
+        if (report.summary?.warningCount > 0 && !await dialog.confirm(t('review.checks.confirmWarnings', {
           count: report.summary.warningCount,
-        }))) {
+        }), { title: t('review.checks.title'), tone: 'warning' })) {
           await refresh()
           return
         }
@@ -280,7 +282,7 @@ export default function ActionClipReviewPanel({
     } finally {
       setBusy(false)
     }
-  }, [busy, keyingParams, layoutParams, projectId, refresh, region, videoJobId])
+  }, [busy, dialog, keyingParams, layoutParams, projectId, refresh, region, videoJobId])
 
   const handleQueueExportTask = useCallback(async (clip) => {
     if (!projectId || !clip || busy) return
@@ -305,7 +307,10 @@ export default function ActionClipReviewPanel({
       .filter((clip) => selectedSet.has(String(clip.id)))
       .map((clip) => clip.name)
       .join(', ')
-    if (!window.confirm(t('review.deleteConfirm', { count: selectedClipIds.length, names }))) return
+    if (!await dialog.confirm(t('review.deleteConfirm', { count: selectedClipIds.length, names }), {
+      title: t('review.deleteSelected'),
+      tone: 'danger',
+    })) return
     setBusy(true)
     setError('')
     try {
@@ -319,7 +324,7 @@ export default function ActionClipReviewPanel({
     } finally {
       setBusy(false)
     }
-  }, [busy, emitSelection, orderedClips, projectId, refresh, selectedClipIds, selectedSet])
+  }, [busy, dialog, emitSelection, orderedClips, projectId, refresh, selectedClipIds, selectedSet])
 
   if (!projectId || !assetId) {
     return (

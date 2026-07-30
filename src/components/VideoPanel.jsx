@@ -1,7 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Clapperboard } from 'lucide-react'
-import CollapsiblePanel from './CollapsiblePanel.jsx'
 import { formatBytes, t } from '../i18n.js'
 import { parseExplicitFrameList } from '../lib/frameSelection.js'
 import { shouldHandleDroppedVideo, shouldHandleDroppedVideos, droppedVideosKey } from '../lib/droppedVideo.js'
@@ -140,19 +138,6 @@ export default function VideoPanel({
     godotParams.characterName,
     godotParams.exportName,
   ])
-
-  const summary = exportMode === 'spritesheet'
-    ? t('videoPanel.spriteSummary', { width: spriteParams.frameWidth, height: spriteParams.frameHeight })
-    : exportMode === 'godot'
-      ? t('videoPanel.godotSummary', {
-          width: spriteParams.frameWidth,
-          height: spriteParams.frameHeight,
-          name: exportBasename,
-        })
-      : t('videoPanel.videoSummary', {
-          format: format.toUpperCase(),
-          mode: mode === 'transparent' ? t('videoPanel.transparent') : t('videoPanel.greenscreen'),
-        })
 
   const pollTimerRef = useRef(null)
   const activeJobIdRef = useRef(null)
@@ -1104,11 +1089,7 @@ export default function VideoPanel({
   return (
     <>
       {videoInfo && (
-        <CollapsiblePanel
-          title={<span className="panel-title-content"><Clapperboard size={15} />{t('videoPanel.title')}</span>}
-          summary={summary}
-          className="video-panel"
-        >
+        <section className="parameter-panel video-parameter-panel" aria-label={t('videoPanel.title')}>
           <div className="video-options">
             <div className="opt-group">
               <p className="opt-label">{t('videoPanel.exportType')}</p>
@@ -1449,7 +1430,7 @@ export default function VideoPanel({
               </div>
             )}
           </div>
-        </CollapsiblePanel>
+        </section>
       )}
 
       {dockTarget ? createPortal(dockContent, dockTarget) : null}

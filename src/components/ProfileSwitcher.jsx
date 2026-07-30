@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { t, uiLanguage } from '../i18n.js'
+import { useAppDialog } from './AppDialog.jsx'
 
 function sortProfilesByUsage(profiles) {
   return [...profiles].sort((a, b) => (
@@ -55,6 +56,7 @@ export default function ProfileSwitcher({
   onRename,
   onDelete,
 }) {
+  const dialog = useAppDialog()
   const [open, setOpen] = useState(false)
   const [contextMenu, setContextMenu] = useState(null)
   const [switcherWidth, setSwitcherWidth] = useState(0)
@@ -114,15 +116,15 @@ export default function ProfileSwitcher({
     }
   }, [contextMenu, open])
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const defaultName = `Profile ${profiles.length + 1}`
-    const name = prompt(t('profile.createPrompt'), defaultName)
+    const name = await dialog.prompt(t('profile.createPrompt'), defaultName, { title: t('profile.add') })
     if (name === null) return
     onCreate(name)
   }
 
-  const handleRename = (profile) => {
-    const name = prompt(t('profile.renamePrompt'), profile.name)
+  const handleRename = async (profile) => {
+    const name = await dialog.prompt(t('profile.renamePrompt'), profile.name, { title: t('profile.rename') })
     if (name === null) return
     const nextName = String(name || '').trim()
     if (!nextName || nextName === profile.name) return
@@ -204,7 +206,7 @@ export default function ProfileSwitcher({
         </div>
       )}
 
-      <button type="button" className="profile-add" onClick={handleCreate}>
+      <button type="button" className="profile-add" onClick={() => void handleCreate()}>
         {t('profile.add')}
       </button>
 
@@ -219,7 +221,7 @@ export default function ProfileSwitcher({
             type="button"
             onClick={() => {
               setContextMenu(null)
-              handleRename(contextProfile)
+              void handleRename(contextProfile)
             }}
           >
             {t('profile.rename')}
