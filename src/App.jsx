@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import {
   Download,
+  ChevronDown,
   Eye,
   FileText,
   FolderInput,
@@ -17,6 +18,7 @@ import PreviewCanvas from './components/PreviewCanvas.jsx'
 import VideoPanel from './components/VideoPanel.jsx'
 import VideoPreview from './components/VideoPreview.jsx'
 import ProfileSwitcher from './components/ProfileSwitcher.jsx'
+import MobileProfilePanel from './components/MobileProfilePanel.jsx'
 import CollapsiblePanel from './components/CollapsiblePanel.jsx'
 import StudioPanel from './components/StudioPanel.jsx'
 import ActionClipReviewPanel from './components/ActionClipReviewPanel.jsx'
@@ -46,6 +48,7 @@ const DEFAULT_LAYOUT = {
 }
 
 const MOBILE_SHEET_STEPS = ['collapsed', 'half', 'full']
+const MOBILE_UI_QUERY = '(max-width: 900px)'
 
 const DEFAULT_SPRITE_PARAMS = {
   frameWidth: 128,
@@ -545,6 +548,20 @@ function saveParams(keying, layout) {
 
 export default function App() {
   const dialog = useAppDialog()
+  const [mobileUi, setMobileUi] = useState(() => (
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(MOBILE_UI_QUERY).matches
+      : false
+  ))
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return undefined
+    const query = window.matchMedia(MOBILE_UI_QUERY)
+    const update = () => setMobileUi(query.matches)
+    update()
+    query.addEventListener?.('change', update)
+    return () => query.removeEventListener?.('change', update)
+  }, [])
   // ===== 从 localStorage 恢复 profiles / 参数 =====
   const initialProfileStateRef = useRef(null)
   if (!initialProfileStateRef.current) {
@@ -1472,44 +1489,77 @@ export default function App() {
             hidden={activeTool !== 'source'}
             aria-label={t('app.workspaceSource')}
           >
-            <div className="source-chooser">
-              <span className="source-chooser-icon" aria-hidden="true">
-                <FolderInput size={20} strokeWidth={1.8} />
-              </span>
-              <strong title={currentAssetName || t('app.noAsset')}>
-                {currentAssetName || t('app.noAsset')}
-              </strong>
-              <button type="button" onClick={openFilePicker}>
-                <Upload size={15} aria-hidden="true" />
-                {t('app.importAsset')}
-              </button>
-            </div>
-
-            <div className="mobile-profile-settings">
-              <ProfileSwitcher
-                profiles={profiles}
-                activeProfileId={activeProfileId}
-                onSelect={handleSelectProfile}
-                onCreate={handleCreateProfile}
-                onRename={handleRenameProfile}
-                onDelete={handleDeleteProfile}
-              />
-            </div>
-
-              <FileMetaPanel
-                mediaMode={mediaMode}
-                imageFile={imageFile}
-                imageSize={imageSize}
-                imageRegion={imageRegion}
-                videoRegion={videoRegion}
-                regionSelectionMode={regionSelectionMode}
-                onSelectImageRegion={beginImageRegionSelection}
-                onResetImageRegion={resetImageRegion}
-                onSelectVideoRegion={beginVideoRegionSelection}
-                onResetVideoRegion={resetVideoRegion}
-                videoFile={videoFile}
-                videoInfo={videoInfo}
-              />
+            {mobileUi ? (
+              <>
+                <section className="mobile-source-card">
+                  <span className="mobile-source-icon" aria-hidden="true">
+                    <FolderInput size={21} strokeWidth={1.8} />
+                  </span>
+                  <div className="mobile-source-copy">
+                    <span>{t('file.title')}</span>
+                    <strong title={currentAssetName || t('app.noAsset')}>
+                      {currentAssetName || t('app.noAsset')}
+                    </strong>
+                  </div>
+                  <button type="button" className="mobile-source-import" onClick={openFilePicker}>
+                    <Upload size={17} aria-hidden="true" />
+                    {t('app.importAsset')}
+                  </button>
+                </section>
+                <FileMetaPanel
+                  mobile
+                  mediaMode={mediaMode}
+                  imageFile={imageFile}
+                  imageSize={imageSize}
+                  imageRegion={imageRegion}
+                  videoRegion={videoRegion}
+                  regionSelectionMode={regionSelectionMode}
+                  onSelectImageRegion={beginImageRegionSelection}
+                  onResetImageRegion={resetImageRegion}
+                  onSelectVideoRegion={beginVideoRegionSelection}
+                  onResetVideoRegion={resetVideoRegion}
+                  videoFile={videoFile}
+                  videoInfo={videoInfo}
+                />
+                <MobileProfilePanel
+                  profiles={profiles}
+                  activeProfileId={activeProfileId}
+                  onSelect={handleSelectProfile}
+                  onCreate={handleCreateProfile}
+                  onRename={handleRenameProfile}
+                  onDelete={handleDeleteProfile}
+                />
+              </>
+            ) : (
+              <>
+                <div className="source-chooser">
+                  <span className="source-chooser-icon" aria-hidden="true">
+                    <FolderInput size={20} strokeWidth={1.8} />
+                  </span>
+                  <strong title={currentAssetName || t('app.noAsset')}>
+                    {currentAssetName || t('app.noAsset')}
+                  </strong>
+                  <button type="button" onClick={openFilePicker}>
+                    <Upload size={15} aria-hidden="true" />
+                    {t('app.importAsset')}
+                  </button>
+                </div>
+                <FileMetaPanel
+                  mediaMode={mediaMode}
+                  imageFile={imageFile}
+                  imageSize={imageSize}
+                  imageRegion={imageRegion}
+                  videoRegion={videoRegion}
+                  regionSelectionMode={regionSelectionMode}
+                  onSelectImageRegion={beginImageRegionSelection}
+                  onResetImageRegion={resetImageRegion}
+                  onSelectVideoRegion={beginVideoRegionSelection}
+                  onResetVideoRegion={resetVideoRegion}
+                  videoFile={videoFile}
+                  videoInfo={videoInfo}
+                />
+              </>
+            )}
           </section>
           <section
             className="workspace-panel workspace-panel-review"
@@ -1553,6 +1603,7 @@ export default function App() {
                 params={layoutParams}
                 onChange={setLayoutParams}
                 imageSize={layoutInputSize}
+                mobile={mobileUi}
                 canAutoDetectSourceCharacterHeight={mediaMode === 'video' && Boolean(videoFile)}
                 onAutoDetectSourceCharacterHeight={handleAutoDetectSourceCharacterHeight}
               />
@@ -1565,6 +1616,7 @@ export default function App() {
           >
             {mediaMode === 'video' && (
               <VideoPanel
+                mobile={mobileUi}
                 keyingParams={keyingParams}
                 layoutParams={layoutParams}
                 videoParams={videoParams}
@@ -1608,24 +1660,18 @@ export default function App() {
                     <summary>{t('app.godotPoseTitle')}</summary>
                     <div className="image-godot-body">
                       <div className="image-godot-fields">
-                        <input
-                          value={videoParams.godotParams.characterName}
-                          onChange={(event) => updateImageGodotParam('characterName', event.target.value)}
-                          placeholder={t('app.godotPoseCharacter')}
-                          aria-label={t('app.godotPoseCharacter')}
-                        />
-                        <input
-                          value={videoParams.godotParams.actionName}
-                          onChange={(event) => updateImageGodotParam('actionName', event.target.value)}
-                          placeholder={t('app.godotPoseAction')}
-                          aria-label={t('app.godotPoseAction')}
-                        />
-                        <input
-                          value={videoParams.godotParams.animationName}
-                          onChange={(event) => updateImageGodotParam('animationName', event.target.value)}
-                          placeholder={t('app.godotPoseAnimation')}
-                          aria-label={t('app.godotPoseAnimation')}
-                        />
+                        <label>
+                          <span>{t('app.godotPoseCharacter')}</span>
+                          <input value={videoParams.godotParams.characterName} onChange={(event) => updateImageGodotParam('characterName', event.target.value)} />
+                        </label>
+                        <label>
+                          <span>{t('app.godotPoseAction')}</span>
+                          <input value={videoParams.godotParams.actionName} onChange={(event) => updateImageGodotParam('actionName', event.target.value)} />
+                        </label>
+                        <label>
+                          <span>{t('app.godotPoseAnimation')}</span>
+                          <input value={videoParams.godotParams.animationName} onChange={(event) => updateImageGodotParam('animationName', event.target.value)} />
+                        </label>
                       </div>
                       <button
                         className="dock-btn dock-btn-primary"
@@ -1841,6 +1887,7 @@ function ClipboardImportDialog({ importItem, onCancel, onConfirm }) {
 }
 
 function FileMetaPanel({
+  mobile = false,
   mediaMode,
   imageFile,
   imageSize,
@@ -1865,14 +1912,7 @@ function FileMetaPanel({
     ? (isImage ? `${imageSize.w}×${imageSize.h}` : `${videoInfo.width}×${videoInfo.height}`)
     : t('file.notLoaded')
 
-  return (
-    <CollapsiblePanel
-      title={<span className="panel-title-content"><FileText size={15} />{t('file.title')}</span>}
-      summary={summary}
-      defaultCollapsed
-      className="file-meta-panel"
-    >
-      {loaded && file ? (
+  const content = loaded && file ? (
         <div className="file-meta-content">
           <p className="file-meta-name" title={file.name}>{file.name}</p>
           <div className="file-meta-grid">
@@ -1935,7 +1975,32 @@ function FileMetaPanel({
           <p>{isImage ? t('file.noImage') : t('file.noVideo')}</p>
           <p className="hint">{t('file.emptyHint')}</p>
         </div>
-      )}
+      )
+
+  if (mobile) {
+    return (
+      <details className="mobile-file-panel">
+        <summary>
+          <span className="mobile-file-summary-icon" aria-hidden="true"><FileText size={18} /></span>
+          <span className="mobile-file-summary-copy">
+            <strong>{t('file.details')}</strong>
+            <small>{summary}</small>
+          </span>
+          <ChevronDown className="mobile-file-caret" size={18} aria-hidden="true" />
+        </summary>
+        <div className="mobile-file-body">{content}</div>
+      </details>
+    )
+  }
+
+  return (
+    <CollapsiblePanel
+      title={<span className="panel-title-content"><FileText size={15} />{t('file.title')}</span>}
+      summary={summary}
+      defaultCollapsed
+      className="file-meta-panel"
+    >
+      {content}
     </CollapsiblePanel>
   )
 }

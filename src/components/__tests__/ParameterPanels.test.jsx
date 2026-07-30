@@ -58,4 +58,34 @@ describe('compact parameter panels', () => {
       canvasHeight: 1000,
     }))
   })
+
+  it('renders the dedicated mobile layout and keeps desktop fieldsets out of the mobile DOM', () => {
+    const onChange = vi.fn()
+    const { container } = render(
+      <LayoutPanel
+        mobile
+        params={{
+          canvasWidth: 1280,
+          canvasHeight: 720,
+          personWidth: 320,
+          personHeight: 640,
+          sourceCharacterHeight: 0,
+          autoCrop: true,
+          sourceCenterAnchor: true,
+        }}
+        onChange={onChange}
+        imageSize={{ w: 1920, h: 1080 }}
+      />,
+    )
+
+    expect(container.querySelector('.mobile-layout-panel')).toBeTruthy()
+    expect(container.querySelector('fieldset')).toBeNull()
+    expect(screen.getByRole('spinbutton', { name: t('layout.px') })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: '1920×1080' }))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      canvasWidth: 1920,
+      canvasHeight: 1080,
+    }))
+  })
 })

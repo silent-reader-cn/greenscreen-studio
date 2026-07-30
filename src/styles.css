@@ -5742,13 +5742,23 @@ body {
 
   .keying-parameter-panel .color-row,
   .keying-parameter-panel .slider-row {
-    min-height: 42px;
+    min-height: var(--mobile-control-height);
     grid-template-columns: 92px minmax(72px, 1fr) 42px;
     gap: 8px;
   }
 
   .keying-parameter-panel .color-row {
     grid-template-columns: minmax(92px, 1fr) auto;
+  }
+
+  .keying-parameter-panel .parameter-row-label,
+  .keying-parameter-panel .slider-value {
+    font-size: var(--mobile-label-size);
+  }
+
+  .keying-parameter-panel .btn-reset {
+    min-height: var(--mobile-compact-height);
+    font-size: var(--mobile-label-size);
   }
 
   .layout-parameter-panel .layout-group {
@@ -6150,9 +6160,277 @@ body {
 }
 
 @media (max-width: 900px) {
+  .mobile-sheet-panel {
+    --mobile-control-height: 48px;
+    --mobile-compact-height: 40px;
+    --mobile-section-gap: 12px;
+    --mobile-inner-gap: 8px;
+    --mobile-label-size: 13px;
+    --mobile-body-size: 14px;
+    --mobile-input-size: 16px;
+  }
+
   .workspace-panel-source .mobile-profile-settings {
     display: block;
   }
+
+  .workspace-panel-source {
+    gap: var(--mobile-section-gap);
+    padding: 12px;
+  }
+
+  .mobile-source-card {
+    min-width: 0;
+    padding: 10px;
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    border: 1px solid var(--workspace-border);
+    border-radius: var(--workspace-radius-md);
+    background: var(--workspace-surface);
+  }
+
+  .mobile-source-icon {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 9px;
+    background: var(--workspace-accent-soft);
+    color: var(--workspace-accent);
+  }
+
+  .mobile-source-copy {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+  }
+
+  .mobile-source-copy span {
+    color: var(--workspace-text-muted);
+    font-size: 12px;
+    line-height: 1.2;
+  }
+
+  .mobile-source-copy strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--workspace-text);
+    font-size: var(--mobile-body-size);
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-source-import {
+    height: var(--mobile-compact-height);
+    padding: 0 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid var(--workspace-accent);
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-accent);
+    color: #fff;
+    font-size: var(--mobile-label-size);
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .mobile-file-panel,
+  .mobile-profile-panel,
+  .mobile-layout-section {
+    border: 1px solid var(--workspace-border);
+    border-radius: var(--workspace-radius-md);
+    background: var(--workspace-surface);
+  }
+
+  .mobile-file-panel > summary {
+    min-height: var(--mobile-control-height);
+    padding: 0 12px;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr) 20px;
+    align-items: center;
+    gap: 8px;
+    list-style: none;
+    cursor: pointer;
+  }
+
+  .mobile-file-panel > summary::-webkit-details-marker { display: none; }
+  .mobile-file-summary-icon { color: var(--workspace-accent); }
+  .mobile-file-summary-copy { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .mobile-file-summary-copy strong { color: var(--workspace-text); font-size: var(--mobile-label-size); }
+  .mobile-file-summary-copy small { color: var(--workspace-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .mobile-file-caret { color: var(--workspace-text-muted); transition: transform 150ms ease; }
+  .mobile-file-panel[open] .mobile-file-caret { transform: rotate(180deg); }
+  .mobile-file-body { padding: 0 12px 12px; border-top: 1px solid var(--workspace-border); }
+  .mobile-file-body .file-meta-content { padding-top: 10px; }
+  .mobile-file-body .file-meta-empty { padding: 12px 0 0; border: 0; background: transparent; }
+
+  .mobile-profile-panel {
+    padding: 10px 12px 12px;
+  }
+
+  .mobile-section-heading {
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .mobile-section-heading strong {
+    color: var(--workspace-text);
+    font-size: var(--mobile-label-size);
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  .mobile-profile-control {
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px 44px;
+    gap: 8px;
+  }
+
+  .mobile-profile-control select,
+  .mobile-number-field {
+    height: var(--mobile-control-height);
+    border: 1px solid var(--workspace-border-strong);
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-surface);
+  }
+
+  .mobile-profile-control select {
+    min-width: 0;
+    padding: 0 36px 0 12px;
+    color: var(--workspace-text);
+    font-size: var(--mobile-input-size);
+  }
+
+  .mobile-icon-button {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--workspace-border-strong);
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-surface);
+    color: var(--workspace-text);
+  }
+
+  .mobile-section-heading > .mobile-icon-button { width: 32px; height: 28px; border: 0; color: var(--workspace-accent); }
+  .mobile-icon-button.danger { color: var(--workspace-danger); }
+
+  .workspace-panel-layout {
+    padding: 12px;
+  }
+
+  .mobile-layout-panel {
+    display: grid;
+    gap: var(--mobile-section-gap);
+  }
+
+  .mobile-layout-section {
+    padding: 10px 12px 12px;
+  }
+
+  .mobile-dimension-row {
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr);
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mobile-number-field {
+    min-width: 0;
+    padding: 0 10px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .mobile-number-field > span,
+  .mobile-number-field > small {
+    color: var(--workspace-text-muted);
+    font-size: 12px;
+  }
+
+  .mobile-number-field input {
+    min-width: 0;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--workspace-text);
+    font-size: var(--mobile-input-size);
+    font-weight: 650;
+    text-align: right;
+    outline: none;
+  }
+
+  .mobile-number-field:focus-within {
+    border-color: var(--workspace-accent);
+    box-shadow: var(--workspace-focus);
+  }
+
+  .mobile-dimension-sign {
+    color: var(--workspace-text-muted);
+    font-size: 15px;
+    text-align: center;
+  }
+
+  .mobile-preset-grid {
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .mobile-preset-grid button {
+    height: var(--mobile-compact-height);
+    padding: 0 5px;
+    border: 1px solid var(--workspace-border);
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-surface-soft);
+    color: var(--workspace-text-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mobile-preset-grid button.active {
+    border-color: var(--workspace-accent-border);
+    background: var(--workspace-accent-soft);
+    color: var(--workspace-accent);
+    font-weight: 700;
+  }
+
+  .mobile-layout-options { padding-bottom: 0; overflow: hidden; }
+  .mobile-source-height { padding-bottom: 10px; }
+  .mobile-source-height .mobile-number-field { margin-top: 8px; }
+
+  .mobile-toggle-control {
+    min-height: var(--mobile-control-height);
+    margin: 0 -12px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-top: 1px solid var(--workspace-border);
+    color: var(--workspace-text);
+    font-size: var(--mobile-body-size);
+  }
+
+  .mobile-toggle-control input { width: 18px; height: 18px; accent-color: var(--workspace-accent); }
+  .mobile-layout-status { padding: 0 2px; display: flex; justify-content: space-between; gap: 8px; color: var(--workspace-text-muted); font-size: 12px; }
+  .mobile-layout-status strong { color: var(--workspace-text); }
 
   .mobile-profile-settings .profile-switcher {
     min-width: 0;
@@ -6182,22 +6460,435 @@ body {
 
   .video-parameter-panel .opt-btn {
     min-height: 40px;
+    height: var(--mobile-compact-height);
+    padding: 0 8px;
+    font-size: var(--mobile-label-size);
+    line-height: 1.2;
   }
 
   .video-parameter-panel .sprite-param-row input:not([type="checkbox"]),
   .video-parameter-panel .sprite-param-row select,
   .video-parameter-panel .sprite-param-row textarea {
-    min-height: 40px;
+    height: var(--mobile-control-height);
+    min-height: var(--mobile-control-height);
+    padding: 0 12px;
+    font-size: var(--mobile-input-size);
   }
 
   .video-parameter-panel .godot-clip-save,
   .video-parameter-panel .godot-pack-btn {
-    min-height: 40px;
+    height: var(--mobile-compact-height);
+    min-height: var(--mobile-compact-height);
+    font-size: var(--mobile-label-size);
+  }
+
+  .video-parameter-panel .opt-label {
+    margin-bottom: 8px;
+    font-size: var(--mobile-label-size);
+    line-height: 1.3;
+  }
+
+  .video-parameter-panel .opt-buttons,
+  .video-parameter-panel .frame-selection-mode {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+    gap: 4px;
+  }
+
+  .video-parameter-panel .sprite-param-row {
+    padding: 10px 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto var(--mobile-control-height);
+    gap: 5px 8px;
+    margin: 0;
+    border-bottom: 1px solid var(--workspace-border);
+  }
+
+  .video-parameter-panel .sprite-param-row > label {
+    min-width: 0;
+    align-self: auto;
+    color: var(--workspace-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .video-parameter-panel .sprite-param-row > label:nth-of-type(1) { grid-column: 1; grid-row: 1; }
+  .video-parameter-panel .sprite-param-row > label:nth-of-type(2) { grid-column: 2; grid-row: 1; }
+  .video-parameter-panel .sprite-param-row > input:nth-of-type(1) { grid-column: 1; grid-row: 2; }
+  .video-parameter-panel .sprite-param-row > input:nth-of-type(2) { grid-column: 2; grid-row: 2; }
+
+  .video-parameter-panel .sprite-param-row > label:only-of-type {
+    grid-column: 1 / -1;
+  }
+
+  .video-parameter-panel .sprite-param-row > input:only-of-type {
+    grid-column: 1 / -1;
+  }
+
+  .video-parameter-panel .sprite-param-row > .sprite-hint {
+    grid-column: 1 / -1;
+    grid-row: auto;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .video-parameter-panel .sprite-param-row:has(.sprite-checkbox) {
+    grid-template-rows: auto var(--mobile-control-height);
+  }
+
+  .video-parameter-panel .sprite-param-row > .sprite-checkbox {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    min-height: var(--mobile-control-height);
+    align-self: end;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: 1px solid var(--workspace-border-strong);
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-surface);
+    color: var(--workspace-text);
+    font-size: var(--mobile-body-size);
+  }
+
+  .video-parameter-panel .sprite-checkbox input {
+    width: 18px;
+    height: 18px;
+  }
+
+  .video-parameter-panel .frame-selection-mode {
+    padding: 10px 0;
+  }
+
+  .video-parameter-panel .exact-frame-field {
+    padding: 10px 0;
+    gap: 6px;
+  }
+
+  .video-parameter-panel .exact-frame-field label {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .video-parameter-panel .exact-frame-field input {
+    height: var(--mobile-control-height);
+    min-height: var(--mobile-control-height);
+    padding: 0 12px;
+    font-size: var(--mobile-input-size);
+  }
+
+  .video-parameter-panel .godot-clip-tools {
+    padding-top: 10px;
+    gap: 8px;
+  }
+
+  .video-parameter-panel .godot-pack-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .video-parameter-panel .godot-pack-btn:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .video-parameter-panel .sprite-hint {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .video-parameter-panel .range-inputs {
+    gap: 8px;
+  }
+
+  .video-parameter-panel .range-field label {
+    margin-bottom: 5px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .video-parameter-panel .range-num {
+    height: var(--mobile-control-height);
+    min-height: var(--mobile-control-height);
+    font-size: var(--mobile-input-size);
   }
 
   .workspace-panel-export .workspace-export-actions .dock-btn {
-    min-height: 44px;
+    height: var(--mobile-control-height);
+    min-height: var(--mobile-control-height);
+    font-size: var(--mobile-label-size);
   }
+
+  .workspace-panel-export .workspace-export-actions {
+    position: sticky;
+    bottom: calc(-14px - env(safe-area-inset-bottom, 0));
+    z-index: 4;
+    margin: 0 -10px;
+    padding: 10px 10px calc(14px + env(safe-area-inset-bottom, 0));
+    border-top: 1px solid var(--workspace-border);
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(8px);
+  }
+
+  .workspace-panel-export {
+    padding: 12px;
+  }
+
+  .workspace-panel-export .dock-actions {
+    gap: var(--mobile-inner-gap);
+  }
+
+  .workspace-panel-export .image-godot-export {
+    margin-top: 4px;
+    border-radius: var(--workspace-radius-md);
+  }
+
+  .workspace-panel-export .image-godot-export > summary {
+    min-height: var(--mobile-control-height);
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    font-size: var(--mobile-label-size);
+    font-weight: 700;
+  }
+
+  .workspace-panel-export .image-godot-body {
+    padding: 12px;
+    gap: var(--mobile-inner-gap);
+  }
+
+  .workspace-panel-export .image-godot-fields {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--mobile-inner-gap);
+  }
+
+  .workspace-panel-export .image-godot-fields label {
+    min-width: 0;
+    display: grid;
+    gap: 5px;
+  }
+
+  .workspace-panel-export .image-godot-fields label > span {
+    color: var(--workspace-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  .workspace-panel-export .image-godot-fields input {
+    width: 100%;
+    height: var(--mobile-control-height);
+    min-height: var(--mobile-control-height);
+    padding: 0 12px;
+    border: 1px solid var(--workspace-border-strong);
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-surface);
+    color: var(--workspace-text);
+    font-size: var(--mobile-input-size);
+    outline: none;
+  }
+
+  .workspace-panel-export .image-godot-fields input:focus {
+    border-color: var(--workspace-accent);
+    box-shadow: var(--workspace-focus);
+  }
+
+  .mobile-video-parameter-panel {
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+
+  .mobile-video-options {
+    display: grid;
+    gap: var(--mobile-section-gap);
+  }
+
+  .mobile-export-section {
+    min-width: 0;
+    padding: 10px 12px 12px;
+    border: 1px solid var(--workspace-border);
+    border-radius: var(--workspace-radius-md);
+    background: var(--workspace-surface);
+  }
+
+  .mobile-export-section > h3 {
+    min-height: 28px;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    color: var(--workspace-text);
+    font-size: var(--mobile-label-size);
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  .mobile-export-segments {
+    display: grid;
+    gap: 4px;
+    padding: 4px;
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-surface-soft);
+  }
+
+  .mobile-export-segments.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mobile-export-segments.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mobile-export-segments.formats { grid-template-columns: repeat(auto-fit, minmax(76px, 1fr)); margin-top: 8px; }
+
+  .mobile-export-segments button {
+    min-width: 0;
+    height: var(--mobile-compact-height);
+    padding: 0 7px;
+    overflow: hidden;
+    border: 1px solid transparent;
+    border-radius: calc(var(--workspace-radius-sm) - 2px);
+    background: transparent;
+    color: var(--workspace-text-muted);
+    font-size: var(--mobile-label-size);
+    font-weight: 600;
+    line-height: 1.15;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-export-segments button.active {
+    border-color: var(--workspace-accent-border);
+    background: var(--workspace-surface);
+    color: var(--workspace-accent);
+    box-shadow: 0 1px 4px rgba(23, 33, 43, 0.08);
+  }
+
+  .mobile-export-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 8px;
+  }
+
+  .mobile-export-field {
+    min-width: 0;
+    display: grid;
+    gap: 5px;
+  }
+
+  .mobile-export-field.wide { grid-column: 1 / -1; }
+
+  .mobile-export-field > span {
+    color: var(--workspace-text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.25;
+  }
+
+  .mobile-export-field input {
+    box-sizing: border-box;
+    min-width: 0;
+    width: 100%;
+    height: var(--mobile-control-height);
+    padding: 0 12px;
+    border: 1px solid var(--workspace-border-strong);
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-surface);
+    color: var(--workspace-text);
+    font-size: var(--mobile-input-size);
+    font-variant-numeric: tabular-nums;
+    outline: none;
+  }
+
+  .mobile-export-field input:focus {
+    border-color: var(--workspace-accent);
+    box-shadow: var(--workspace-focus);
+  }
+
+  .mobile-export-field > small,
+  .mobile-export-hint {
+    margin: 0;
+    color: var(--workspace-text-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .mobile-export-segments + .mobile-export-field,
+  .mobile-export-segments + .mobile-export-grid {
+    margin-top: 10px;
+  }
+
+  .mobile-export-toggle {
+    min-height: var(--mobile-control-height);
+    margin-top: 10px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border: 1px solid var(--workspace-border);
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-surface-soft);
+    color: var(--workspace-text);
+    font-size: var(--mobile-body-size);
+  }
+
+  .mobile-export-toggle input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--workspace-accent);
+  }
+
+  .mobile-range-summary {
+    min-height: var(--mobile-compact-height);
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--workspace-text-muted);
+    font-size: 12px;
+  }
+
+  .mobile-range-summary button,
+  .mobile-godot-pack-grid button {
+    min-height: var(--mobile-compact-height);
+    padding: 0 10px;
+    border: 1px solid var(--workspace-border-strong);
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-surface);
+    color: var(--workspace-text);
+    font-size: var(--mobile-label-size);
+    font-weight: 600;
+  }
+
+  .mobile-godot-save {
+    width: 100%;
+    min-height: var(--mobile-control-height);
+    padding: 0 12px;
+    border: 1px solid var(--workspace-accent);
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-accent);
+    color: #fff;
+    font-size: var(--mobile-label-size);
+    font-weight: 700;
+  }
+
+  .mobile-godot-pack-grid {
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .mobile-godot-pack-grid button:last-child { grid-column: 1 / -1; }
+
+  .mobile-godot-save:disabled,
+  .mobile-godot-pack-grid button:disabled,
+  .mobile-range-summary button:disabled {
+    opacity: 0.46;
+    cursor: default;
+  }
+
+  .mobile-godot-tools .mobile-export-hint { margin-top: 8px; }
 
   .workspace-panel-review .review-clip-head,
   .workspace-panel-review .review-marker-head {

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
+import { Download, RefreshCw, Sparkles } from 'lucide-react'
 import { formatBytes, t } from '../i18n.js'
 import { parseExplicitFrameList } from '../lib/frameSelection.js'
 import { shouldHandleDroppedVideo, shouldHandleDroppedVideos, droppedVideosKey } from '../lib/droppedVideo.js'
@@ -70,6 +71,178 @@ function normalizeVideoParams(videoParams = {}) {
   }
 }
 
+function MobileExportSection({ title, children, className = '' }) {
+  return (
+    <section className={`mobile-export-section ${className}`.trim()}>
+      {title && <h3>{title}</h3>}
+      {children}
+    </section>
+  )
+}
+
+function MobileExportField({ label, children, wide = false, hint }) {
+  return (
+    <label className={`mobile-export-field ${wide ? 'wide' : ''}`.trim()}>
+      <span>{label}</span>
+      {children}
+      {hint && <small>{hint}</small>}
+    </label>
+  )
+}
+
+function MobileVideoOptions({
+  exportMode, setExportMode, mode, setMode, availableFormats, format, setFormat,
+  range, onRangeChange, videoInfo, processing, spriteParams, setSpriteParams,
+  usesExactFrames, explicitFrameError, explicitFrameSelection, godotParams,
+  setGodotParams, exportBasename, handleSaveGodotClip, handleSePairPack,
+  handleSeNeQuadPack, handleExpandDirectionMirrors, godotClips, clipPreviews,
+  sourceVideos, handleMirrorGodotClip, handleRemoveGodotClip,
+}) {
+  const totalFrames = videoInfo.frameCount || Math.round(videoInfo.fps * videoInfo.duration)
+  const selectionControls = (
+    <>
+      <div className="mobile-export-segments two">
+        <button type="button" className={!usesExactFrames ? 'active' : ''} onClick={() => setSpriteParams(p => ({ ...p, selectionMode: 'sample' }))}>{t('videoPanel.intervalSampling')}</button>
+        <button type="button" className={usesExactFrames ? 'active' : ''} onClick={() => setSpriteParams(p => ({ ...p, selectionMode: 'exact' }))}>{t('videoPanel.exactFrames')}</button>
+      </div>
+      {usesExactFrames ? (
+        <MobileExportField
+          wide
+          label={t('videoPanel.exactFramesLabel')}
+          hint={explicitFrameError || t('videoPanel.exactFramesCount', { count: explicitFrameSelection.frames.length })}
+        >
+          <input
+            type="text"
+            value={spriteParams.exactFramesText}
+            placeholder={t('videoPanel.exactFramesPlaceholder')}
+            onChange={event => setSpriteParams(p => ({ ...p, exactFramesText: event.target.value }))}
+          />
+        </MobileExportField>
+      ) : null}
+    </>
+  )
+
+  return (
+    <div className="mobile-video-options">
+      <MobileExportSection title={t('videoPanel.exportType')} className="mobile-export-mode-card">
+        <div className="mobile-export-segments three">
+          <button type="button" className={exportMode === 'video' ? 'active' : ''} onClick={() => setExportMode('video')}>{t('videoPanel.videoExport')}</button>
+          <button type="button" className={exportMode === 'spritesheet' ? 'active' : ''} onClick={() => setExportMode('spritesheet')}>{t('videoPanel.spriteExport')}</button>
+          <button type="button" className={exportMode === 'godot' ? 'active' : ''} onClick={() => setExportMode('godot')}>{t('videoPanel.godotExportShort')}</button>
+        </div>
+      </MobileExportSection>
+
+      {exportMode === 'video' && (
+        <>
+          <MobileExportSection title={t('videoPanel.outputMode')}>
+            <div className="mobile-export-segments two">
+              <button type="button" className={mode === 'transparent' ? 'active' : ''} onClick={() => setMode('transparent')}>{t('videoPanel.transparentBg')}</button>
+              <button type="button" className={mode === 'greenscreen' ? 'active' : ''} onClick={() => setMode('greenscreen')}>{t('videoPanel.greenscreenComposite')}</button>
+            </div>
+            <div className="mobile-export-segments formats" aria-label={t('videoPanel.outputFormat')}>
+              {availableFormats.map(option => (
+                <button type="button" key={option.value} className={format === option.value ? 'active' : ''} onClick={() => setFormat(option.value)}>{t(option.labelKey)}</button>
+              ))}
+            </div>
+          </MobileExportSection>
+          <MobileExportSection title={t('videoPanel.frameRange')}>
+            <div className="mobile-export-grid">
+              <MobileExportField label={t('videoPanel.startFrame')}>
+                <input type="number" min={0} max={range.endFrame} value={range.startFrame} disabled={processing} onChange={event => { const value = Math.max(0, parseInt(event.target.value) || 0); onRangeChange({ ...range, startFrame: Math.min(value, range.endFrame) }) }} />
+              </MobileExportField>
+              <MobileExportField label={t('videoPanel.endFrame')}>
+                <input type="number" min={range.startFrame} value={range.endFrame} disabled={processing} onChange={event => { const value = parseInt(event.target.value) || 0; onRangeChange({ ...range, endFrame: Math.max(value, range.startFrame) }) }} />
+              </MobileExportField>
+            </div>
+            <div className="mobile-range-summary">
+              <span>{range.endFrame - range.startFrame} {t('common.frames')} · {range.startFrame > 0 || range.endFrame < totalFrames ? t('common.partial') : t('common.allVideo')}</span>
+              <button type="button" onClick={() => onRangeChange({ startFrame: 0, endFrame: totalFrames })} disabled={processing}>{t('videoPanel.wholeVideo')}</button>
+            </div>
+          </MobileExportSection>
+        </>
+      )}
+
+      {exportMode === 'spritesheet' && (
+        <>
+          <MobileExportSection title={t('videoPanel.frameSettings')}>
+            <div className="mobile-export-grid">
+              <MobileExportField label={t('videoPanel.frameWidth')}><input type="number" min="8" max="2048" value={spriteParams.frameWidth} onChange={event => setSpriteParams(p => ({ ...p, frameWidth: parseInt(event.target.value) || 128 }))} /></MobileExportField>
+              <MobileExportField label={t('videoPanel.frameHeight')}><input type="number" min="8" max="2048" value={spriteParams.frameHeight} onChange={event => setSpriteParams(p => ({ ...p, frameHeight: parseInt(event.target.value) || 128 }))} /></MobileExportField>
+              <MobileExportField label={t('videoPanel.framesPerRow')}><input type="number" min="1" max="100" value={spriteParams.framesPerRow} onChange={event => setSpriteParams(p => ({ ...p, framesPerRow: parseInt(event.target.value) || 8 }))} /></MobileExportField>
+              <MobileExportField label={t('videoPanel.maxFrames')}><input type="number" min="1" max="10000" value={spriteParams.maxFrames} onChange={event => setSpriteParams(p => ({ ...p, maxFrames: parseInt(event.target.value) || 64 }))} /></MobileExportField>
+            </div>
+          </MobileExportSection>
+          <MobileExportSection title={t('videoPanel.samplingSettings')}>
+            {selectionControls}
+            {!usesExactFrames && (
+              <MobileExportField wide label={t('videoPanel.sampleEvery')} hint={t('videoPanel.sampleHint')}>
+                <input type="number" min="1" max="1000" value={spriteParams.sampleEvery} onChange={event => setSpriteParams(p => ({ ...p, sampleEvery: parseInt(event.target.value) || 1 }))} />
+              </MobileExportField>
+            )}
+          </MobileExportSection>
+        </>
+      )}
+
+      {exportMode === 'godot' && (
+        <>
+          <MobileExportSection title={t('videoPanel.frameSettings')}>
+            <div className="mobile-export-grid">
+              <MobileExportField label={t('videoPanel.frameWidth')}><input type="number" min="8" max="2048" value={spriteParams.frameWidth} onChange={event => setSpriteParams(p => ({ ...p, frameWidth: parseInt(event.target.value) || 256 }))} /></MobileExportField>
+              <MobileExportField label={t('videoPanel.frameHeight')}><input type="number" min="8" max="2048" value={spriteParams.frameHeight} onChange={event => setSpriteParams(p => ({ ...p, frameHeight: parseInt(event.target.value) || 256 }))} /></MobileExportField>
+              <MobileExportField label={t('videoPanel.safeAreaWidth')}><input type="number" min="1" max={spriteParams.frameWidth} value={godotParams.safeAreaWidth} onChange={event => setGodotParams(p => ({ ...p, safeAreaWidth: parseInt(event.target.value) || 160 }))} /></MobileExportField>
+              <MobileExportField label={t('videoPanel.safeAreaHeight')}><input type="number" min="1" max={spriteParams.frameHeight} value={godotParams.safeAreaHeight} onChange={event => setGodotParams(p => ({ ...p, safeAreaHeight: parseInt(event.target.value) || 160 }))} /></MobileExportField>
+              <MobileExportField label={t('videoPanel.framesPerRow')}><input type="number" min="1" max="100" value={spriteParams.framesPerRow} onChange={event => setSpriteParams(p => ({ ...p, framesPerRow: parseInt(event.target.value) || 8 }))} /></MobileExportField>
+              <MobileExportField label={t('videoPanel.godotFps')}><input type="number" min="1" max="120" value={godotParams.fps} onChange={event => setGodotParams(p => ({ ...p, fps: parseInt(event.target.value) || 12 }))} /></MobileExportField>
+            </div>
+          </MobileExportSection>
+          <MobileExportSection title={t('videoPanel.namingSettings')}>
+            <div className="mobile-export-grid">
+              <MobileExportField label={t('videoPanel.characterName')}><input type="text" value={godotParams.characterName} placeholder={t('videoPanel.characterNamePlaceholder')} onChange={event => setGodotParams(p => ({ ...p, characterName: event.target.value }))} /></MobileExportField>
+              <MobileExportField label={t('videoPanel.actionName')}><input type="text" value={godotParams.actionName} placeholder={t('videoPanel.actionNamePlaceholder')} onChange={event => setGodotParams(p => ({ ...p, actionName: event.target.value }))} /></MobileExportField>
+              <MobileExportField wide label={t('videoPanel.exportName')} hint={t('videoPanel.exportNameHint', { name: exportBasename })}><input type="text" value={godotParams.exportName} placeholder={exportBasename} onChange={event => setGodotParams(p => ({ ...p, exportName: event.target.value }))} /></MobileExportField>
+              <MobileExportField wide label={t('videoPanel.animationName')}><input type="text" value={godotParams.animationName} onChange={event => setGodotParams(p => ({ ...p, animationName: event.target.value }))} /></MobileExportField>
+            </div>
+            <label className="mobile-export-toggle"><span>{t('videoPanel.godotLoop')}</span><input type="checkbox" checked={godotParams.loop} onChange={event => setGodotParams(p => ({ ...p, loop: event.target.checked }))} /></label>
+          </MobileExportSection>
+          <MobileExportSection title={t('videoPanel.samplingSettings')}>
+            {selectionControls}
+            {!usesExactFrames && (
+              <div className="mobile-export-grid">
+                <MobileExportField label={t('videoPanel.sampleEvery')}><input type="number" min="1" max="1000" value={spriteParams.sampleEvery} onChange={event => setSpriteParams(p => ({ ...p, sampleEvery: parseInt(event.target.value) || 1 }))} /></MobileExportField>
+                <MobileExportField label={t('videoPanel.maxFrames')}><input type="number" min="1" max="10000" value={spriteParams.maxFrames} onChange={event => setSpriteParams(p => ({ ...p, maxFrames: parseInt(event.target.value) || 64 }))} /></MobileExportField>
+              </div>
+            )}
+          </MobileExportSection>
+          <MobileExportSection title={t('videoPanel.animationSettings')} className="mobile-godot-tools">
+            <button type="button" className="mobile-godot-save" onClick={handleSaveGodotClip} disabled={processing || Boolean(explicitFrameError)}>{t('videoPanel.saveGodotClip')}</button>
+            <div className="mobile-godot-pack-grid">
+              <button type="button" onClick={handleSePairPack} disabled={processing || Boolean(explicitFrameError) || !videoInfo}>{t('videoPanel.packSePair')}</button>
+              <button type="button" onClick={handleSeNeQuadPack} disabled={processing || Boolean(explicitFrameError) || !videoInfo}>{t('videoPanel.packSeNe')}</button>
+              <button type="button" onClick={handleExpandDirectionMirrors} disabled={processing || godotClips.length === 0}>{t('videoPanel.packExpandMirrors')}</button>
+            </div>
+            <p className="mobile-export-hint">{godotClips.length > 0 ? t('videoPanel.savedClipCount', { count: godotClips.length }) : t('videoPanel.noSavedClips')}</p>
+            <p className="mobile-export-hint">{t('videoPanel.packWorkflowHint')}</p>
+            {godotClips.length > 0 && (
+              <div className="godot-clip-list">
+                {godotClips.map(clip => (
+                  <div className="godot-clip-item" key={clip.id}>
+                    <div className="godot-clip-thumb" aria-hidden={!clipPreviews[clip.id]}>{clipPreviews[clip.id] ? <img src={clipPreviews[clip.id]} alt="" /> : <span className="godot-clip-thumb-empty">{t('videoPanel.clipPreviewLoading')}</span>}</div>
+                    <div className="godot-clip-main"><strong>{clip.name}</strong><span>{clip.mirrorOf ? t('videoPanel.clipMirrorOf', { name: clip.mirrorOf }) : (clip.sourceLabel || sourceVideos[clip.jobId]?.label || clip.jobId || t('videoPanel.clipSourceUnknown'))}</span></div>
+                    <div className="godot-clip-actions">
+                      {!clip.mirrorOf && <button type="button" className="godot-clip-mirror" onClick={() => handleMirrorGodotClip(clip)} disabled={processing}>{t('videoPanel.mirrorGodotClip')}</button>}
+                      <button type="button" className="godot-clip-delete" onClick={() => handleRemoveGodotClip(clip.id)} disabled={processing} aria-label={t('videoPanel.deleteGodotClip', { name: clip.name })}>×</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </MobileExportSection>
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function VideoPanel({
   keyingParams,
   layoutParams,
@@ -84,6 +257,7 @@ export default function VideoPanel({
   reviewProjectId = '',
   reviewAssetId = '',
   reviewClipId = '',
+  mobile = false,
 }) {
   const safeVideoParams = normalizeVideoParams(videoParams)
   const { mode, format, exportMode, spriteParams, godotParams } = safeVideoParams
@@ -1057,7 +1231,7 @@ export default function VideoPanel({
         <>
           {status === 'done' ? (
             exportMode === 'spritesheet' ? (
-              <button className="dock-btn dock-btn-primary" onClick={handleDownload}>⬇ {t('videoPanel.downloadSprite')}</button>
+              <button className="dock-btn dock-btn-primary" onClick={handleDownload}><Download size={16} aria-hidden="true" />{t('videoPanel.downloadSprite')}</button>
             ) : exportMode === 'godot' && godotExport ? (
               <div className="godot-downloads">
                 <button className="dock-btn dock-btn-primary" onClick={() => handleDownloadGodotArtifact('bundle')}>{t('videoPanel.downloadGodotBundle')}</button>
@@ -1068,19 +1242,20 @@ export default function VideoPanel({
                 <button className="dock-btn dock-btn-secondary" onClick={() => handleDownloadGodotArtifact('metadata')}>{t('videoPanel.downloadGodotMetadata')}</button>
               </div>
             ) : (
-              <button className="dock-btn dock-btn-primary" onClick={handleDownload}>⬇ {t('videoPanel.downloadVideo', { format: format.toUpperCase() })}</button>
+              <button className="dock-btn dock-btn-primary" onClick={handleDownload}><Download size={16} aria-hidden="true" />{t('videoPanel.downloadVideo', { format: format.toUpperCase() })}</button>
             )
           ) : (
             <button className="dock-btn dock-btn-primary" onClick={handleProcess} disabled={processing}>
+              <Sparkles size={16} aria-hidden="true" />
               {processing ? t('videoPanel.processing') : exportMode === 'spritesheet' ? t('videoPanel.generateSprite') : exportMode === 'godot' ? t('videoPanel.generateGodot') : t('videoPanel.start')}
             </button>
           )}
-          <button className="dock-btn dock-btn-secondary" onClick={handleReset} disabled={processing}>🔁 {t('videoPanel.chooseAgain')}</button>
+          <button className="dock-btn dock-btn-secondary" onClick={handleReset} disabled={processing}><RefreshCw size={16} aria-hidden="true" />{t('videoPanel.chooseAgain')}</button>
         </>
       ) : (
         <>
-          <button className="dock-btn dock-btn-primary" disabled>{uploading ? t('videoPanel.uploading') : `🚀 ${t('videoPanel.start')}`}</button>
-          <button className="dock-btn dock-btn-secondary" disabled>🔁 {t('videoPanel.chooseAgain')}</button>
+          <button className="dock-btn dock-btn-primary" disabled><Sparkles size={16} aria-hidden="true" />{uploading ? t('videoPanel.uploading') : t('videoPanel.start')}</button>
+          <button className="dock-btn dock-btn-secondary" disabled><RefreshCw size={16} aria-hidden="true" />{t('videoPanel.chooseAgain')}</button>
         </>
       )}
     </div>
@@ -1089,7 +1264,41 @@ export default function VideoPanel({
   return (
     <>
       {videoInfo && (
-        <section className="parameter-panel video-parameter-panel" aria-label={t('videoPanel.title')}>
+        mobile ? (
+          <section className="parameter-panel video-parameter-panel mobile-video-parameter-panel" aria-label={t('videoPanel.title')}>
+            <MobileVideoOptions
+              exportMode={exportMode}
+              setExportMode={setExportMode}
+              mode={mode}
+              setMode={setMode}
+              availableFormats={availableFormats}
+              format={format}
+              setFormat={setFormat}
+              range={range}
+              onRangeChange={onRangeChange}
+              videoInfo={videoInfo}
+              processing={processing}
+              spriteParams={spriteParams}
+              setSpriteParams={setSpriteParams}
+              usesExactFrames={usesExactFrames}
+              explicitFrameError={explicitFrameError}
+              explicitFrameSelection={explicitFrameSelection}
+              godotParams={godotParams}
+              setGodotParams={setGodotParams}
+              exportBasename={exportBasename}
+              handleSaveGodotClip={handleSaveGodotClip}
+              handleSePairPack={handleSePairPack}
+              handleSeNeQuadPack={handleSeNeQuadPack}
+              handleExpandDirectionMirrors={handleExpandDirectionMirrors}
+              godotClips={godotClips}
+              clipPreviews={clipPreviews}
+              sourceVideos={sourceVideos}
+              handleMirrorGodotClip={handleMirrorGodotClip}
+              handleRemoveGodotClip={handleRemoveGodotClip}
+            />
+          </section>
+        ) : (
+        <section className="parameter-panel video-parameter-panel desktop-video-parameter-panel" aria-label={t('videoPanel.title')}>
           <div className="video-options">
             <div className="opt-group">
               <p className="opt-label">{t('videoPanel.exportType')}</p>
@@ -1431,6 +1640,7 @@ export default function VideoPanel({
             )}
           </div>
         </section>
+        )
       )}
 
       {dockTarget ? createPortal(dockContent, dockTarget) : null}
