@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Clapperboard,
   Download,
@@ -34,12 +34,62 @@ export default function WorkspaceSidebar({
   const tools = TOOL_DEFINITIONS.filter(tool => !tool.videoOnly || mediaMode === 'video')
   const currentTool = tools.find(tool => tool.id === activeTool) || tools[0]
   const CurrentIcon = currentTool.icon || SlidersHorizontal
+  const dragRef = useRef(null)
+  const initialWidth = useMemo(() => {
+    if (typeof window === 'undefined') return 480
+    const saved = Number(window.localStorage?.getItem('greenscreen.desktopSidebarWidth'))
+    const viewportMaximum = Math.min(640, window.innerWidth * 0.52)
+    if (Number.isFinite(saved) && saved >= 420 && saved <= 640) {
+      return Math.round(Math.max(420, Math.min(viewportMaximum, saved)))
+    }
+    return Math.max(420, Math.min(580, Math.round(window.innerWidth * 0.39)))
+  }, [])
+  const [desktopWidth, setDesktopWidth] = useState(initialWidth)
+
+  const clampDesktopWidth = useCallback((value) => {
+    const viewportWidth = typeof window === 'undefined' ? 1440 : window.innerWidth
+    return Math.round(Math.max(420, Math.min(Math.min(640, viewportWidth * 0.52), value)))
+  }, [])
+
+  useEffect(() => {
+    const onPointerMove = (event) => {
+      if (!dragRef.current) return
+      setDesktopWidth(clampDesktopWidth(dragRef.current.width + event.clientX - dragRef.current.x))
+    }
+    const onPointerUp = () => {
+      if (!dragRef.current) return
+      dragRef.current = null
+      document.body.classList.remove('workspace-resizing')
+    }
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+      document.body.classList.remove('workspace-resizing')
+    }
+  }, [clampDesktopWidth])
+
+  useEffect(() => {
+    if (window.innerWidth <= 900) return
+    window.localStorage?.setItem('greenscreen.desktopSidebarWidth', String(desktopWidth))
+  }, [desktopWidth])
+
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth <= 900) return
+      setDesktopWidth(width => clampDesktopWidth(width))
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [clampDesktopWidth])
 
   return (
     <aside
       ref={sheetRef}
       className={`sidebar workspace-sidebar mobile-sheet-panel state-${mobileSheetState} ${mobileSheetDragging ? 'is-dragging' : ''}`}
       aria-label={t('app.workspaceNavLabel')}
+      style={{ '--workspace-sidebar-width': `${desktopWidth}px` }}
     >
       <header className="mobile-sheet-handle">
         <button
@@ -93,6 +143,27 @@ export default function WorkspaceSidebar({
 
         <div className="workspace-panel-stack">{children}</div>
       </div>
+      <div
+        className="workspace-resize-handle"
+        role="separator"
+        aria-label={t('app.resizeWorkspace')}
+        aria-orientation="vertical"
+        aria-valuemin={420}
+        aria-valuemax={640}
+        aria-valuenow={desktopWidth}
+        tabIndex={0}
+        onPointerDown={(event) => {
+          if (window.innerWidth <= 900) return
+          event.preventDefault()
+          dragRef.current = { x: event.clientX, width: desktopWidth }
+          document.body.classList.add('workspace-resizing')
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+          event.preventDefault()
+          setDesktopWidth(width => clampDesktopWidth(width + (event.key === 'ArrowRight' ? 16 : -16)))
+        }}
+      />
     </aside>
   )
 }

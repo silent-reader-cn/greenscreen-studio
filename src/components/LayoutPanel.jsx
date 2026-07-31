@@ -1,43 +1,6 @@
 import React from 'react'
-import { CircleHelp } from 'lucide-react'
 import { t } from '../i18n.js'
-
-const NumberInput = ({ label, value, onChange, min = 1, max = 9999 }) => (
-  <label className="input-row">
-    <span>{label}</span>
-    <input
-      type="number"
-      value={value}
-      min={min}
-      max={max}
-      onChange={(e) => {
-        const raw = e.target.value
-        if (raw === '' || raw === '-') {
-          onChange(min)
-          return
-        }
-        const n = Number(raw)
-        if (!Number.isFinite(n)) {
-          onChange(min)
-          return
-        }
-        onChange(Math.max(min, Math.min(max, Math.round(n))))
-      }}
-    />
-  </label>
-)
-
-const ParameterHelp = ({ text }) => (
-  <button
-    type="button"
-    className="parameter-help"
-    data-tip={text}
-    title={text}
-    aria-label={text}
-  >
-    <CircleHelp size={14} aria-hidden="true" />
-  </button>
-)
+import { ControlGrid, ControlSection, HelpButton, NumberField, SegmentedControl, StatusStrip, ToggleField } from './ControlKit.jsx'
 
 const MobileNumberField = ({ label, value, onChange, min = 1, max = 9999, suffix }) => (
   <label className="mobile-number-field">
@@ -110,7 +73,7 @@ function MobileLayoutPanel({
             >
               {t('layout.sourceCharacterHeight')}
             </strong>
-            <ParameterHelp text={t('layout.sourceCharacterHeightHint')} />
+            <HelpButton label={t('layout.sourceCharacterHeightHint')} />
           </div>
           <MobileNumberField label={t('layout.px')} suffix="px" value={sourceCharacterHeight} min={0} onChange={value => update('sourceCharacterHeight', value)} />
         </div>
@@ -169,111 +132,59 @@ export default function LayoutPanel({
 
   return (
     <section className="parameter-panel layout-parameter-panel" aria-label={t('layout.title')}>
-      <fieldset className="layout-group">
-        <legend className="group-label">{t('layout.canvasSize')}</legend>
-        <div className="dual-input">
-          <NumberInput
-            label={t('layout.width')}
-            value={params.canvasWidth}
-            onChange={(v) => update('canvasWidth', v)}
-          />
-          <span className="x-sign">×</span>
-          <NumberInput
-            label={t('layout.height')}
-            value={params.canvasHeight}
-            onChange={(v) => update('canvasHeight', v)}
-          />
-        </div>
-        <div className="preset-row" aria-label={t('layout.canvasSize')}>
-          <button type="button" className="btn-preset" onClick={() => onChange({ ...params, canvasWidth: 1280, canvasHeight: 720 })}>
-            1280×720
-          </button>
-          <button type="button" className="btn-preset" onClick={() => onChange({ ...params, canvasWidth: 1920, canvasHeight: 1080 })}>
-            1920×1080
-          </button>
-          <button type="button" className="btn-preset" onClick={() => onChange({ ...params, canvasWidth: 1000, canvasHeight: 1000 })}>
-            1000×1000
-          </button>
-        </div>
-      </fieldset>
+      <ControlSection title={t('layout.canvasSize')}>
+        <ControlGrid>
+          <NumberField label={t('layout.width')} value={params.canvasWidth} min={1} onChange={(value) => update('canvasWidth', value)} suffix="px" />
+          <NumberField label={t('layout.height')} value={params.canvasHeight} min={1} onChange={(value) => update('canvasHeight', value)} suffix="px" />
+        </ControlGrid>
+        <SegmentedControl
+          label={t('layout.canvasPresets')}
+          columns={3}
+          value={`${params.canvasWidth}x${params.canvasHeight}`}
+          options={[
+            { value: '1280x720', label: '1280×720' },
+            { value: '1920x1080', label: '1920×1080' },
+            { value: '1000x1000', label: '1000×1000' },
+          ]}
+          onChange={(value) => {
+            const [canvasWidth, canvasHeight] = value.split('x').map(Number)
+            onChange({ ...params, canvasWidth, canvasHeight })
+          }}
+        />
+      </ControlSection>
 
-      <fieldset className="layout-group">
-        <legend className="group-label">{t('layout.characterSize')}</legend>
-        <div className="dual-input">
-          <NumberInput
-            label={t('layout.width')}
-            value={params.personWidth}
-            onChange={(v) => update('personWidth', v)}
-          />
-          <span className="x-sign">×</span>
-          <NumberInput
-            label={t('layout.height')}
-            value={params.personHeight}
-            onChange={(v) => update('personHeight', v)}
-          />
-        </div>
-      </fieldset>
-
-      <div className="layout-group source-height-group">
-        <div className="parameter-group-heading">
-          <span
-          className={`group-label ${canAutoDetectSourceCharacterHeight ? 'dblclick-label' : ''}`}
-          title={canAutoDetectSourceCharacterHeight ? t('layout.sourceCharacterHeightAutoDetectTitle') : undefined}
-          onDoubleClick={canAutoDetectSourceCharacterHeight ? onAutoDetectSourceCharacterHeight : undefined}
-          >
-            {t('layout.sourceCharacterHeight')}
-          </span>
-          <ParameterHelp text={t('layout.sourceCharacterHeightHint')} />
-        </div>
-        <NumberInput
-          label={t('layout.px')}
+      <ControlSection title={t('layout.characterSize')}>
+        <ControlGrid>
+          <NumberField label={t('layout.width')} value={params.personWidth} min={1} onChange={(value) => update('personWidth', value)} suffix="px" />
+          <NumberField label={t('layout.height')} value={params.personHeight} min={1} onChange={(value) => update('personHeight', value)} suffix="px" />
+        </ControlGrid>
+        <NumberField
+          label={t('layout.sourceCharacterHeight')}
           value={sourceCharacterHeight}
           min={0}
           max={9999}
-          onChange={(v) => update('sourceCharacterHeight', v)}
+          suffix="px"
+          wide
+          help={t('layout.sourceCharacterHeightHint')}
+          className={canAutoDetectSourceCharacterHeight ? 'dblclick-label' : ''}
+          onChange={(value) => update('sourceCharacterHeight', value)}
         />
-      </div>
+        {canAutoDetectSourceCharacterHeight && (
+          <button type="button" className="control-inline-action" onClick={onAutoDetectSourceCharacterHeight}>
+            {t('layout.autoDetectSourceHeight')}
+          </button>
+        )}
+      </ControlSection>
 
-      <div className="toggle-row">
-        <label className="toggle-label">
-          <input
-            type="checkbox"
-            checked={params.autoCrop !== false}
-            onChange={(e) => update('autoCrop', e.target.checked)}
-          />
-          <span>{t('layout.autoCrop')}</span>
-        </label>
-        <ParameterHelp text={t('layout.autoCropHint')} />
-      </div>
+      <ControlSection title={t('layout.positioning')}>
+        <ToggleField label={t('layout.autoCrop')} help={t('layout.autoCropHint')} checked={params.autoCrop !== false} onChange={(checked) => update('autoCrop', checked)} />
+        <ToggleField label={t('layout.sourceCenterAnchor')} help={t('layout.sourceCenterAnchorHint')} checked={params.sourceCenterAnchor !== false} disabled={params.autoCrop === false} onChange={(checked) => update('sourceCenterAnchor', checked)} />
+      </ControlSection>
 
-      <div className="toggle-row">
-        <label className="toggle-label">
-          <input
-            type="checkbox"
-            checked={params.sourceCenterAnchor !== false}
-            disabled={params.autoCrop === false}
-            onChange={(e) => update('sourceCenterAnchor', e.target.checked)}
-          />
-          <span>{t('layout.sourceCenterAnchor')}</span>
-        </label>
-        <ParameterHelp text={t('layout.sourceCenterAnchorHint')} />
-      </div>
-
-      {imageSize.w > 0 && (
-        <div className="layout-status" aria-live="polite">
-          <span>{t('layout.input')}: {imageSize.w}×{imageSize.h}</span>
-          <strong>
-            {t('layout.scale')}: {previewScale != null ? `1:${previewScale.toFixed(3)}` : '—'}
-            {sourceCharacterHeight > 0 ? ` (${t('layout.scaleLocked')})` : ''}
-          </strong>
-          {params.autoCrop !== false && (
-            <span>{t('layout.autoCropOn')}</span>
-          )}
-          {params.autoCrop !== false && params.sourceCenterAnchor !== false && (
-            <span>{t('layout.sourceCenterAnchorOn')}</span>
-          )}
-        </div>
-      )}
+      {imageSize.w > 0 && <StatusStrip items={[
+        { label: t('layout.input'), value: `${imageSize.w}×${imageSize.h}` },
+        { label: t('layout.scale'), value: `${previewScale != null ? `1:${previewScale.toFixed(3)}` : '—'}${sourceCharacterHeight > 0 ? ` · ${t('layout.scaleLocked')}` : ''}`, emphasis: true },
+      ]} />}
     </section>
   )
 }

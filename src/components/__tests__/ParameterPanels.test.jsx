@@ -48,7 +48,8 @@ describe('compact parameter panels', () => {
     )
 
     expect(container.querySelector('.collapsible-panel')).toBeNull()
-    expect(screen.getAllByRole('group')).toHaveLength(2)
+    expect(container.querySelectorAll('.control-section')).toHaveLength(3)
+    expect(screen.getByRole('group', { name: t('layout.canvasPresets') })).toBeTruthy()
     expect(screen.getByRole('button', { name: t('layout.autoCropHint') })).toBeTruthy()
     expect(container.querySelector('.toggle-hint')).toBeNull()
 
@@ -57,6 +58,10 @@ describe('compact parameter panels', () => {
       canvasWidth: 1000,
       canvasHeight: 1000,
     }))
+
+    onChange.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: t('layout.autoCropHint') }))
+    expect(onChange).not.toHaveBeenCalled()
   })
 
   it('renders the dedicated mobile layout and keeps desktop fieldsets out of the mobile DOM', () => {

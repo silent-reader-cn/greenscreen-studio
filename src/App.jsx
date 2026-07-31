@@ -19,11 +19,11 @@ import VideoPanel from './components/VideoPanel.jsx'
 import VideoPreview from './components/VideoPreview.jsx'
 import ProfileSwitcher from './components/ProfileSwitcher.jsx'
 import MobileProfilePanel from './components/MobileProfilePanel.jsx'
-import CollapsiblePanel from './components/CollapsiblePanel.jsx'
 import StudioPanel from './components/StudioPanel.jsx'
 import ActionClipReviewPanel from './components/ActionClipReviewPanel.jsx'
 import WorkspaceSidebar from './components/WorkspaceSidebar.jsx'
 import { useAppDialog } from './components/AppDialog.jsx'
+import { ControlGrid, TextField } from './components/ControlKit.jsx'
 import { formatBytes as formatLocalizedBytes, formatDateTime, formatDuration as formatLocalizedDuration, t, uiLanguage } from './i18n.js'
 
 // ===== 默认参数 =====
@@ -1536,12 +1536,15 @@ export default function App() {
                   <span className="source-chooser-icon" aria-hidden="true">
                     <FolderInput size={20} strokeWidth={1.8} />
                   </span>
-                  <strong title={currentAssetName || t('app.noAsset')}>
-                    {currentAssetName || t('app.noAsset')}
-                  </strong>
+                  <span className="source-chooser-copy">
+                    <small>{t('file.title')}</small>
+                    <strong title={currentAssetName || t('app.noAsset')}>
+                      {currentAssetName || t('app.noAsset')}
+                    </strong>
+                  </span>
                   <button type="button" onClick={openFilePicker}>
                     <Upload size={15} aria-hidden="true" />
-                    {t('app.importAsset')}
+                    {currentAssetName ? t('app.replaceAsset') : t('app.importAsset')}
                   </button>
                 </div>
                 <FileMetaPanel
@@ -1659,20 +1662,11 @@ export default function App() {
                   <details className="image-godot-export" aria-label={t('app.godotPoseTitle')}>
                     <summary>{t('app.godotPoseTitle')}</summary>
                     <div className="image-godot-body">
-                      <div className="image-godot-fields">
-                        <label>
-                          <span>{t('app.godotPoseCharacter')}</span>
-                          <input value={videoParams.godotParams.characterName} onChange={(event) => updateImageGodotParam('characterName', event.target.value)} />
-                        </label>
-                        <label>
-                          <span>{t('app.godotPoseAction')}</span>
-                          <input value={videoParams.godotParams.actionName} onChange={(event) => updateImageGodotParam('actionName', event.target.value)} />
-                        </label>
-                        <label>
-                          <span>{t('app.godotPoseAnimation')}</span>
-                          <input value={videoParams.godotParams.animationName} onChange={(event) => updateImageGodotParam('animationName', event.target.value)} />
-                        </label>
-                      </div>
+                      <ControlGrid className="image-godot-fields">
+                        <TextField label={t('app.godotPoseCharacter')} value={videoParams.godotParams.characterName} onChange={(value) => updateImageGodotParam('characterName', value)} />
+                        <TextField label={t('app.godotPoseAction')} value={videoParams.godotParams.actionName} onChange={(value) => updateImageGodotParam('actionName', value)} />
+                        <TextField wide label={t('app.godotPoseAnimation')} value={videoParams.godotParams.animationName} onChange={(value) => updateImageGodotParam('animationName', value)} />
+                      </ControlGrid>
                       <button
                         className="dock-btn dock-btn-primary"
                         onClick={handleExportGodotPose}
@@ -1914,7 +1908,7 @@ function FileMetaPanel({
 
   const content = loaded && file ? (
         <div className="file-meta-content">
-          <p className="file-meta-name" title={file.name}>{file.name}</p>
+          {mobile && <p className="file-meta-name" title={file.name}>{file.name}</p>}
           <div className="file-meta-grid">
             <span>{t('file.type')}</span>
             <strong>{isImage ? t('app.image') : t('app.video')}</strong>
@@ -1994,14 +1988,14 @@ function FileMetaPanel({
   }
 
   return (
-    <CollapsiblePanel
-      title={<span className="panel-title-content"><FileText size={15} />{t('file.title')}</span>}
-      summary={summary}
-      defaultCollapsed
-      className="file-meta-panel"
-    >
-      {content}
-    </CollapsiblePanel>
+    <section className="desktop-file-overview" aria-label={t('file.details')}>
+      <header>
+        <span className="desktop-file-overview-icon" aria-hidden="true"><FileText size={16} /></span>
+        <h3>{t('file.details')}</h3>
+        <span>{summary}</span>
+      </header>
+      <div className="desktop-file-overview-body">{content}</div>
+    </section>
   )
 }
 

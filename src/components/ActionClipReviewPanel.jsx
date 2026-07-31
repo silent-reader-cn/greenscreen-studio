@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { t } from '../i18n.js'
 import SemanticMarkerEditor from './SemanticMarkerEditor.jsx'
 import { useAppDialog } from './AppDialog.jsx'
+import { ActionButton, TextField, ToggleField } from './ControlKit.jsx'
 import {
   availableClipStatuses,
   buildClipStatusTransition,
@@ -342,9 +343,9 @@ export default function ActionClipReviewPanel({
           <h3>{t('review.title')}</h3>
           <p className="hint">{t('review.subtitle', { source: sourceLabel || assetId })}</p>
         </div>
-        <button type="button" className="studio-mini-btn" onClick={() => void refresh()} disabled={loading || busy}>
+        <ActionButton onClick={() => void refresh()} disabled={loading || busy}>
           {loading ? t('review.loading') : t('review.refresh')}
-        </button>
+        </ActionButton>
       </div>
 
       <div className="review-clip-create">
@@ -357,29 +358,23 @@ export default function ActionClipReviewPanel({
             })}
           </span>
         </div>
-        <label className="review-clip-name-field">
-          <span>{t('review.name')}</span>
-          <input
-            type="text"
-            value={nameDraft}
-            placeholder={t('review.namePlaceholder')}
-            onChange={(e) => setNameDraft(e.target.value)}
+        <TextField
+          className="review-clip-name-field"
+          label={t('review.name')}
+          value={nameDraft}
+          placeholder={t('review.namePlaceholder')}
+          onChange={setNameDraft}
+          disabled={disabled || busy}
+        />
+        <div className="review-clip-create-actions">
+          <ToggleField
+            label={t('review.loop')}
+            checked={loopDraft}
+            onChange={setLoopDraft}
             disabled={disabled || busy}
           />
-        </label>
-        <div className="review-clip-create-actions">
-          <label className="review-loop-toggle">
-            <input
-              type="checkbox"
-              checked={loopDraft}
-              onChange={(e) => setLoopDraft(e.target.checked)}
-              disabled={disabled || busy}
-            />
-            <span>{t('review.loop')}</span>
-          </label>
-          <button
-            type="button"
-            className="studio-primary-btn"
+          <ActionButton
+            tone="primary"
             onClick={() => void handleCreate()}
             disabled={disabled || busy || !range || !(range.endFrame > range.startFrame)}
             aria-label={t('review.createFromRange', {
@@ -392,7 +387,7 @@ export default function ActionClipReviewPanel({
             })}
           >
             {t('review.saveClip')}
-          </button>
+          </ActionButton>
         </div>
       </div>
 
@@ -410,23 +405,20 @@ export default function ActionClipReviewPanel({
 
       <div className="review-clip-bulk">
         <div className="review-clip-bulk-actions">
-          <button
-            type="button"
-            className="studio-mini-btn"
+          <ActionButton
             onClick={() => void handleApplyRangeToSelected()}
             disabled={disabled || busy || !primarySelected || !isClipEditable(primarySelected.status) || !range}
             title={t('review.updateRangeHint')}
           >
             {t('review.updateRange')}
-          </button>
-          <button
-            type="button"
-            className="studio-danger-btn"
+          </ActionButton>
+          <ActionButton
+            tone="danger"
             onClick={() => void handleDeleteSelected()}
             disabled={disabled || busy || selectedClipIds.length === 0}
           >
             {t('review.deleteSelected')}
-          </button>
+          </ActionButton>
         </div>
       </div>
 
@@ -468,15 +460,14 @@ export default function ActionClipReviewPanel({
                         disabled={busy || !editable}
                         title={!editable ? t('review.reviewLocked') : undefined}
                       />
-                      <button type="submit" className="studio-mini-btn" disabled={busy}>{t('review.saveName')}</button>
-                      <button
+                      <ActionButton type="submit" disabled={busy}>{t('review.saveName')}</ActionButton>
+                      <ActionButton
                         type="button"
-                        className="studio-mini-btn"
                         onClick={() => setEditingId('')}
                         disabled={busy}
                       >
                         {t('review.cancelEdit')}
-                      </button>
+                      </ActionButton>
                     </form>
                   ) : (
                     <>
@@ -507,9 +498,7 @@ export default function ActionClipReviewPanel({
 
               {primary && (
                 <div className="review-clip-actions" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    className="studio-mini-btn"
+                  <ActionButton
                     onClick={() => {
                       setEditingId(clip.id)
                       setEditName(clip.name)
@@ -518,16 +507,14 @@ export default function ActionClipReviewPanel({
                     title={!editable ? t('review.reviewLocked') : undefined}
                   >
                     {t('review.rename')}
-                  </button>
-                  <button
-                    type="button"
-                    className="studio-mini-btn"
+                  </ActionButton>
+                  <ActionButton
                     onClick={() => void handleToggleLoop(clip)}
                     disabled={busy || !editable}
                     title={!editable ? t('review.reviewLocked') : undefined}
                   >
                     {clip.loop ? t('review.unloop') : t('review.loop')}
-                  </button>
+                  </ActionButton>
                   <select
                     className="review-status-select"
                     aria-label={t('review.statusControl', { name: clip.name })}
@@ -541,14 +528,12 @@ export default function ActionClipReviewPanel({
                     ))}
                   </select>
                   {clip.status === 'approved' && (
-                    <button
-                      type="button"
-                      className="studio-mini-btn"
+                    <ActionButton
                       onClick={() => void handleQueueExportTask(clip)}
                       disabled={busy || disabled}
                     >
                       {t('review.queueExportTask')}
-                    </button>
+                    </ActionButton>
                   )}
                 </div>
               )}

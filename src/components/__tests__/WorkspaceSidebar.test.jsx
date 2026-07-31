@@ -44,6 +44,48 @@ describe('WorkspaceSidebar', () => {
     expect(screen.getByText(t('app.video'))).toBeTruthy()
   })
 
+  it('supports keyboard resizing and persists the desktop workspace width', () => {
+    window.localStorage.removeItem('greenscreen.desktopSidebarWidth')
+    const { container } = render(
+      <WorkspaceSidebar
+        activeTool="layout"
+        mediaMode="image"
+        onToolChange={() => {}}
+      >
+        <p>layout panel</p>
+      </WorkspaceSidebar>,
+    )
+
+    const sidebar = container.querySelector('.workspace-sidebar')
+    const separator = screen.getByRole('separator', { name: t('app.resizeWorkspace') })
+    const before = Number(separator.getAttribute('aria-valuenow'))
+
+    fireEvent.keyDown(separator, { key: 'ArrowRight' })
+
+    expect(separator.getAttribute('aria-valuenow')).toBe(String(before + 16))
+    expect(sidebar.style.getPropertyValue('--workspace-sidebar-width')).toBe(`${before + 16}px`)
+    expect(window.localStorage.getItem('greenscreen.desktopSidebarWidth')).toBe(String(before + 16))
+  })
+
+  it('does not overwrite the saved desktop width while mounted on mobile', () => {
+    const originalWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
+    window.localStorage.setItem('greenscreen.desktopSidebarWidth', '560')
+
+    render(
+      <WorkspaceSidebar
+        activeTool="keying"
+        mediaMode="image"
+        onToolChange={() => {}}
+      >
+        <p>keying panel</p>
+      </WorkspaceSidebar>,
+    )
+
+    expect(window.localStorage.getItem('greenscreen.desktopSidebarWidth')).toBe('560')
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
+  })
+
   it('exposes the three-stage mobile parameter sheet controls', () => {
     const onMobileSheetHandleClick = vi.fn()
 
