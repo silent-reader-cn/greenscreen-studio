@@ -111,4 +111,20 @@ describe('SemanticMarkerEditor', () => {
     await waitFor(() => expect(screen.queryByText('impact moved')).toBeNull())
     expect(confirm).toHaveBeenCalledOnce()
   })
+
+  it('uses compact icon actions on mobile while keeping accessible labels', async () => {
+    const { container } = render(
+      <SemanticMarkerEditor
+        mobile
+        projectId="project_1"
+        clip={{ id: 'clip_1', name: 'attack', startFrame: 10, endFrame: 40 }}
+        onMarkersChange={vi.fn()}
+      />,
+    )
+
+    await screen.findByText('startup')
+    expect(container.querySelectorAll('.review-marker-row .compact-icon-action')).toHaveLength(2)
+    expect(screen.getByRole('button', { name: t('review.marker.newMarker') }).classList.contains('compact-icon-action')).toBe(true)
+    expect(screen.getByRole('button', { name: t('review.refresh') }).classList.contains('compact-icon-action')).toBe(true)
+  })
 })

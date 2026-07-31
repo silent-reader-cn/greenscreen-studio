@@ -25,6 +25,7 @@ describe('MobileProfilePanel', () => {
     )
 
     expect(container.querySelectorAll('select')).toHaveLength(1)
+    expect(container.querySelectorAll('.compact-icon-action')).toHaveLength(3)
     fireEvent.change(screen.getByRole('combobox', { name: t('profile.label') }), { target: { value: 'cinema' } })
     expect(onSelect).toHaveBeenCalledWith('cinema')
 

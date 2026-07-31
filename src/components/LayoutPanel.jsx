@@ -1,6 +1,7 @@
 import React from 'react'
+import { ScanSearch } from 'lucide-react'
 import { t } from '../i18n.js'
-import { ControlGrid, ControlSection, HelpButton, NumberField, SegmentedControl, StatusStrip, ToggleField } from './ControlKit.jsx'
+import { CompactIconButton, ControlGrid, ControlSection, HelpButton, NumberField, SegmentedControl, StatusStrip, ToggleField } from './ControlKit.jsx'
 
 const MobileNumberField = ({ label, value, onChange, min = 1, max = 9999, suffix }) => (
   <label className="mobile-number-field">
@@ -74,6 +75,14 @@ function MobileLayoutPanel({
               {t('layout.sourceCharacterHeight')}
             </strong>
             <HelpButton label={t('layout.sourceCharacterHeightHint')} />
+            {canAutoDetectSourceCharacterHeight && (
+              <CompactIconButton
+                icon={ScanSearch}
+                size="small"
+                label={t('layout.autoDetectSourceHeight')}
+                onClick={onAutoDetectSourceCharacterHeight}
+              />
+            )}
           </div>
           <MobileNumberField label={t('layout.px')} suffix="px" value={sourceCharacterHeight} min={0} onChange={value => update('sourceCharacterHeight', value)} />
         </div>

@@ -3269,17 +3269,6 @@ body {
   white-space: nowrap;
 }
 
-.review-marker-head-actions {
-  flex: 0 0 auto;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-}
-
-.review-marker-head-actions button {
-  min-height: 30px;
-}
-
 .review-marker-add-toggle {
   min-width: 98px;
 }
@@ -3490,17 +3479,6 @@ body {
     flex-direction: column;
   }
 
-  .review-marker-head-actions {
-    width: 100%;
-    display: grid;
-    grid-template-columns: minmax(72px, 0.7fr) minmax(110px, 1fr);
-  }
-
-  .review-marker-head-actions button {
-    width: 100%;
-    min-height: 44px;
-  }
-
   .review-marker-row {
     align-items: flex-start;
     flex-direction: column;
@@ -3528,7 +3506,6 @@ body {
   }
 
   .review-clip-bulk-actions,
-  .review-marker-head-actions,
   .review-marker-create,
   .review-marker-edit {
     grid-template-columns: 1fr;
@@ -6292,13 +6269,13 @@ body {
   .mobile-profile-control {
     margin-top: 8px;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 44px 44px;
+    grid-template-columns: minmax(0, 1fr) 40px 40px;
     gap: 8px;
   }
 
   .mobile-profile-control select,
   .mobile-number-field {
-    height: var(--mobile-control-height);
+    height: var(--mobile-compact-height);
     border: 1px solid var(--workspace-border-strong);
     border-radius: var(--workspace-radius-sm);
     background: var(--workspace-surface);
@@ -6306,25 +6283,10 @@ body {
 
   .mobile-profile-control select {
     min-width: 0;
-    padding: 0 36px 0 12px;
+    padding: 0 30px 0 10px;
     color: var(--workspace-text);
-    font-size: var(--mobile-input-size);
+    font-size: 13px;
   }
-
-  .mobile-icon-button {
-    width: 44px;
-    height: 44px;
-    padding: 0;
-    display: grid;
-    place-items: center;
-    border: 1px solid var(--workspace-border-strong);
-    border-radius: var(--workspace-radius-sm);
-    background: var(--workspace-surface);
-    color: var(--workspace-text);
-  }
-
-  .mobile-section-heading > .mobile-icon-button { width: 32px; height: 28px; border: 0; color: var(--workspace-accent); }
-  .mobile-icon-button.danger { color: var(--workspace-danger); }
 
   .workspace-panel-layout {
     padding: 12px;
@@ -7517,6 +7479,63 @@ body {
   box-shadow: var(--workspace-focus);
 }
 
+.compact-icon-action {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 40px;
+  border: 1px solid var(--workspace-border-strong);
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface);
+  color: var(--workspace-text-muted);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.compact-icon-action.size-small {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  flex-basis: 34px;
+}
+
+.compact-icon-action:hover:not(:disabled),
+.compact-icon-action:focus-visible {
+  border-color: var(--workspace-accent-border);
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+  outline: none;
+}
+
+.compact-icon-action.tone-primary {
+  border-color: var(--workspace-accent);
+  background: var(--workspace-accent);
+  color: #fff;
+}
+
+.compact-icon-action.tone-danger {
+  border-color: #efc3bf;
+  background: var(--workspace-danger-soft);
+  color: var(--workspace-danger);
+}
+
+.compact-icon-action:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.compact-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
 .control-inline-action {
   justify-self: start;
 }
@@ -8356,10 +8375,13 @@ body {
 
 .review-composer-fields {
   min-width: 0;
+  grid-column: 1 / -1;
 }
 
 .review-composer-actions {
+  grid-column: 1 / -1;
   align-self: end;
+  justify-content: flex-end;
 }
 
 .review-composer-actions .control-toggle {
@@ -8633,19 +8655,15 @@ body {
   gap: 10px;
 }
 
+.review-marker-head-actions {
+  flex: 0 0 auto;
+  flex-direction: row;
+}
+
 .review-marker-title-row {
   display: flex;
   align-items: center;
   gap: 7px;
-}
-
-.review-marker-head-actions .control-action:first-child span {
-  display: none;
-}
-
-.review-marker-head-actions .control-action:first-child {
-  width: var(--review-control-height);
-  padding: 0;
 }
 
 .review-marker-create {
@@ -8685,6 +8703,7 @@ body {
 }
 
 .review-marker-row {
+  flex: 0 0 auto;
   min-width: 0;
   min-height: 48px;
   padding: 7px 8px;
@@ -8855,18 +8874,21 @@ body {
     bottom: 0;
     z-index: 4;
     padding: 6px;
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
     box-shadow: 0 -4px 14px rgba(23, 33, 43, 0.08);
   }
 
   .review-toolbar.is-mobile .review-toolbar-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: inline-flex;
+    margin-left: auto;
   }
 
-  .review-toolbar.is-mobile .control-action {
-    width: 100%;
+  .review-toolbar.is-mobile .compact-icon-action {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
   }
 
   .review-clip-list {
@@ -8878,18 +8900,18 @@ body {
   }
 
   .review-detail-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    display: flex;
+    flex-wrap: wrap;
   }
 
-  .review-detail-actions .control-action,
   .review-status-field {
-    width: 100%;
+    width: auto;
     margin: 0;
   }
 
   .review-detail-actions .review-status-field {
-    grid-column: 1 / -1;
+    min-width: 0;
+    flex: 1 1 160px;
   }
 
   .review-rename-form {
@@ -8901,27 +8923,83 @@ body {
     grid-template-columns: 1fr 1fr;
   }
 
-  .review-marker-head-actions .control-action {
-    min-width: 44px;
-  }
-
   .review-marker-create,
   .review-marker-edit {
     grid-template-columns: minmax(0, 1fr) 88px;
   }
 
+  .review-marker-head-actions {
+    width: auto;
+    display: inline-flex;
+    grid-template-columns: none;
+  }
+
+  .review-marker-head {
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .review-marker-head-actions .compact-icon-action {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    flex-basis: 40px;
+  }
+
   .review-marker-row {
-    align-items: stretch;
-    flex-direction: column;
+    min-height: 54px;
+    padding: 7px 8px 7px 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px;
   }
 
   .review-marker-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
+    align-self: center;
+    justify-self: end;
+    display: inline-flex;
+    gap: 4px;
   }
 
-  .review-marker-actions .control-action {
-    width: 100%;
+  .review-marker-actions .compact-icon-action {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    min-height: 38px;
+    flex-basis: 38px;
+  }
+
+  .review-marker-summary {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 8px auto minmax(0, 1fr);
+    align-items: center;
+    gap: 3px 6px;
+  }
+
+  .review-marker-summary .review-marker-label,
+  .review-marker-summary code {
+    grid-column: 2 / -1;
+  }
+
+  .review-marker-summary code {
+    display: block;
+    max-width: 100%;
+  }
+
+  .review-marker-create-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .review-marker-edit {
+    grid-column: 1 / -1;
+  }
+
+  .review-marker-edit .review-marker-actions {
+    justify-self: end;
   }
 }
 

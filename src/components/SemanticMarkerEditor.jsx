@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pencil, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react'
 import { t } from '../i18n.js'
 import { useAppDialog } from './AppDialog.jsx'
-import { ActionButton } from './ControlKit.jsx'
+import { CompactActionGroup, ResponsiveActionButton } from './ControlKit.jsx'
 import { CountBadge, EmptyState, ReviewField, ReviewRange } from './ReviewKit.jsx'
 import {
   MARKER_TYPES,
@@ -202,19 +202,23 @@ export default function SemanticMarkerEditor({
           <p>{t('review.marker.sectionHint')}</p>
         </div>
         <div className="review-marker-head-actions">
-          <ActionButton icon={RefreshCw} aria-label={t('review.refresh')} title={t('review.refresh')} onClick={() => void refresh()} disabled={loading || busy}>
-            {loading ? t('review.marker.loading') : t('review.refresh')}
-          </ActionButton>
-          <ActionButton
+          <ResponsiveActionButton
+            mobile={mobile}
+            icon={RefreshCw}
+            label={loading ? t('review.marker.loading') : t('review.refresh')}
+            onClick={() => void refresh()}
+            disabled={loading || busy}
+          />
+          <ResponsiveActionButton
+            mobile={mobile}
             icon={createOpen ? X : Plus}
+            label={createOpen ? t('review.marker.closeCreate') : t('review.marker.newMarker')}
             tone={createOpen ? 'secondary' : 'primary'}
             className="review-marker-add-toggle"
             aria-expanded={createOpen}
             onClick={() => setCreateOpen((open) => !open)}
             disabled={disabled || busy}
-          >
-            {createOpen ? t('review.marker.closeCreate') : t('review.marker.newMarker')}
-          </ActionButton>
+          />
         </div>
       </div>
 
@@ -257,9 +261,16 @@ export default function SemanticMarkerEditor({
             disabled={disabled || busy}
           />
         </ReviewField>
-        <ActionButton icon={Plus} tone="primary" className="review-marker-wide" onClick={() => void handleCreate()} disabled={disabled || busy}>
-          {t('review.marker.add')}
-        </ActionButton>
+        <div className="review-marker-create-actions review-marker-wide">
+          <ResponsiveActionButton
+            mobile={mobile}
+            icon={Plus}
+            label={t('review.marker.add')}
+            tone="primary"
+            onClick={() => void handleCreate()}
+            disabled={disabled || busy}
+          />
+        </div>
       </div>}
 
       {error && <p className="review-clip-error">{error}</p>}
@@ -286,19 +297,19 @@ export default function SemanticMarkerEditor({
                   <ReviewField label={t('review.marker.payload')} wide>
                     <textarea rows="2" value={editDraft.payloadText} onChange={(event) => setEditDraft((prev) => ({ ...prev, payloadText: event.target.value }))} disabled={disabled || busy} />
                   </ReviewField>
-                  <div className="review-marker-actions">
-                    <ActionButton icon={Save} tone="primary" onClick={() => void handleSave(marker)} disabled={disabled || busy}>{t('review.marker.save')}</ActionButton>
-                    <ActionButton
+                  <CompactActionGroup className="review-marker-actions" label={t('review.marker.editActions')}>
+                    <ResponsiveActionButton mobile={mobile} icon={Save} label={t('review.marker.save')} tone="primary" onClick={() => void handleSave(marker)} disabled={disabled || busy} />
+                    <ResponsiveActionButton
+                      mobile={mobile}
                       icon={X}
+                      label={t('review.marker.cancel')}
                       onClick={() => {
                         setEditingId('')
                         setEditDraft(null)
                       }}
                       disabled={disabled || busy}
-                    >
-                      {t('review.marker.cancel')}
-                    </ActionButton>
-                  </div>
+                    />
+                  </CompactActionGroup>
                 </div>
               ) : (
                 <>
@@ -309,10 +320,10 @@ export default function SemanticMarkerEditor({
                     {marker.label && <span className="review-marker-label">{marker.label}</span>}
                     <code>{JSON.stringify(marker.payload || {})}</code>
                   </div>
-                  <div className="review-marker-actions">
-                    <ActionButton icon={Pencil} onClick={() => beginEdit(marker)} disabled={disabled || busy}>{t('review.marker.edit')}</ActionButton>
-                    <ActionButton icon={Trash2} tone="danger" onClick={() => void handleDelete(marker)} disabled={disabled || busy}>{t('review.marker.delete')}</ActionButton>
-                  </div>
+                  <CompactActionGroup className="review-marker-actions" label={t('review.marker.rowActions', { type: markerTypeLabel(marker.type), frame: marker.frame })}>
+                    <ResponsiveActionButton mobile={mobile} icon={Pencil} label={t('review.marker.edit')} onClick={() => beginEdit(marker)} disabled={disabled || busy} />
+                    <ResponsiveActionButton mobile={mobile} icon={Trash2} label={t('review.marker.delete')} tone="danger" onClick={() => void handleDelete(marker)} disabled={disabled || busy} />
+                  </CompactActionGroup>
                 </>
               )}
             </div>

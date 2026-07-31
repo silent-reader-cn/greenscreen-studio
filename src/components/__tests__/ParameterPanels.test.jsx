@@ -93,4 +93,17 @@ describe('compact parameter panels', () => {
       canvasHeight: 1080,
     }))
   })
+
+  it('uses the shared compact reset action on mobile keying controls', () => {
+    const { container } = render(
+      <KeyingPanel
+        mobile
+        params={{ keyColor: [0, 255, 0], tolerance: 30, spillSuppression: 40, feather: 15, edgeShrink: 0 }}
+        onChange={vi.fn()}
+      />,
+    )
+
+    expect(container.querySelector('.compact-icon-action')).toBeTruthy()
+    expect(screen.getByRole('button', { name: t('keying.reset') }).classList.contains('compact-icon-action')).toBe(true)
+  })
 })

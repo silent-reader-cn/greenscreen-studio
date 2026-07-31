@@ -1,9 +1,9 @@
 import React from 'react'
 import { RotateCcw } from 'lucide-react'
 import { t } from '../i18n.js'
-import { ActionButton, ControlSection, SliderField } from './ControlKit.jsx'
+import { ControlSection, ResponsiveActionButton, SliderField } from './ControlKit.jsx'
 
-export default function KeyingPanel({ params, onChange }) {
+export default function KeyingPanel({ params, onChange, mobile = false }) {
   const update = (key, val) => onChange({ ...params, [key]: val })
   return (
     <section className="parameter-panel keying-parameter-panel" aria-label={t('keying.title')}>
@@ -34,8 +34,10 @@ export default function KeyingPanel({ params, onChange }) {
       <ControlSection
         title={t('keying.edgeProcessing')}
         actions={(
-          <ActionButton
+          <ResponsiveActionButton
+            mobile={mobile}
             icon={RotateCcw}
+            label={t('keying.reset')}
             className="btn-reset"
             onClick={() => onChange({
               keyColor: [0, 255, 0],
@@ -44,9 +46,7 @@ export default function KeyingPanel({ params, onChange }) {
               feather: 15,
               edgeShrink: 0,
             })}
-          >
-            {t('keying.resetShort')}
-          </ActionButton>
+          >{t('keying.resetShort')}</ResponsiveActionButton>
         )}
       >
         <SliderField label={t('keying.feather')} value={params.feather} min={0} max={100} step={1} onChange={(value) => update('feather', value)} />

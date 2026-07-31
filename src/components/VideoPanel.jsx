@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { Download, RefreshCw, Sparkles } from 'lucide-react'
+import { Download, FlipHorizontal2, Maximize2, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { formatBytes, t } from '../i18n.js'
 import { parseExplicitFrameList } from '../lib/frameSelection.js'
 import { shouldHandleDroppedVideo, shouldHandleDroppedVideos, droppedVideosKey } from '../lib/droppedVideo.js'
@@ -13,7 +13,7 @@ import {
 } from '../lib/directionPack.js'
 import { classifyDirectionVideos } from '../lib/directionImport.js'
 import { buildGodotExportBasename } from '../lib/godotNaming.js'
-import { ControlField, ControlSection, ToggleField } from './ControlKit.jsx'
+import { CompactActionGroup, CompactIconButton, ControlField, ControlSection, ToggleField } from './ControlKit.jsx'
 
 const FMT_OPTIONS = [
   { value: 'webm', labelKey: 'videoPanel.transparentWebm', modes: ['transparent'] },
@@ -155,7 +155,11 @@ function VideoExportControls({
             </div>
             <div className="mobile-range-summary">
               <span>{range.endFrame - range.startFrame} {t('common.frames')} · {range.startFrame > 0 || range.endFrame < totalFrames ? t('common.partial') : t('common.allVideo')}</span>
-              <button type="button" onClick={() => onRangeChange({ startFrame: 0, endFrame: totalFrames })} disabled={processing}>{t('videoPanel.wholeVideo')}</button>
+              {mobile ? (
+                <CompactIconButton icon={Maximize2} size="small" label={t('videoPanel.wholeVideo')} onClick={() => onRangeChange({ startFrame: 0, endFrame: totalFrames })} disabled={processing} />
+              ) : (
+                <button type="button" onClick={() => onRangeChange({ startFrame: 0, endFrame: totalFrames })} disabled={processing}>{t('videoPanel.wholeVideo')}</button>
+              )}
             </div>
           </ExportSection>
         </>
@@ -227,10 +231,17 @@ function VideoExportControls({
                   <div className="godot-clip-item" key={clip.id}>
                     <div className="godot-clip-thumb" aria-hidden={!clipPreviews[clip.id]}>{clipPreviews[clip.id] ? <img src={clipPreviews[clip.id]} alt="" /> : <span className="godot-clip-thumb-empty">{t('videoPanel.clipPreviewLoading')}</span>}</div>
                     <div className="godot-clip-main"><strong>{clip.name}</strong><span>{clip.mirrorOf ? t('videoPanel.clipMirrorOf', { name: clip.mirrorOf }) : (clip.sourceLabel || sourceVideos[clip.jobId]?.label || clip.jobId || t('videoPanel.clipSourceUnknown'))}</span></div>
-                    <div className="godot-clip-actions">
-                      {!clip.mirrorOf && <button type="button" className="godot-clip-mirror" onClick={() => handleMirrorGodotClip(clip)} disabled={processing}>{t('videoPanel.mirrorGodotClip')}</button>}
-                      <button type="button" className="godot-clip-delete" onClick={() => handleRemoveGodotClip(clip.id)} disabled={processing} aria-label={t('videoPanel.deleteGodotClip', { name: clip.name })}>×</button>
-                    </div>
+                    {mobile ? (
+                      <CompactActionGroup className="godot-clip-actions" label={t('videoPanel.clipActions', { name: clip.name })}>
+                        {!clip.mirrorOf && <CompactIconButton icon={FlipHorizontal2} size="small" label={t('videoPanel.mirrorGodotClip')} onClick={() => handleMirrorGodotClip(clip)} disabled={processing} />}
+                        <CompactIconButton icon={Trash2} size="small" tone="danger" label={t('videoPanel.deleteGodotClip', { name: clip.name })} onClick={() => handleRemoveGodotClip(clip.id)} disabled={processing} />
+                      </CompactActionGroup>
+                    ) : (
+                      <div className="godot-clip-actions">
+                        {!clip.mirrorOf && <button type="button" className="godot-clip-mirror" onClick={() => handleMirrorGodotClip(clip)} disabled={processing}>{t('videoPanel.mirrorGodotClip')}</button>}
+                        <button type="button" className="godot-clip-delete" onClick={() => handleRemoveGodotClip(clip.id)} disabled={processing} aria-label={t('videoPanel.deleteGodotClip', { name: clip.name })}>×</button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

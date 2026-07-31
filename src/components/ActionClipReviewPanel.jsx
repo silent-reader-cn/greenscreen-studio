@@ -3,7 +3,7 @@ import { Layers3, ListChecks, Pencil, RefreshCw, Repeat2, Save, Trash2, UploadCl
 import { t } from '../i18n.js'
 import SemanticMarkerEditor from './SemanticMarkerEditor.jsx'
 import { useAppDialog } from './AppDialog.jsx'
-import { ActionButton, ToggleField } from './ControlKit.jsx'
+import { ActionButton, ResponsiveActionButton, ToggleField } from './ControlKit.jsx'
 import { CheckBadge, EmptyState, MetaItem, ReviewComposer, ReviewField, ReviewHeader, ReviewPane, ReviewRange, ReviewToolbar, StatusBadge } from './ReviewKit.jsx'
 import {
   availableClipStatuses,
@@ -404,11 +404,11 @@ export default function ActionClipReviewPanel({
           </form>
         ) : (
           <div className="review-detail-actions">
-            <ActionButton icon={Pencil} onClick={() => {
+            <ResponsiveActionButton mobile={mobile} icon={Pencil} label={t('review.rename')} onClick={() => {
               setEditingId(primarySelected.id)
               setEditName(primarySelected.name)
-            }} disabled={busy || !isClipEditable(primarySelected.status)} title={!isClipEditable(primarySelected.status) ? t('review.reviewLocked') : undefined}>{t('review.rename')}</ActionButton>
-            <ActionButton icon={Repeat2} onClick={() => void handleToggleLoop(primarySelected)} disabled={busy || !isClipEditable(primarySelected.status)} title={!isClipEditable(primarySelected.status) ? t('review.reviewLocked') : undefined}>{primarySelected.loop ? t('review.unloop') : t('review.loop')}</ActionButton>
+            }} disabled={busy || !isClipEditable(primarySelected.status)} title={!isClipEditable(primarySelected.status) ? t('review.reviewLocked') : undefined}>{t('review.rename')}</ResponsiveActionButton>
+            <ResponsiveActionButton mobile={mobile} icon={Repeat2} label={primarySelected.loop ? t('review.unloop') : t('review.loop')} onClick={() => void handleToggleLoop(primarySelected)} disabled={busy || !isClipEditable(primarySelected.status)} title={!isClipEditable(primarySelected.status) ? t('review.reviewLocked') : undefined}>{primarySelected.loop ? t('review.unloop') : t('review.loop')}</ResponsiveActionButton>
             <ReviewField label={t('review.statusLabel')} className="review-status-field">
               <select className="review-status-select" aria-label={t('review.statusControl', { name: primarySelected.name })} value={primarySelected.status} onChange={(event) => void handleStatusChange(primarySelected, event.target.value)} disabled={busy || availableClipStatuses(primarySelected.status).length === 0}>
                 <option value={primarySelected.status}>{statusLabel(primarySelected.status)}</option>
@@ -448,8 +448,8 @@ export default function ActionClipReviewPanel({
           </ReviewComposer>
           {(selectedClipIds.length > 0 || (!mobile && orderedClips.length > 0)) && (
             <ReviewToolbar mobile={mobile} summary={selectionSummary}>
-              <ActionButton icon={Layers3} onClick={() => void handleApplyRangeToSelected()} disabled={disabled || busy || !primarySelected || !isClipEditable(primarySelected.status) || !range} title={t('review.updateRangeHint')}>{t('review.updateRange')}</ActionButton>
-              <ActionButton icon={Trash2} tone="danger" onClick={() => void handleDeleteSelected()} disabled={disabled || busy || selectedClipIds.length === 0}>{t('review.deleteSelected')}</ActionButton>
+              <ResponsiveActionButton mobile={mobile} icon={Layers3} label={t('review.updateRange')} onClick={() => void handleApplyRangeToSelected()} disabled={disabled || busy || !primarySelected || !isClipEditable(primarySelected.status) || !range} title={t('review.updateRangeHint')}>{t('review.updateRange')}</ResponsiveActionButton>
+              <ResponsiveActionButton mobile={mobile} icon={Trash2} label={t('review.deleteSelected')} tone="danger" onClick={() => void handleDeleteSelected()} disabled={disabled || busy || selectedClipIds.length === 0}>{t('review.deleteSelected')}</ResponsiveActionButton>
             </ReviewToolbar>
           )}
           {clipList}

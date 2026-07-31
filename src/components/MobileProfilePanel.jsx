@@ -2,6 +2,7 @@ import React from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { t } from '../i18n.js'
 import { useAppDialog } from './AppDialog.jsx'
+import { CompactIconButton } from './ControlKit.jsx'
 
 export default function MobileProfilePanel({
   profiles,
@@ -29,9 +30,7 @@ export default function MobileProfilePanel({
     <section className="mobile-profile-panel" aria-label={t('profile.label')}>
       <header className="mobile-section-heading">
         <strong>{t('profile.label')}</strong>
-        <button type="button" className="mobile-icon-button" onClick={() => void createProfile()} aria-label={t('profile.add')} title={t('profile.add')}>
-          <Plus size={18} aria-hidden="true" />
-        </button>
+        <CompactIconButton icon={Plus} size="small" onClick={() => void createProfile()} label={t('profile.add')} />
       </header>
       <div className="mobile-profile-control">
         <select value={activeProfileId} onChange={event => onSelect(event.target.value)} aria-label={t('profile.label')}>
@@ -39,19 +38,14 @@ export default function MobileProfilePanel({
             <option key={profile.id} value={profile.id}>{profile.name}</option>
           ))}
         </select>
-        <button type="button" className="mobile-icon-button" onClick={() => void renameProfile()} aria-label={t('profile.rename')} title={t('profile.rename')}>
-          <Pencil size={17} aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          className="mobile-icon-button danger"
+        <CompactIconButton icon={Pencil} onClick={() => void renameProfile()} label={t('profile.rename')} />
+        <CompactIconButton
+          icon={Trash2}
+          tone="danger"
           onClick={() => activeProfile && onDelete(activeProfile.id)}
           disabled={profiles.length <= 1}
-          aria-label={activeProfile ? t('profile.deleteLabel', { name: activeProfile.name }) : t('profile.deleteLabel', { name: '' })}
-          title={activeProfile ? t('profile.deleteLabel', { name: activeProfile.name }) : ''}
-        >
-          <Trash2 size={17} aria-hidden="true" />
-        </button>
+          label={activeProfile ? t('profile.deleteLabel', { name: activeProfile.name }) : t('profile.deleteLabel', { name: '' })}
+        />
       </div>
     </section>
   )

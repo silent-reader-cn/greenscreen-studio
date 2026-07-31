@@ -7,6 +7,7 @@ import {
   FolderInput,
   Image as ImageIcon,
   Layers3,
+  RotateCcw,
   Upload,
   Video,
 } from 'lucide-react'
@@ -23,7 +24,7 @@ import StudioPanel from './components/StudioPanel.jsx'
 import ActionClipReviewPanel from './components/ActionClipReviewPanel.jsx'
 import WorkspaceSidebar from './components/WorkspaceSidebar.jsx'
 import { useAppDialog } from './components/AppDialog.jsx'
-import { ControlGrid, TextField } from './components/ControlKit.jsx'
+import { CompactIconButton, ControlGrid, TextField } from './components/ControlKit.jsx'
 import { formatBytes as formatLocalizedBytes, formatDateTime, formatDuration as formatLocalizedDuration, t, uiLanguage } from './i18n.js'
 
 // ===== 默认参数 =====
@@ -1595,7 +1596,7 @@ export default function App() {
             hidden={activeTool !== 'keying'}
             aria-label={t('app.workspaceKeying')}
           >
-            <KeyingPanel params={keyingParams} onChange={setKeyingParams} />
+            <KeyingPanel mobile={mobileUi} params={keyingParams} onChange={setKeyingParams} />
           </section>
 
           <section
@@ -1944,14 +1945,23 @@ function FileMetaPanel({
                 </strong>
               </div>
               <div className="file-region-actions">
-                <button
-                  type="button"
-                  className="file-region-btn secondary"
-                  onClick={onResetRegion}
-                  disabled={!activeRegion && !regionSelectionMode}
-                >
-                  {t('file.resetRegion')}
-                </button>
+                {mobile ? (
+                  <CompactIconButton
+                    icon={RotateCcw}
+                    label={t('file.resetRegion')}
+                    onClick={onResetRegion}
+                    disabled={!activeRegion && !regionSelectionMode}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    className="file-region-btn secondary"
+                    onClick={onResetRegion}
+                    disabled={!activeRegion && !regionSelectionMode}
+                  >
+                    {t('file.resetRegion')}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="file-region-btn"

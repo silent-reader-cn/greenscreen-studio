@@ -202,6 +202,43 @@ export function ActionButton({ icon: Icon, tone = 'secondary', children, classNa
   )
 }
 
+export function CompactIconButton({
+  icon: Icon,
+  label,
+  tone = 'secondary',
+  size = 'regular',
+  className = '',
+  title,
+  ...props
+}) {
+  return (
+    <button
+      type="button"
+      className={('compact-icon-action tone-' + tone + ' size-' + size + ' ' + className).trim()}
+      aria-label={label}
+      title={title || label}
+      {...props}
+    >
+      {Icon && <Icon size={size === 'small' ? 15 : 17} aria-hidden="true" />}
+    </button>
+  )
+}
+
+export function ResponsiveActionButton({ mobile = false, icon, label, children, ...props }) {
+  if (mobile) {
+    return <CompactIconButton icon={icon} label={label || children} {...props} />
+  }
+  return <ActionButton icon={icon} {...props}>{children || label}</ActionButton>
+}
+
+export function CompactActionGroup({ children, className = '', label }) {
+  return (
+    <div className={('compact-action-group ' + className).trim()} role="group" aria-label={label}>
+      {children}
+    </div>
+  )
+}
+
 export function StatusStrip({ items, className = '' }) {
   return (
     <div className={`control-status-strip ${className}`.trim()} aria-live="polite">
