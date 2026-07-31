@@ -52,16 +52,45 @@ describe('compact parameter panels', () => {
     expect(screen.getByRole('group', { name: t('layout.canvasPresets') })).toBeTruthy()
     expect(screen.getByRole('button', { name: t('layout.autoCropHint') })).toBeTruthy()
     expect(container.querySelector('.toggle-hint')).toBeNull()
+    expect(container.querySelector('.layout-auto-detect-action')).toBeNull()
 
-    fireEvent.click(screen.getByRole('button', { name: '1000×1000' }))
+    fireEvent.click(screen.getByRole('button', { name: '1024×1024' }))
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
-      canvasWidth: 1000,
-      canvasHeight: 1000,
+      canvasWidth: 1024,
+      canvasHeight: 1024,
     }))
 
     onChange.mockClear()
     fireEvent.click(screen.getByRole('button', { name: t('layout.autoCropHint') }))
     expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('keeps automatic source-height detection as a compact title action', () => {
+    const onAutoDetect = vi.fn()
+    const { container } = render(
+      <LayoutPanel
+        params={{
+          canvasWidth: 1280,
+          canvasHeight: 720,
+          personWidth: 320,
+          personHeight: 640,
+          sourceCharacterHeight: 480,
+          autoCrop: true,
+          sourceCenterAnchor: true,
+        }}
+        onChange={vi.fn()}
+        imageSize={{ w: 1920, h: 1080 }}
+        canAutoDetectSourceCharacterHeight
+        onAutoDetectSourceCharacterHeight={onAutoDetect}
+      />,
+    )
+
+    const detectButton = screen.getByRole('button', { name: t('layout.autoDetectSourceHeight') })
+    expect(detectButton.classList.contains('layout-auto-detect-action')).toBe(true)
+    expect(container.querySelector('.control-inline-action')).toBeNull()
+    expect(container.textContent).not.toContain(t('layout.scaleLocked'))
+    fireEvent.click(detectButton)
+    expect(onAutoDetect).toHaveBeenCalledTimes(1)
   })
 
   it('renders the dedicated mobile layout and keeps desktop fieldsets out of the mobile DOM', () => {
@@ -92,11 +121,11 @@ describe('compact parameter panels', () => {
     const presetMenu = container.querySelector('.mobile-preset-menu')
     fireEvent.click(presetMenu.querySelector('summary'))
     expect(presetMenu.open).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: '1920×1080' }))
+    fireEvent.click(screen.getByRole('button', { name: '1024×1024' }))
     expect(presetMenu.open).toBe(false)
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
-      canvasWidth: 1920,
-      canvasHeight: 1080,
+      canvasWidth: 1024,
+      canvasHeight: 1024,
     }))
   })
 

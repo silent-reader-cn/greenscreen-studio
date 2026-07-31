@@ -49,7 +49,7 @@ export function ControlGrid({ children, columns = 2, className = '' }) {
   )
 }
 
-export function ControlField({ label, hint, help, wide = false, children, className = '' }) {
+export function ControlField({ label, hint, help, labelAction, wide = false, children, className = '' }) {
   const inputId = useId()
   const labelledChildren = React.Children.map(children, child => {
     if (!React.isValidElement(child) || typeof child.type !== 'string') return child
@@ -61,7 +61,10 @@ export function ControlField({ label, hint, help, wide = false, children, classN
     <div className={`control-field ${wide ? 'wide' : ''} ${className}`.trim()}>
       <span className="control-field-label">
         <label htmlFor={inputId}>{label}</label>
-        <HelpButton label={help} />
+        <span className="control-field-label-actions">
+          {labelAction}
+          <HelpButton label={help} />
+        </span>
       </span>
       <span className="control-field-input">{labelledChildren}</span>
       {hint && <small className="control-field-hint">{hint}</small>}
@@ -85,12 +88,13 @@ export function NumberField({
   suffix,
   hint,
   help,
+  labelAction,
   wide = false,
   disabled = false,
   className = '',
 }) {
   return (
-    <ControlField label={label} hint={hint} help={help} wide={wide} className={className}>
+    <ControlField label={label} hint={hint} help={help} labelAction={labelAction} wide={wide} className={className}>
       <input
         type="number"
         value={value}

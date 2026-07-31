@@ -21,7 +21,7 @@ const MobileNumberField = ({ label, value, onChange, min = 1, max = 9999, suffix
   </label>
 )
 
-const MOBILE_CANVAS_PRESETS = [[1280, 720], [1920, 1080], [1000, 1000]]
+const MOBILE_CANVAS_PRESETS = [[1280, 720], [1920, 1080], [1024, 1024]]
 
 function MobileCanvasPresetMenu({ canvasWidth, canvasHeight, onSelect }) {
   const menuRef = useRef(null)
@@ -108,7 +108,6 @@ function MobileLayoutPanel({
             >
               {t('layout.sourceCharacterHeight')}
             </strong>
-            <HelpButton label={t('layout.sourceCharacterHeightHint')} />
             {canAutoDetectSourceCharacterHeight && (
               <CompactIconButton
                 icon={ScanSearch}
@@ -117,6 +116,7 @@ function MobileLayoutPanel({
                 onClick={onAutoDetectSourceCharacterHeight}
               />
             )}
+            <HelpButton label={t('layout.sourceCharacterHeightHint')} />
           </div>
           <MobileNumberField label={t('layout.px')} suffix="px" value={sourceCharacterHeight} min={0} onChange={value => update('sourceCharacterHeight', value)} />
         </div>
@@ -187,7 +187,7 @@ export default function LayoutPanel({
           options={[
             { value: '1280x720', label: '1280×720' },
             { value: '1920x1080', label: '1920×1080' },
-            { value: '1000x1000', label: '1000×1000' },
+            { value: '1024x1024', label: '1024×1024' },
           ]}
           onChange={(value) => {
             const [canvasWidth, canvasHeight] = value.split('x').map(Number)
@@ -209,14 +209,18 @@ export default function LayoutPanel({
           suffix="px"
           wide
           help={t('layout.sourceCharacterHeightHint')}
+          labelAction={canAutoDetectSourceCharacterHeight ? (
+            <CompactIconButton
+              icon={ScanSearch}
+              size="small"
+              label={t('layout.autoDetectSourceHeight')}
+              onClick={onAutoDetectSourceCharacterHeight}
+              className="layout-auto-detect-action"
+            />
+          ) : null}
           className={canAutoDetectSourceCharacterHeight ? 'dblclick-label' : ''}
           onChange={(value) => update('sourceCharacterHeight', value)}
         />
-        {canAutoDetectSourceCharacterHeight && (
-          <button type="button" className="control-inline-action" onClick={onAutoDetectSourceCharacterHeight}>
-            {t('layout.autoDetectSourceHeight')}
-          </button>
-        )}
       </ControlSection>
 
       <ControlSection title={t('layout.positioning')}>
@@ -226,7 +230,7 @@ export default function LayoutPanel({
 
       {imageSize.w > 0 && <StatusStrip items={[
         { label: t('layout.input'), value: `${imageSize.w}×${imageSize.h}` },
-        { label: t('layout.scale'), value: `${previewScale != null ? `1:${previewScale.toFixed(3)}` : '—'}${sourceCharacterHeight > 0 ? ` · ${t('layout.scaleLocked')}` : ''}`, emphasis: true },
+        { label: t('layout.scale'), value: previewScale != null ? `1:${previewScale.toFixed(3)}` : '—', emphasis: true },
       ]} />}
     </section>
   )

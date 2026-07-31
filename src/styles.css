@@ -5709,9 +5709,12 @@ body {
     gap: 8px;
   }
 
-  .mobile-sheet-panel .workspace-panel-keying,
-  .mobile-sheet-panel .workspace-panel-layout {
+  .mobile-sheet-panel .workspace-panel-keying {
     padding-top: 0;
+  }
+
+  .mobile-sheet-panel .workspace-panel-layout {
+    padding-top: 16px;
   }
 
   .mobile-sheet-panel.state-collapsed {
@@ -7172,6 +7175,18 @@ body {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.35;
+}
+
+.control-field-label-actions {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.layout-auto-detect-action {
+  border: 0;
+  background: transparent;
 }
 
 .control-field-input {
