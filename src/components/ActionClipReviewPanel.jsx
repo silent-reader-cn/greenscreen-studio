@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { Layers3, ListChecks, Pencil, RefreshCw, Repeat2, Save, Trash2, UploadCloud, X } from 'lucide-react'
 import { t } from '../i18n.js'
 import SemanticMarkerEditor from './SemanticMarkerEditor.jsx'
 import { useAppDialog } from './AppDialog.jsx'
-import { ActionButton, TextField, ToggleField } from './ControlKit.jsx'
+import { ActionButton, ToggleField } from './ControlKit.jsx'
+import { CheckBadge, EmptyState, MetaItem, ReviewComposer, ReviewField, ReviewHeader, ReviewPane, ReviewRange, ReviewToolbar, StatusBadge } from './ReviewKit.jsx'
 import {
   availableClipStatuses,
   buildClipStatusTransition,
@@ -56,6 +58,7 @@ export default function ActionClipReviewPanel({
   layoutParams = {},
   region = null,
   disabled = false,
+  mobile = false,
 }) {
   const dialog = useAppDialog()
   const [clips, setClips] = useState([])
@@ -67,6 +70,7 @@ export default function ActionClipReviewPanel({
   const [anchorId, setAnchorId] = useState(null)
   const [editingId, setEditingId] = useState('')
   const [editName, setEditName] = useState('')
+  const [selectionMode, setSelectionMode] = useState(false)
 
   const orderedClips = useMemo(() => sortClipsForTimeline(clips), [clips])
   const selectedSet = useMemo(() => new Set(selectedClipIds.map(String)), [selectedClipIds])
@@ -115,7 +119,9 @@ export default function ActionClipReviewPanel({
     if (!clip?.id) return
     const id = String(clip.id)
     let next
-    if (event?.shiftKey) {
+    if (mobile && selectionMode) {
+      next = updateClipSelection(selectedClipIds, id, { mode: 'toggle' })
+    } else if (event?.shiftKey) {
       next = expandSelectionRange(orderedClips, anchorId || id, id)
     } else if (event?.metaKey || event?.ctrlKey) {
       next = updateClipSelection(selectedClipIds, id, { mode: 'toggle' })
@@ -123,10 +129,10 @@ export default function ActionClipReviewPanel({
       next = updateClipSelection(selectedClipIds, id, { mode: 'replace' })
     }
     emitSelection(next, id)
-    if (!event?.shiftKey && !event?.metaKey && !event?.ctrlKey) {
+    if (!selectionMode && !event?.shiftKey && !event?.metaKey && !event?.ctrlKey) {
       onApplyClipRange?.(clip)
     }
-  }, [anchorId, emitSelection, onApplyClipRange, orderedClips, selectedClipIds])
+  }, [anchorId, emitSelection, mobile, onApplyClipRange, orderedClips, selectedClipIds, selectionMode])
 
   const handleCreate = useCallback(async () => {
     if (!projectId || !assetId || busy) return
@@ -329,227 +335,127 @@ export default function ActionClipReviewPanel({
 
   if (!projectId || !assetId) {
     return (
-      <div className="review-clip-panel review-clip-panel-empty">
-        <h3>{t('review.title')}</h3>
-        <p className="hint">{t('review.needProjectVideo')}</p>
+      <div className={'review-workspace review-workspace-empty ' + (mobile ? 'is-mobile' : 'is-desktop')}>
+        <EmptyState title={t('review.title')} description={t('review.needProjectVideo')} />
       </div>
     )
   }
 
-  return (
-    <div className="review-clip-panel">
-      <div className="review-clip-head">
-        <div className="review-clip-head-copy">
-          <h3>{t('review.title')}</h3>
-          <p className="hint">{t('review.subtitle', { source: sourceLabel || assetId })}</p>
-        </div>
-        <ActionButton onClick={() => void refresh()} disabled={loading || busy}>
-          {loading ? t('review.loading') : t('review.refresh')}
-        </ActionButton>
-      </div>
+  const rangeStart = range?.startFrame ?? 0
+  const rangeEnd = Math.max(0, (range?.endFrame ?? 0) - 1)
+  const rangeBadge = <ReviewRange label={t('review.timelineRange')} start={rangeStart} end={rangeEnd} compact={mobile} />
+  const selectionSummary = selectedClipIds.length > 0
+    ? t('review.selectedCount', { count: selectedClipIds.length })
+    : (mobile ? t('review.touchSelectHint') : t('review.selectHint'))
 
-      <div className="review-clip-create">
-        <div className="review-clip-create-head">
-          <span className="review-section-kicker">{t('review.newClip')}</span>
-          <span className="review-range-chip">
-            {t('review.currentRange', {
-              start: range?.startFrame ?? 0,
-              end: Math.max(0, (range?.endFrame ?? 0) - 1),
-            })}
-          </span>
-        </div>
-        <TextField
-          className="review-clip-name-field"
-          label={t('review.name')}
-          value={nameDraft}
-          placeholder={t('review.namePlaceholder')}
-          onChange={setNameDraft}
-          disabled={disabled || busy}
-        />
-        <div className="review-clip-create-actions">
-          <ToggleField
-            label={t('review.loop')}
-            checked={loopDraft}
-            onChange={setLoopDraft}
-            disabled={disabled || busy}
-          />
-          <ActionButton
-            tone="primary"
-            onClick={() => void handleCreate()}
-            disabled={disabled || busy || !range || !(range.endFrame > range.startFrame)}
-            aria-label={t('review.createFromRange', {
-              start: range?.startFrame ?? 0,
-              end: Math.max(0, (range?.endFrame ?? 0) - 1),
-            })}
-            title={t('review.createFromRange', {
-              start: range?.startFrame ?? 0,
-              end: Math.max(0, (range?.endFrame ?? 0) - 1),
-            })}
-          >
-            {t('review.saveClip')}
-          </ActionButton>
-        </div>
-      </div>
-
-      <div className="review-clip-list-head">
-        <div className="review-clip-list-title">
-          <h4>{t('review.clipList')}</h4>
-          <span className="review-count-badge">{orderedClips.length}</span>
-        </div>
-        <span className="hint">
-          {selectedClipIds.length > 0
-            ? t('review.selectedCount', { count: selectedClipIds.length })
-            : t('review.selectHint')}
-        </span>
-      </div>
-
-      <div className="review-clip-bulk">
-        <div className="review-clip-bulk-actions">
-          <ActionButton
-            onClick={() => void handleApplyRangeToSelected()}
-            disabled={disabled || busy || !primarySelected || !isClipEditable(primarySelected.status) || !range}
-            title={t('review.updateRangeHint')}
-          >
-            {t('review.updateRange')}
-          </ActionButton>
-          <ActionButton
-            tone="danger"
-            onClick={() => void handleDeleteSelected()}
-            disabled={disabled || busy || selectedClipIds.length === 0}
-          >
-            {t('review.deleteSelected')}
-          </ActionButton>
-        </div>
-      </div>
-
-      {error && <p className="review-clip-error">{error}</p>}
-
-      <div className="review-clip-list" role="listbox" aria-multiselectable="true" aria-label={t('review.title')}>
-        {orderedClips.length === 0 && !loading && (
-          <p className="studio-empty">{t('review.empty')}</p>
-        )}
-        {orderedClips.map((clip) => {
-          const selected = selectedSet.has(String(clip.id))
-          const primary = String(primarySelected?.id || '') === String(clip.id)
-          const editing = editingId === clip.id
-          const editable = isClipEditable(clip.status)
-          const nextStatuses = availableClipStatuses(clip.status)
-          return (
-            <div
-              key={clip.id}
-              role="option"
-              aria-selected={selected}
-              className={`review-clip-item ${selected ? 'selected' : ''} ${primary ? 'primary' : ''}`}
-              onClick={(event) => handleSelect(clip, event)}
-            >
-              <div className="review-clip-item-head">
-                <div className="review-clip-main">
-                  {editing ? (
-                    <form
-                      className="review-clip-edit-row"
-                      onClick={(e) => e.stopPropagation()}
-                      onSubmit={(e) => {
-                        e.preventDefault()
-                        void handleRename(clip)
-                      }}
-                    >
-                      <input
-                        autoFocus
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        disabled={busy || !editable}
-                        title={!editable ? t('review.reviewLocked') : undefined}
-                      />
-                      <ActionButton type="submit" disabled={busy}>{t('review.saveName')}</ActionButton>
-                      <ActionButton
-                        type="button"
-                        onClick={() => setEditingId('')}
-                        disabled={busy}
-                      >
-                        {t('review.cancelEdit')}
-                      </ActionButton>
-                    </form>
-                  ) : (
-                    <>
-                      <strong>{clip.name}</strong>
-                      <span>
-                        {t('review.clipMetaCompact', {
-                          start: clip.startFrame,
-                          end: Math.max(clip.startFrame, clip.endFrame - 1),
-                          version: clip.version,
-                          loop: clip.loop ? t('common.yes') : t('common.no'),
-                        })}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <span className={`review-status-chip status-${clip.status}`}>{statusLabel(clip.status)}</span>
+  const clipList = (
+    <div className="review-clip-list" role="listbox" aria-multiselectable="true" aria-label={t('review.title')}>
+      {orderedClips.length === 0 && !loading && <EmptyState compact title={t('review.empty')} description={t('review.emptyHint')} />}
+      {orderedClips.map((clip) => {
+        const selected = selectedSet.has(String(clip.id))
+        const primary = String(primarySelected?.id || '') === String(clip.id)
+        return (
+          <div key={clip.id} role="option" tabIndex={0} aria-selected={selected} className={'review-clip-item ' + (selected ? 'selected ' : '') + (primary ? 'primary' : '')} onClick={(event) => handleSelect(clip, event)} onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              handleSelect(clip, event)
+            }
+          }}>
+            <span className="review-selection-mark" aria-hidden="true">{selected ? '✓' : ''}</span>
+            <div className="review-clip-item-copy">
+              <strong title={clip.name}>{clip.name}</strong>
+              <div className="review-clip-meta">
+                <MetaItem label={t('review.frames')} value={clip.startFrame + '–' + Math.max(clip.startFrame, clip.endFrame - 1)} />
+                <MetaItem label={t('review.version')} value={'v' + clip.version} />
+                <MetaItem label={t('review.loop')} value={clip.loop ? t('common.yes') : t('common.no')} />
               </div>
-
-              {clip.reviewChecks?.checks && (
-                <div className="review-checks">
-                  {clip.reviewChecks.checks.map((item) => (
-                    <span key={item.id} className={`review-check status-${item.status}`}>
-                      {t(`review.checks.${item.id}`)}: {t(`review.checks.status.${item.status}`)}
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {primary && (
-                <div className="review-clip-actions" onClick={(e) => e.stopPropagation()}>
-                  <ActionButton
-                    onClick={() => {
-                      setEditingId(clip.id)
-                      setEditName(clip.name)
-                    }}
-                    disabled={busy || !editable}
-                    title={!editable ? t('review.reviewLocked') : undefined}
-                  >
-                    {t('review.rename')}
-                  </ActionButton>
-                  <ActionButton
-                    onClick={() => void handleToggleLoop(clip)}
-                    disabled={busy || !editable}
-                    title={!editable ? t('review.reviewLocked') : undefined}
-                  >
-                    {clip.loop ? t('review.unloop') : t('review.loop')}
-                  </ActionButton>
-                  <select
-                    className="review-status-select"
-                    aria-label={t('review.statusControl', { name: clip.name })}
-                    value={clip.status}
-                    onChange={(event) => void handleStatusChange(clip, event.target.value)}
-                    disabled={busy || nextStatuses.length === 0}
-                  >
-                    <option value={clip.status}>{statusLabel(clip.status)}</option>
-                    {nextStatuses.map((status) => (
-                      <option key={status} value={status}>{statusLabel(status)}</option>
-                    ))}
-                  </select>
-                  {clip.status === 'approved' && (
-                    <ActionButton
-                      onClick={() => void handleQueueExportTask(clip)}
-                      disabled={busy || disabled}
-                    >
-                      {t('review.queueExportTask')}
-                    </ActionButton>
-                  )}
-                </div>
-              )}
             </div>
-          )
-        })}
-      </div>
+            <StatusBadge status={clip.status}>{statusLabel(clip.status)}</StatusBadge>
+          </div>
+        )
+      })}
+    </div>
+  )
 
-      {primarySelected && (
-        <SemanticMarkerEditor
-          projectId={projectId}
-          clip={primarySelected}
-          disabled={disabled || busy || !isClipEditable(primarySelected.status)}
-          onMarkersChange={onMarkersChange}
-        />
-      )}
+  const detailPane = primarySelected ? (
+    <ReviewPane className="review-detail-pane" title={t('review.clipDetails')} description={t('review.detailSubtitle', { name: primarySelected.name })} actions={<StatusBadge status={primarySelected.status}>{statusLabel(primarySelected.status)}</StatusBadge>}>
+      <div className="review-detail-summary">
+        <div className="review-detail-meta">
+          <MetaItem label={t('review.frames')} value={primarySelected.startFrame + '–' + Math.max(primarySelected.startFrame, primarySelected.endFrame - 1)} />
+          <MetaItem label={t('review.duration')} value={Math.max(0, primarySelected.endFrame - primarySelected.startFrame)} />
+          <MetaItem label={t('review.version')} value={'v' + primarySelected.version} />
+          <MetaItem label={t('review.loop')} value={primarySelected.loop ? t('common.yes') : t('common.no')} />
+        </div>
+        {primarySelected.reviewChecks?.checks && (
+          <div className="review-checks" aria-label={t('review.checks.title')}>
+            {primarySelected.reviewChecks.checks.map((item) => <CheckBadge key={item.id} status={item.status}>{t('review.checks.' + item.id)}: {t('review.checks.status.' + item.status)}</CheckBadge>)}
+          </div>
+        )}
+        {editingId === primarySelected.id ? (
+          <form className="review-rename-form" onSubmit={(event) => {
+            event.preventDefault()
+            void handleRename(primarySelected)
+          }}>
+            <ReviewField label={t('review.name')} wide><input autoFocus value={editName} onChange={(event) => setEditName(event.target.value)} disabled={busy || !isClipEditable(primarySelected.status)} /></ReviewField>
+            <div className="review-rename-actions">
+              <ActionButton icon={Save} tone="primary" type="submit" disabled={busy}>{t('review.saveName')}</ActionButton>
+              <ActionButton icon={X} onClick={() => setEditingId('')} disabled={busy}>{t('review.cancelEdit')}</ActionButton>
+            </div>
+          </form>
+        ) : (
+          <div className="review-detail-actions">
+            <ActionButton icon={Pencil} onClick={() => {
+              setEditingId(primarySelected.id)
+              setEditName(primarySelected.name)
+            }} disabled={busy || !isClipEditable(primarySelected.status)} title={!isClipEditable(primarySelected.status) ? t('review.reviewLocked') : undefined}>{t('review.rename')}</ActionButton>
+            <ActionButton icon={Repeat2} onClick={() => void handleToggleLoop(primarySelected)} disabled={busy || !isClipEditable(primarySelected.status)} title={!isClipEditable(primarySelected.status) ? t('review.reviewLocked') : undefined}>{primarySelected.loop ? t('review.unloop') : t('review.loop')}</ActionButton>
+            <ReviewField label={t('review.statusLabel')} className="review-status-field">
+              <select className="review-status-select" aria-label={t('review.statusControl', { name: primarySelected.name })} value={primarySelected.status} onChange={(event) => void handleStatusChange(primarySelected, event.target.value)} disabled={busy || availableClipStatuses(primarySelected.status).length === 0}>
+                <option value={primarySelected.status}>{statusLabel(primarySelected.status)}</option>
+                {availableClipStatuses(primarySelected.status).map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
+              </select>
+            </ReviewField>
+            {primarySelected.status === 'approved' && <ActionButton icon={UploadCloud} onClick={() => void handleQueueExportTask(primarySelected)} disabled={busy || disabled}>{t('review.queueExportTask')}</ActionButton>}
+          </div>
+        )}
+      </div>
+      <SemanticMarkerEditor projectId={projectId} clip={primarySelected} mobile={mobile} disabled={disabled || busy || !isClipEditable(primarySelected.status)} onMarkersChange={onMarkersChange} />
+    </ReviewPane>
+  ) : (
+    <ReviewPane className="review-detail-pane review-detail-empty" title={t('review.clipDetails')}>
+      <EmptyState title={t('review.noSelection')} description={mobile ? t('review.noSelectionMobileHint') : t('review.noSelectionHint')} />
+    </ReviewPane>
+  )
+
+  return (
+    <div className={'review-workspace ' + (mobile ? 'is-mobile' : 'is-desktop')}>
+      <ReviewHeader title={t('review.title')} source={sourceLabel || assetId} mobile={mobile} range={rangeBadge} actions={<ActionButton icon={RefreshCw} aria-label={t('review.refresh')} title={t('review.refresh')} onClick={() => void refresh()} disabled={loading || busy}>{loading ? t('review.loading') : t('review.refresh')}</ActionButton>} />
+      {error && <p className="review-clip-error" role="alert">{error}</p>}
+      <div className="review-workspace-grid">
+        <ReviewPane className="review-library-pane" title={t('review.clipLibrary')} count={orderedClips.length} description={selectionSummary} actions={mobile && orderedClips.length > 0 ? (
+          <ActionButton icon={selectionMode ? X : ListChecks} tone={selectionMode ? 'primary' : 'secondary'} aria-pressed={selectionMode} onClick={() => {
+            setSelectionMode((value) => !value)
+            if (selectionMode) emitSelection([], null)
+          }}>{selectionMode ? t('review.exitMultiSelect') : t('review.multiSelect')}</ActionButton>
+        ) : null}>
+          <ReviewComposer title={t('review.createFromTimeline')} actions={
+            <>
+              <ToggleField label={t('review.loop')} checked={loopDraft} onChange={setLoopDraft} disabled={disabled || busy} />
+              <ActionButton icon={Save} tone="primary" onClick={() => void handleCreate()} disabled={disabled || busy || !range || !(range.endFrame > range.startFrame)} aria-label={t('review.createFromRange', { start: rangeStart, end: rangeEnd })} title={t('review.createFromRange', { start: rangeStart, end: rangeEnd })}>{t('review.saveClip')}</ActionButton>
+            </>
+          }>
+            <ReviewField label={t('review.name')} wide><input type="text" value={nameDraft} placeholder={t('review.namePlaceholder')} onChange={(event) => setNameDraft(event.target.value)} disabled={disabled || busy} /></ReviewField>
+          </ReviewComposer>
+          {(selectedClipIds.length > 0 || (!mobile && orderedClips.length > 0)) && (
+            <ReviewToolbar mobile={mobile} summary={selectionSummary}>
+              <ActionButton icon={Layers3} onClick={() => void handleApplyRangeToSelected()} disabled={disabled || busy || !primarySelected || !isClipEditable(primarySelected.status) || !range} title={t('review.updateRangeHint')}>{t('review.updateRange')}</ActionButton>
+              <ActionButton icon={Trash2} tone="danger" onClick={() => void handleDeleteSelected()} disabled={disabled || busy || selectedClipIds.length === 0}>{t('review.deleteSelected')}</ActionButton>
+            </ReviewToolbar>
+          )}
+          {clipList}
+        </ReviewPane>
+        {detailPane}
+      </div>
     </div>
   )
 }

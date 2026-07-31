@@ -142,11 +142,10 @@ describe('ActionClipReviewPanel', () => {
 
     rerender(<ActionClipReviewPanel {...props} selectedClipIds={['clip_3']} />)
 
-    const recoveryItem = screen.getByText('recovery').closest('[role="option"]')
-    fireEvent.click(within(recoveryItem).getByRole('button', { name: t('review.rename') }))
-    const editInput = within(recoveryItem).getByDisplayValue('recovery')
+    fireEvent.click(screen.getByRole('button', { name: t('review.rename') }))
+    const editInput = screen.getByDisplayValue('recovery')
     fireEvent.change(editInput, { target: { value: 'recover_fast' } })
-    fireEvent.click(within(recoveryItem).getByRole('button', { name: t('review.saveName') }))
+    fireEvent.click(screen.getByRole('button', { name: t('review.saveName') }))
     await screen.findByText('recover_fast')
 
     rerender(
@@ -202,10 +201,9 @@ describe('ActionClipReviewPanel', () => {
     }))
     expect(screen.getByText(`${t('review.checks.foreground_area')}: ${t('review.checks.status.pass')}`)).toBeTruthy()
 
-    const idleItem = screen.getByText('idle').closest('[role="option"]')
-    expect(within(idleItem).getByRole('button', { name: t('review.rename') }).disabled).toBe(true)
-    expect(within(idleItem).getByRole('button', { name: t('review.unloop') }).disabled).toBe(true)
-    fireEvent.click(within(idleItem).getByRole('button', { name: t('review.queueExportTask') }))
+    expect(screen.getByRole('button', { name: t('review.rename') }).disabled).toBe(true)
+    expect(screen.getByRole('button', { name: t('review.unloop') }).disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: t('review.queueExportTask') }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(
       '/api/projects/project_1/clips/clip_1/export-task',
       expect.objectContaining({ method: 'POST' }),
@@ -230,5 +228,23 @@ describe('ActionClipReviewPanel', () => {
       expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ status: 'approved' }) }),
     )
     expect(screen.getByText(`${t('review.checks.foreground_area')}: ${t('review.checks.status.warning')}`)).toBeTruthy()
+  })
+
+  it('uses an explicit touch multi-select mode without applying clip ranges', async () => {
+    const onSelectionChange = vi.fn()
+    const onApplyClipRange = vi.fn()
+    const { rerender, props } = renderPanel({ mobile: true, onSelectionChange, onApplyClipRange })
+    await screen.findByText('idle')
+
+    expect(screen.queryByText(t('review.selectHint'))).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: t('review.multiSelect') }))
+    fireEvent.click(screen.getByText('idle'))
+    expect(onSelectionChange).toHaveBeenLastCalledWith(['clip_1'])
+    expect(onApplyClipRange).not.toHaveBeenCalled()
+
+    rerender(<ActionClipReviewPanel {...props} mobile selectedClipIds={['clip_1']} />)
+    fireEvent.click(screen.getByText('attack'))
+    expect(onSelectionChange).toHaveBeenLastCalledWith(['clip_1', 'clip_2'])
+    expect(onApplyClipRange).not.toHaveBeenCalled()
   })
 })

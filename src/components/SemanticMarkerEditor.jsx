@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Pencil, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react'
 import { t } from '../i18n.js'
 import { useAppDialog } from './AppDialog.jsx'
+import { ActionButton } from './ControlKit.jsx'
+import { CountBadge, EmptyState, ReviewField, ReviewRange } from './ReviewKit.jsx'
 import {
   MARKER_TYPES,
   buildCreateMarkerPayload,
@@ -44,6 +47,7 @@ export default function SemanticMarkerEditor({
   clip,
   disabled = false,
   onMarkersChange,
+  mobile = false,
 }) {
   const dialog = useAppDialog()
   const [markers, setMarkers] = useState([])
@@ -188,50 +192,43 @@ export default function SemanticMarkerEditor({
   const maxFrame = Math.max(clip.startFrame, clip.endFrame - 1)
 
   return (
-    <section className="review-marker-editor" aria-label={t('review.marker.title')}>
+    <section className={'review-marker-editor ' + (mobile ? 'is-mobile' : 'is-desktop')} aria-label={t('review.marker.title')}>
       <div className="review-marker-head">
         <div className="review-marker-head-copy">
           <div className="review-marker-title-row">
             <h4>{t('review.marker.title')}</h4>
-            <span className="review-count-badge">{orderedMarkers.length}</span>
+            <CountBadge>{orderedMarkers.length}</CountBadge>
           </div>
-          <p className="review-marker-clip-name" title={clip.name}>
-            {t('review.marker.currentClip', { name: clip.name })}
-          </p>
-          <span className="review-range-chip">{t('review.marker.frameRange', {
-            start: minFrame,
-            end: maxFrame,
-          })}</span>
+          <p>{t('review.marker.sectionHint')}</p>
         </div>
         <div className="review-marker-head-actions">
-          <button type="button" className="studio-mini-btn" onClick={() => void refresh()} disabled={loading || busy}>
+          <ActionButton icon={RefreshCw} aria-label={t('review.refresh')} title={t('review.refresh')} onClick={() => void refresh()} disabled={loading || busy}>
             {loading ? t('review.marker.loading') : t('review.refresh')}
-          </button>
-          <button
-            type="button"
-            className={`${createOpen ? 'studio-mini-btn' : 'studio-primary-btn'} review-marker-add-toggle`}
+          </ActionButton>
+          <ActionButton
+            icon={createOpen ? X : Plus}
+            tone={createOpen ? 'secondary' : 'primary'}
+            className="review-marker-add-toggle"
             aria-expanded={createOpen}
             onClick={() => setCreateOpen((open) => !open)}
             disabled={disabled || busy}
           >
             {createOpen ? t('review.marker.closeCreate') : t('review.marker.newMarker')}
-          </button>
+          </ActionButton>
         </div>
       </div>
 
       {createOpen && <div className="review-marker-create">
         <div className="review-marker-create-title review-marker-wide">
-          <strong>{t('review.marker.createTitle')}</strong>
-          <span>{t('review.marker.createHint', { start: minFrame, end: maxFrame })}</span>
+          <div><strong>{t('review.marker.createTitle')}</strong><span>{t('review.marker.createHint', { start: minFrame, end: maxFrame })}</span></div>
+          <ReviewRange label={t('review.marker.validRange')} start={minFrame} end={maxFrame} compact />
         </div>
-        <label>
-          <span>{t('review.marker.type')}</span>
+        <ReviewField label={t('review.marker.type')}>
           <select value={typeDraft} onChange={(event) => setTypeDraft(event.target.value)} disabled={disabled || busy}>
             {MARKER_TYPES.map((type) => <option key={type} value={type}>{markerTypeLabel(type)}</option>)}
           </select>
-        </label>
-        <label>
-          <span>{t('review.marker.frame')}</span>
+        </ReviewField>
+        <ReviewField label={t('review.marker.frame')}>
           <input
             type="number"
             min={minFrame}
@@ -241,9 +238,8 @@ export default function SemanticMarkerEditor({
             onChange={(event) => setFrameDraft(event.target.value)}
             disabled={disabled || busy}
           />
-        </label>
-        <label className="review-marker-wide">
-          <span>{t('review.marker.label')}</span>
+        </ReviewField>
+        <ReviewField label={t('review.marker.label')} wide>
           <input
             type="text"
             value={labelDraft}
@@ -251,9 +247,8 @@ export default function SemanticMarkerEditor({
             onChange={(event) => setLabelDraft(event.target.value)}
             disabled={disabled || busy}
           />
-        </label>
-        <label className="review-marker-wide">
-          <span>{t('review.marker.payload')}</span>
+        </ReviewField>
+        <ReviewField label={t('review.marker.payload')} wide>
           <textarea
             rows="2"
             value={payloadDraft}
@@ -261,59 +256,40 @@ export default function SemanticMarkerEditor({
             onChange={(event) => setPayloadDraft(event.target.value)}
             disabled={disabled || busy}
           />
-        </label>
-        <button type="button" className="studio-primary-btn review-marker-wide" onClick={() => void handleCreate()} disabled={disabled || busy}>
+        </ReviewField>
+        <ActionButton icon={Plus} tone="primary" className="review-marker-wide" onClick={() => void handleCreate()} disabled={disabled || busy}>
           {t('review.marker.add')}
-        </button>
+        </ActionButton>
       </div>}
 
       {error && <p className="review-clip-error">{error}</p>}
 
       <div className="review-marker-list">
-        {orderedMarkers.length === 0 && !loading && <p className="studio-empty">{t('review.marker.empty')}</p>}
+        {orderedMarkers.length === 0 && !loading && <EmptyState compact title={t('review.marker.empty')} description={t('review.marker.emptyHint')} />}
         {orderedMarkers.map((marker) => {
           const editing = editingId === marker.id && editDraft
           return (
             <div className="review-marker-row" key={marker.id}>
               {editing ? (
                 <div className="review-marker-edit">
-                  <select
-                    aria-label={t('review.marker.type')}
-                    value={editDraft.type}
-                    onChange={(event) => setEditDraft((prev) => ({ ...prev, type: event.target.value }))}
-                    disabled={disabled || busy}
-                  >
-                    {MARKER_TYPES.map((type) => <option key={type} value={type}>{markerTypeLabel(type)}</option>)}
-                  </select>
-                  <input
-                    aria-label={t('review.marker.frame')}
-                    type="number"
-                    min={minFrame}
-                    max={maxFrame}
-                    step="1"
-                    value={editDraft.frame}
-                    onChange={(event) => setEditDraft((prev) => ({ ...prev, frame: event.target.value }))}
-                    disabled={disabled || busy}
-                  />
-                  <input
-                    aria-label={t('review.marker.label')}
-                    type="text"
-                    value={editDraft.label}
-                    onChange={(event) => setEditDraft((prev) => ({ ...prev, label: event.target.value }))}
-                    disabled={disabled || busy}
-                  />
-                  <textarea
-                    aria-label={t('review.marker.payload')}
-                    rows="2"
-                    value={editDraft.payloadText}
-                    onChange={(event) => setEditDraft((prev) => ({ ...prev, payloadText: event.target.value }))}
-                    disabled={disabled || busy}
-                  />
+                  <ReviewField label={t('review.marker.type')}>
+                    <select value={editDraft.type} onChange={(event) => setEditDraft((prev) => ({ ...prev, type: event.target.value }))} disabled={disabled || busy}>
+                      {MARKER_TYPES.map((type) => <option key={type} value={type}>{markerTypeLabel(type)}</option>)}
+                    </select>
+                  </ReviewField>
+                  <ReviewField label={t('review.marker.frame')}>
+                    <input type="number" min={minFrame} max={maxFrame} step="1" value={editDraft.frame} onChange={(event) => setEditDraft((prev) => ({ ...prev, frame: event.target.value }))} disabled={disabled || busy} />
+                  </ReviewField>
+                  <ReviewField label={t('review.marker.label')} wide>
+                    <input type="text" value={editDraft.label} onChange={(event) => setEditDraft((prev) => ({ ...prev, label: event.target.value }))} disabled={disabled || busy} />
+                  </ReviewField>
+                  <ReviewField label={t('review.marker.payload')} wide>
+                    <textarea rows="2" value={editDraft.payloadText} onChange={(event) => setEditDraft((prev) => ({ ...prev, payloadText: event.target.value }))} disabled={disabled || busy} />
+                  </ReviewField>
                   <div className="review-marker-actions">
-                    <button type="button" className="studio-mini-btn" onClick={() => void handleSave(marker)} disabled={disabled || busy}>{t('review.marker.save')}</button>
-                    <button
-                      type="button"
-                      className="studio-mini-btn"
+                    <ActionButton icon={Save} tone="primary" onClick={() => void handleSave(marker)} disabled={disabled || busy}>{t('review.marker.save')}</ActionButton>
+                    <ActionButton
+                      icon={X}
                       onClick={() => {
                         setEditingId('')
                         setEditDraft(null)
@@ -321,7 +297,7 @@ export default function SemanticMarkerEditor({
                       disabled={disabled || busy}
                     >
                       {t('review.marker.cancel')}
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
               ) : (
@@ -334,8 +310,8 @@ export default function SemanticMarkerEditor({
                     <code>{JSON.stringify(marker.payload || {})}</code>
                   </div>
                   <div className="review-marker-actions">
-                    <button type="button" className="studio-mini-btn" onClick={() => beginEdit(marker)} disabled={disabled || busy}>{t('review.marker.edit')}</button>
-                    <button type="button" className="studio-danger-btn" onClick={() => void handleDelete(marker)} disabled={disabled || busy}>{t('review.marker.delete')}</button>
+                    <ActionButton icon={Pencil} onClick={() => beginEdit(marker)} disabled={disabled || busy}>{t('review.marker.edit')}</ActionButton>
+                    <ActionButton icon={Trash2} tone="danger" onClick={() => void handleDelete(marker)} disabled={disabled || busy}>{t('review.marker.delete')}</ActionButton>
                   </div>
                 </>
               )}

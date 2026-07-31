@@ -1571,6 +1571,7 @@ export default function App() {
           >
             {mediaMode === 'video' && (
                 <ActionClipReviewPanel
+                  mobile={mobileUi}
                   projectId={reviewContext?.projectId || ''}
                   assetId={reviewContext?.assetId || ''}
                   sourceLabel={reviewContext?.sourceLabel || videoFile?.name || ''}
