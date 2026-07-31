@@ -84,10 +84,16 @@ describe('compact parameter panels', () => {
     )
 
     expect(container.querySelector('.mobile-layout-panel')).toBeTruthy()
+    expect(container.querySelectorAll('.mobile-size-section')).toHaveLength(1)
+    expect(container.querySelectorAll('.mobile-size-group')).toHaveLength(2)
     expect(container.querySelector('fieldset')).toBeNull()
     expect(screen.getByRole('spinbutton', { name: t('layout.px') })).toBeTruthy()
 
+    const presetMenu = container.querySelector('.mobile-preset-menu')
+    fireEvent.click(presetMenu.querySelector('summary'))
+    expect(presetMenu.open).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: '1920×1080' }))
+    expect(presetMenu.open).toBe(false)
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       canvasWidth: 1920,
       canvasHeight: 1080,

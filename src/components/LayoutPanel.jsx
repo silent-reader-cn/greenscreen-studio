@@ -1,5 +1,5 @@
-import React from 'react'
-import { ScanSearch } from 'lucide-react'
+import React, { useRef } from 'react'
+import { Check, ChevronDown, ScanSearch } from 'lucide-react'
 import { t } from '../i18n.js'
 import { CompactIconButton, ControlGrid, ControlSection, HelpButton, NumberField, SegmentedControl, StatusStrip, ToggleField } from './ControlKit.jsx'
 
@@ -21,6 +21,42 @@ const MobileNumberField = ({ label, value, onChange, min = 1, max = 9999, suffix
   </label>
 )
 
+const MOBILE_CANVAS_PRESETS = [[1280, 720], [1920, 1080], [1000, 1000]]
+
+function MobileCanvasPresetMenu({ canvasWidth, canvasHeight, onSelect }) {
+  const menuRef = useRef(null)
+  const activePreset = MOBILE_CANVAS_PRESETS.find(([width, height]) => canvasWidth === width && canvasHeight === height)
+
+  return (
+    <details className="mobile-preset-menu" ref={menuRef}>
+      <summary aria-label={t('layout.canvasPresets')}>
+        <span>{activePreset ? `${activePreset[0]}×${activePreset[1]}` : t('layout.customSize')}</span>
+        <ChevronDown size={15} aria-hidden="true" />
+      </summary>
+      <div className="mobile-preset-options" role="group" aria-label={t('layout.canvasPresets')}>
+        {MOBILE_CANVAS_PRESETS.map(([width, height]) => {
+          const active = canvasWidth === width && canvasHeight === height
+          return (
+            <button
+              key={`${width}x${height}`}
+              type="button"
+              className={active ? 'active' : ''}
+              aria-pressed={active}
+              onClick={() => {
+                onSelect(width, height)
+                menuRef.current?.removeAttribute('open')
+              }}
+            >
+              <span>{width}×{height}</span>
+              {active && <Check size={15} aria-hidden="true" />}
+            </button>
+          )
+        })}
+      </div>
+    </details>
+  )
+}
+
 function MobileLayoutPanel({
   params,
   onChange,
@@ -31,37 +67,35 @@ function MobileLayoutPanel({
   onAutoDetectSourceCharacterHeight,
 }) {
   const update = (key, value) => onChange({ ...params, [key]: value })
-  const presets = [[1280, 720], [1920, 1080], [1000, 1000]]
 
   return (
     <section className="mobile-layout-panel" aria-label={t('layout.title')}>
-      <section className="mobile-layout-section">
-        <header className="mobile-section-heading"><strong>{t('layout.canvasSize')}</strong></header>
-        <div className="mobile-dimension-row">
-          <MobileNumberField label={t('layout.width')} value={params.canvasWidth} onChange={value => update('canvasWidth', value)} />
-          <span className="mobile-dimension-sign" aria-hidden="true">×</span>
-          <MobileNumberField label={t('layout.height')} value={params.canvasHeight} onChange={value => update('canvasHeight', value)} />
-        </div>
-        <div className="mobile-preset-grid" aria-label={t('layout.canvasSize')}>
-          {presets.map(([width, height]) => (
-            <button
-              key={`${width}x${height}`}
-              type="button"
-              className={params.canvasWidth === width && params.canvasHeight === height ? 'active' : ''}
-              onClick={() => onChange({ ...params, canvasWidth: width, canvasHeight: height })}
-            >
-              {width}×{height}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <section className="mobile-layout-section">
-        <header className="mobile-section-heading"><strong>{t('layout.characterSize')}</strong></header>
-        <div className="mobile-dimension-row">
-          <MobileNumberField label={t('layout.width')} value={params.personWidth} onChange={value => update('personWidth', value)} />
-          <span className="mobile-dimension-sign" aria-hidden="true">×</span>
-          <MobileNumberField label={t('layout.height')} value={params.personHeight} onChange={value => update('personHeight', value)} />
+      <section className="mobile-layout-section mobile-size-section">
+        <header className="mobile-section-heading">
+          <strong>{t('layout.sizeSetup')}</strong>
+          <MobileCanvasPresetMenu
+            canvasWidth={params.canvasWidth}
+            canvasHeight={params.canvasHeight}
+            onSelect={(canvasWidth, canvasHeight) => onChange({ ...params, canvasWidth, canvasHeight })}
+          />
+        </header>
+        <div className="mobile-size-stack">
+          <div className="mobile-size-group">
+            <span className="mobile-size-group-label">{t('layout.canvasSize')}</span>
+            <div className="mobile-dimension-row">
+              <MobileNumberField label={t('layout.width')} value={params.canvasWidth} onChange={value => update('canvasWidth', value)} />
+              <span className="mobile-dimension-sign" aria-hidden="true">×</span>
+              <MobileNumberField label={t('layout.height')} value={params.canvasHeight} onChange={value => update('canvasHeight', value)} />
+            </div>
+          </div>
+          <div className="mobile-size-group">
+            <span className="mobile-size-group-label">{t('layout.characterSizeShort')}</span>
+            <div className="mobile-dimension-row">
+              <MobileNumberField label={t('layout.width')} value={params.personWidth} onChange={value => update('personWidth', value)} />
+              <span className="mobile-dimension-sign" aria-hidden="true">×</span>
+              <MobileNumberField label={t('layout.height')} value={params.personHeight} onChange={value => update('personHeight', value)} />
+            </div>
+          </div>
         </div>
       </section>
 
