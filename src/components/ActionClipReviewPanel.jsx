@@ -4,7 +4,7 @@ import { t } from '../i18n.js'
 import SemanticMarkerEditor from './SemanticMarkerEditor.jsx'
 import { useAppDialog } from './AppDialog.jsx'
 import { ActionButton, CompactActionGroup, CompactIconButton, ToggleField } from './ControlKit.jsx'
-import { CheckBadge, EmptyState, MetaItem, ReviewComposer, ReviewField, ReviewHeader, ReviewPane, ReviewRange, StatusBadge } from './ReviewKit.jsx'
+import { CheckBadge, EmptyState, MetaItem, ReviewComposer, ReviewField, ReviewPane, StatusBadge } from './ReviewKit.jsx'
 import {
   availableClipStatuses,
   buildClipStatusTransition,
@@ -336,7 +336,6 @@ export default function ActionClipReviewPanel({
 
   const rangeStart = range?.startFrame ?? 0
   const rangeEnd = Math.max(0, (range?.endFrame ?? 0) - 1)
-  const rangeBadge = <ReviewRange label={t('review.timelineRange')} start={rangeStart} end={rangeEnd} compact={mobile} />
 
   const clipList = (
     <div className="review-clip-list" aria-label={t('review.clipList')}>
@@ -425,10 +424,23 @@ export default function ActionClipReviewPanel({
 
   return (
     <div className={'review-workspace ' + (mobile ? 'is-mobile' : 'is-desktop')}>
-      <ReviewHeader title={t('review.title')} source={sourceLabel || assetId} mobile={mobile} range={rangeBadge} actions={<ActionButton icon={RefreshCw} aria-label={t('review.refresh')} title={t('review.refresh')} onClick={() => void refresh()} disabled={loading || busy}>{loading ? t('review.loading') : t('review.refresh')}</ActionButton>} />
       {error && <p className="review-clip-error" role="alert">{error}</p>}
       <div className="review-workspace-grid">
-        <ReviewPane className="review-slices-pane" title={t('review.clipList')} count={orderedClips.length} description={t('review.listHint')}>
+        <ReviewPane
+          className="review-slices-pane"
+          title={t('review.clipList')}
+          count={orderedClips.length}
+          description={t('review.listHint')}
+          actions={(
+            <CompactIconButton
+              size="small"
+              icon={RefreshCw}
+              label={loading ? t('review.loading') : t('review.refresh')}
+              onClick={() => void refresh()}
+              disabled={loading || busy}
+            />
+          )}
+        >
           <ReviewComposer title={t('review.createFromTimeline')} actions={
             <>
               <ToggleField label={t('review.loop')} checked={loopDraft} onChange={setLoopDraft} disabled={disabled || busy} />

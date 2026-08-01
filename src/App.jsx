@@ -600,7 +600,9 @@ export default function App() {
   const mobileSheetDragRef = useRef(null)
   const mobileSheetClickSuppressedRef = useRef(false)
   const [videoDockTarget, setVideoDockTarget] = useState(null)
+  const [mobilePreviewToolsTarget, setMobilePreviewToolsTarget] = useState(null)
   const videoDockRef = useRef(null)
+  const mobilePreviewToolsRef = useRef(null)
   const fileInputRef = useRef(null)
   const [clipboardImport, setClipboardImport] = useState(null)
   const clipboardImportRequestRef = useRef(0)
@@ -843,6 +845,7 @@ export default function App() {
 
   useEffect(() => {
     setVideoDockTarget(videoDockRef.current)
+    setMobilePreviewToolsTarget(mobilePreviewToolsRef.current)
   }, [mediaMode])
 
   // ===== 参数变化时持久化到当前 profile =====
@@ -1701,36 +1704,47 @@ export default function App() {
                 className={`mode-btn ${mediaMode === 'image' ? 'active' : ''}`}
                 onClick={() => switchMode('image')}
                 aria-pressed={mediaMode === 'image'}
+                aria-label={t('app.image')}
+                title={t('app.image')}
               >
                 <ImageIcon size={15} aria-hidden="true" />
-                {t('app.image')}
+                <span>{t('app.image')}</span>
               </button>
               <button
                 className={`mode-btn ${mediaMode === 'video' ? 'active' : ''}`}
                 onClick={() => switchMode('video')}
                 aria-pressed={mediaMode === 'video'}
+                aria-label={t('app.video')}
+                title={t('app.video')}
               >
                 <Video size={15} aria-hidden="true" />
-                {t('app.video')}
+                <span>{t('app.video')}</span>
               </button>
             </div>
-            <div className="preview-mode-tabs">
-              <button
-                className={`tab ${previewMode === 'keying' ? 'active' : ''}`}
-                onClick={() => setPreviewMode('keying')}
-                aria-pressed={previewMode === 'keying'}
-              >
-                <Eye size={15} aria-hidden="true" />
-                {t('app.keyingPreview')}
-              </button>
-              <button
-                className={`tab ${previewMode === 'composite' ? 'active' : ''}`}
-                onClick={() => setPreviewMode('composite')}
-                aria-pressed={previewMode === 'composite'}
-              >
-                <Layers3 size={15} aria-hidden="true" />
-                {t('app.compositePreview')}
-              </button>
+            <div className="preview-toolbar-end">
+              <div className="preview-mode-tabs">
+                <button
+                  className={`tab ${previewMode === 'keying' ? 'active' : ''}`}
+                  onClick={() => setPreviewMode('keying')}
+                  aria-pressed={previewMode === 'keying'}
+                  aria-label={t('app.keyingPreview')}
+                  title={t('app.keyingPreview')}
+                >
+                  <Eye size={15} aria-hidden="true" />
+                  <span>{t('app.keyingPreview')}</span>
+                </button>
+                <button
+                  className={`tab ${previewMode === 'composite' ? 'active' : ''}`}
+                  onClick={() => setPreviewMode('composite')}
+                  aria-pressed={previewMode === 'composite'}
+                  aria-label={t('app.compositePreview')}
+                  title={t('app.compositePreview')}
+                >
+                  <Layers3 size={15} aria-hidden="true" />
+                  <span>{t('app.compositePreview')}</span>
+                </button>
+              </div>
+              <div ref={mobilePreviewToolsRef} className="mobile-preview-tools-target" />
             </div>
           </div>
             <div className="canvas-wrapper" ref={imagePreviewWrapperRef}>
@@ -1760,6 +1774,8 @@ export default function App() {
                 )
               ) : (
                 <VideoPreview
+                  mobile={mobileUi}
+                  mobileToolsTarget={mobilePreviewToolsTarget}
                   videoFile={videoFile}
                   videoInfo={videoInfo}
                   keyingParams={keyingParams}

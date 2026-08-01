@@ -1,9 +1,8 @@
 import React from 'react'
-import { RotateCcw } from 'lucide-react'
 import { t } from '../i18n.js'
-import { ControlSection, ResponsiveActionButton, SliderField } from './ControlKit.jsx'
+import { ControlSection, SliderField } from './ControlKit.jsx'
 
-export default function KeyingPanel({ params, onChange, mobile = false }) {
+export default function KeyingPanel({ params, onChange }) {
   const update = (key, val) => onChange({ ...params, [key]: val })
   return (
     <section className="parameter-panel keying-parameter-panel" aria-label={t('keying.title')}>
@@ -31,24 +30,7 @@ export default function KeyingPanel({ params, onChange, mobile = false }) {
         <SliderField label={t('keying.spillSuppression')} value={params.spillSuppression} min={0} max={100} step={1} onChange={(value) => update('spillSuppression', value)} />
       </ControlSection>
 
-      <ControlSection
-        title={t('keying.edgeProcessing')}
-        actions={(
-          <ResponsiveActionButton
-            mobile={mobile}
-            icon={RotateCcw}
-            label={t('keying.reset')}
-            className="btn-reset"
-            onClick={() => onChange({
-              keyColor: [0, 255, 0],
-              tolerance: 30,
-              spillSuppression: 40,
-              feather: 15,
-              edgeShrink: 0,
-            })}
-          >{t('keying.resetShort')}</ResponsiveActionButton>
-        )}
-      >
+      <ControlSection title={t('keying.edgeProcessing')}>
         <SliderField label={t('keying.feather')} value={params.feather} min={0} max={100} step={1} onChange={(value) => update('feather', value)} />
         <SliderField label={t('keying.edgeShrink')} value={params.edgeShrink} min={0} max={50} step={1} unit="px" onChange={(value) => update('edgeShrink', value)} />
       </ControlSection>

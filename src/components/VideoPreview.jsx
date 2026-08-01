@@ -1,5 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
-import { FileVideo, Upload } from 'lucide-react'
+import { createPortal } from 'react-dom'
+import { ArrowDown, ArrowUp, Check, FileVideo, Flag, List, LoaderCircle, Repeat2, Upload } from 'lucide-react'
 import { applyKeying, composeToCanvas, cropKeyedToBounds, expandBoundsToSourceCenter, findAlphaBounds } from '../lib/keying.js'
 import { clamp, cropImageData, getRegionOverlayStyle, makeRegionFromPoints, normalizeRegion } from '../lib/region.js'
 import { clipTimelineStyle } from '../lib/actionReviewClips.js'
@@ -78,6 +79,8 @@ export default function VideoPreview({
   keyingParams,
   layoutParams,
   previewMode = 'keying',
+  mobile = false,
+  mobileToolsTarget = null,
   resultJobId,
   resultFormat,
   range,
@@ -100,6 +103,7 @@ export default function VideoPreview({
   const [similarityHeatmap, setSimilarityHeatmap] = useState(null) // [{pct, opacity}, ...]
   const [scoreRange, setScoreRange] = useState(null) // {min, max} 用于全局归一化
   const [isLoopPlaying, setIsLoopPlaying] = useState(false)
+  const [isTimelineScrubbing, setIsTimelineScrubbing] = useState(false)
   const [autoLoopDetect, setAutoLoopDetect] = useState(() => loadStoredBoolean(AUTO_LOOP_DETECT_KEY, false))
   const [loadedVideoJobId, setLoadedVideoJobId] = useState(null)
   const [containerSize, setContainerSize] = useState({ w: 0, h: 0 })
@@ -113,6 +117,8 @@ export default function VideoPreview({
   const tempCanvasRef = useRef(document.createElement('canvas'))
   const captureCanvasRef = useRef(document.createElement('canvas'))
   const timelineTrackRef = useRef(null)
+  const mobileMarkerMenuRef = useRef(null)
+  const mobileCandidateMenuRef = useRef(null)
   const seekRef = useRef(false)  // 防止 seek 事件重入
   const scrubbingRef = useRef(false)
   const regionDragRef = useRef(null)
@@ -136,6 +142,20 @@ export default function VideoPreview({
   const startPct = duration > 0 ? clamp((startFrame / fps / duration) * 100, 0, 100) : 0
   const endPct = duration > 0 ? clamp((endFrame / fps / duration) * 100, 0, 100) : 0
   const currentPct = duration > 0 ? clamp((frameTime / duration) * 100, 0, 100) : 0
+  const currentFrame = clamp(Math.round(frameTime * fps), 0, totalFrames)
+  const loopCandidateItems = useMemo(() => {
+    if (!loopCandidates?.length) return []
+    const minScore = scoreRange?.min ?? Math.min(...loopCandidates.map(candidate => candidate.score))
+    const maxScore = scoreRange?.max ?? Math.max(...loopCandidates.map(candidate => candidate.score))
+    const scoreSpan = maxScore - minScore
+    return loopCandidates.map((candidate, index) => ({
+      ...candidate,
+      best: index === 0,
+      similarity: scoreSpan <= 0
+        ? 100
+        : clamp(Math.round(100 * (maxScore - candidate.score) / scoreSpan), 0, 100),
+    }))
+  }, [loopCandidates, scoreRange])
   const processingFrameImageData = useMemo(
     () => cropImageData(frameImageData, region),
     [frameImageData, region]
@@ -171,6 +191,18 @@ export default function VideoPreview({
   useEffect(() => {
     saveStoredBoolean(AUTO_LOOP_DETECT_KEY, autoLoopDetect)
   }, [autoLoopDetect])
+
+  useEffect(() => {
+    if (!mobile) return undefined
+    const closeMenus = (event) => {
+      for (const menuRef of [mobileMarkerMenuRef, mobileCandidateMenuRef]) {
+        const menu = menuRef.current
+        if (menu?.open && !menu.contains(event.target)) menu.open = false
+      }
+    }
+    document.addEventListener('pointerdown', closeMenus)
+    return () => document.removeEventListener('pointerdown', closeMenus)
+  }, [mobile])
 
   useEffect(() => {
     if (!regionSelectionMode) {
@@ -317,6 +349,49 @@ export default function VideoPreview({
       stopLoopPreview()
     }
   }, [isLoopPlaying, range, renderLoopFrame, stopLoopPreview, videoInfo])
+
+  const markCurrentFrameAsStart = useCallback(() => {
+    stopLoopPreview()
+    const currentFps = videoInfo?.fps || 30
+    const frame = Math.round(frameTime * currentFps)
+    onRangeChange({ ...range, startFrame: Math.min(frame, range.endFrame) })
+  }, [frameTime, onRangeChange, range, stopLoopPreview, videoInfo?.fps])
+
+  const markCurrentFrameAsEnd = useCallback(() => {
+    stopLoopPreview()
+    const currentFps = videoInfo?.fps || 30
+    const frame = Math.round(frameTime * currentFps)
+    onRangeChange({ ...range, endFrame: Math.max(frame, range.startFrame + 1) })
+  }, [frameTime, onRangeChange, range, stopLoopPreview, videoInfo?.fps])
+
+  const selectLoopCandidateEnd = useCallback((frame) => {
+    const currentFps = videoInfo?.fps || 30
+    stopLoopPreview()
+    onRangeChange({ ...range, endFrame: Math.max(frame, range.startFrame + 1) })
+    seekToFrame(frame / currentFps, { force: true })
+    setFrameTime(frame / currentFps)
+  }, [onRangeChange, range, seekToFrame, stopLoopPreview, videoInfo?.fps])
+
+  const selectLoopCandidateStart = useCallback((frame) => {
+    const currentFps = videoInfo?.fps || 30
+    const nextEnd = Math.min(Math.max(range.endFrame, frame + 1), totalFrames)
+    const nextStart = Math.max(0, Math.min(frame, nextEnd - 1))
+    stopLoopPreview()
+    onRangeChange({ ...range, startFrame: nextStart, endFrame: nextEnd })
+    seekToFrame(nextStart / currentFps, { force: true })
+    setFrameTime(nextStart / currentFps)
+  }, [onRangeChange, range, seekToFrame, stopLoopPreview, totalFrames, videoInfo?.fps])
+
+  const toggleStagePlayback = useCallback(() => {
+    if (!mobile || canSelectRegion) return
+    void toggleLoopPreview()
+  }, [canSelectRegion, mobile, toggleLoopPreview])
+
+  const handleStagePlaybackKeyDown = useCallback((event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    toggleStagePlayback()
+  }, [toggleStagePlayback])
 
   const detectLoopEnd = useCallback(async (
     targetStartFrame = rangeRef.current?.startFrame ?? 0,
@@ -688,6 +763,7 @@ export default function VideoPreview({
     if (event.pointerType === 'mouse' && event.button !== 0) return
     event.preventDefault()
     scrubbingRef.current = true
+    setIsTimelineScrubbing(true)
     event.currentTarget.setPointerCapture?.(event.pointerId)
     scrubTimelineTo(event.clientX)
   }, [scrubTimelineTo])
@@ -700,6 +776,7 @@ export default function VideoPreview({
 
   const stopScrubbingTimeline = useCallback((event) => {
     scrubbingRef.current = false
+    setIsTimelineScrubbing(false)
     event.currentTarget.releasePointerCapture?.(event.pointerId)
   }, [])
 
@@ -852,10 +929,15 @@ export default function VideoPreview({
       <div className="frame-canvas-wrapper" ref={wrapperRef}>
         {loading && <div className="frame-loading">{t('preview.loadingFrame')}</div>}
         <div
-          className={`video-preview-stage ${canSelectRegion ? 'selecting' : ''}`}
+          className={`video-preview-stage ${canSelectRegion ? 'selecting' : ''} ${mobile && !canSelectRegion ? 'is-playable' : ''}`}
           style={canvasDisplaySize
             ? { width: `${canvasDisplaySize.w}px`, height: `${canvasDisplaySize.h}px` }
             : undefined}
+          role={mobile && !canSelectRegion ? 'button' : undefined}
+          tabIndex={mobile && !canSelectRegion ? 0 : undefined}
+          aria-label={mobile && !canSelectRegion ? (isLoopPlaying ? t('preview.pauseRange') : t('preview.playRange')) : undefined}
+          onClick={toggleStagePlayback}
+          onKeyDown={handleStagePlaybackKeyDown}
           onPointerDown={handleRegionPointerDown}
           onPointerMove={handleRegionPointerMove}
           onPointerUp={handleRegionPointerUp}
@@ -869,6 +951,104 @@ export default function VideoPreview({
             />
           )}
         </div>
+
+        {mobile && videoInfo && !canSelectRegion && mobileToolsTarget && createPortal((
+          <div className="mobile-preview-tools" role="toolbar" aria-label={t('preview.previewTools')}>
+            <details
+              className="mobile-preview-tool mobile-preview-menu"
+              ref={mobileMarkerMenuRef}
+              onToggle={(event) => {
+                if (event.currentTarget.open && mobileCandidateMenuRef.current) {
+                  mobileCandidateMenuRef.current.open = false
+                }
+              }}
+            >
+              <summary className="mobile-preview-icon-btn" aria-label={t('preview.markFrame')} title={t('preview.markFrame')}>
+                <Flag size={18} aria-hidden="true" />
+              </summary>
+              <div className="mobile-preview-popover mobile-marker-menu" role="menu" aria-label={t('preview.markFrame')}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    markCurrentFrameAsStart()
+                    mobileMarkerMenuRef.current.open = false
+                  }}
+                >
+                  <ArrowUp size={16} aria-hidden="true" />
+                  <span>{t('preview.markAsStart')}</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    markCurrentFrameAsEnd()
+                    mobileMarkerMenuRef.current.open = false
+                  }}
+                >
+                  <ArrowDown size={16} aria-hidden="true" />
+                  <span>{t('preview.markAsEnd')}</span>
+                </button>
+              </div>
+            </details>
+
+            <button
+              type="button"
+              className={`mobile-preview-icon-btn mobile-auto-loop-btn ${autoLoopDetect ? 'active' : ''}`}
+              aria-label={t('preview.autoLoopAria')}
+              aria-pressed={autoLoopDetect}
+              title={detecting ? t('preview.detecting') : t('preview.autoLoop')}
+              onClick={() => setAutoLoopDetect(current => !current)}
+              disabled={detecting}
+            >
+              {detecting
+                ? <LoaderCircle className="is-spinning" size={18} aria-hidden="true" />
+                : <Repeat2 size={18} aria-hidden="true" />}
+            </button>
+
+            {loopCandidateItems.length > 0 && (
+              <details
+                className="mobile-preview-tool mobile-preview-menu"
+                ref={mobileCandidateMenuRef}
+                onToggle={(event) => {
+                  if (event.currentTarget.open && mobileMarkerMenuRef.current) {
+                    mobileMarkerMenuRef.current.open = false
+                  }
+                }}
+              >
+                <summary className="mobile-preview-icon-btn" aria-label={t('preview.loopCandidates')} title={t('preview.loopCandidates')}>
+                  <List size={18} aria-hidden="true" />
+                  <span className="mobile-preview-tool-badge">{loopCandidateItems.length}</span>
+                </summary>
+                <div className="mobile-preview-popover mobile-candidate-menu" role="menu" aria-label={t('preview.loopCandidates')}>
+                  {loopCandidateItems.map(candidate => {
+                    const active = candidate.frame === range.endFrame
+                    return (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        key={candidate.frame}
+                        className={`${active ? 'active' : ''} ${candidate.best ? 'best' : ''}`}
+                        aria-label={t('preview.candidateTitle', { frame: candidate.frame, similarity: candidate.similarity })}
+                        onClick={() => {
+                          selectLoopCandidateEnd(candidate.frame)
+                          mobileCandidateMenuRef.current.open = false
+                        }}
+                      >
+                        <span className="mobile-candidate-main">
+                          <strong>{candidate.frame}f</strong>
+                          <small>{formatTime(candidate.frame / fps)}</small>
+                        </span>
+                        <span className="mobile-candidate-score">{candidate.similarity}%</span>
+                        {active && <Check size={15} aria-hidden="true" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </details>
+            )}
+          </div>
+        ), mobileToolsTarget)}
       </div>
 
       {/* 时间轴帧选择器 */}
@@ -952,7 +1132,7 @@ export default function VideoPreview({
               </>
             )}
             <div
-              className="timeline-current-marker"
+              className={`timeline-current-marker ${isTimelineScrubbing ? 'is-scrubbing' : ''}`}
               style={{ left: `${currentPct}%` }}
               role="slider"
               tabIndex={duration > 0 ? 0 : -1}
@@ -961,7 +1141,11 @@ export default function VideoPreview({
               aria-valuemax={duration}
               aria-valuenow={frameTime}
               onKeyDown={onTimelineKeyDown}
-            />
+            >
+              <span className="timeline-current-frame-tip">
+                {t('preview.currentFrameTip', { frame: currentFrame })}
+              </span>
+            </div>
           </div>
           {/* 相似度热力图 */}
           {similarityHeatmap && (
@@ -983,7 +1167,7 @@ export default function VideoPreview({
       </div>
 
       {/* 标记起点 / 终点 / 自动检测按钮 */}
-      {videoInfo && (
+      {videoInfo && !mobile && (
         <div className="timeline-mark-actions">
           <button
             className={`btn-mark btn-play-loop ${isLoopPlaying ? 'active' : ''}`}
@@ -992,24 +1176,14 @@ export default function VideoPreview({
           >{isLoopPlaying ? t('preview.pauseRange') : t('preview.playRange')}</button>
           <button
             className="btn-mark"
-            onClick={() => {
-              stopLoopPreview()
-              const fps = videoInfo.fps || 30
-              const frame = Math.round(frameTime * fps)
-              onRangeChange({ ...range, startFrame: Math.min(frame, range.endFrame) })
-            }}
+            onClick={markCurrentFrameAsStart}
           >{t('preview.markStart')}</button>
           <span className="mark-range-info">
             {range.startFrame} ~ {range.endFrame} {t('common.frames')}
           </span>
           <button
             className="btn-mark"
-            onClick={() => {
-              stopLoopPreview()
-              const fps = videoInfo.fps || 30
-              const frame = Math.round(frameTime * fps)
-              onRangeChange({ ...range, endFrame: Math.max(frame, range.startFrame + 1) })
-            }}
+            onClick={markCurrentFrameAsEnd}
           >{t('preview.markEnd')}</button>
           <button
             className="btn-mark btn-loop"
@@ -1031,7 +1205,7 @@ export default function VideoPreview({
       )}
 
       {/* 候选帧列表 */}
-      {loopCandidates && loopCandidates.length > 0 && (
+      {!mobile && loopCandidates && loopCandidates.length > 0 && (
         <div className="loop-candidates">
           <span className="candidates-label">{t('preview.loopCandidates')}</span>
           <div className="candidates-list">
@@ -1047,29 +1221,14 @@ export default function VideoPreview({
                 const similarity = scoreRangeVal <= 0
                   ? 100
                   : clamp(Math.round(100 * (mx - c.score) / scoreRangeVal), 0, 100)
-                const totalFrames = videoInfo?.frameCount || Math.round(fps * duration) || range.endFrame
-                const selectEndFrame = () => {
-                  stopLoopPreview()
-                  onRangeChange({ ...range, endFrame: Math.max(c.frame, range.startFrame + 1) })
-                  seekToFrame(c.frame / fps, { force: true })
-                  setFrameTime(c.frame / fps)
-                }
-                const selectStartFrame = () => {
-                  stopLoopPreview()
-                  const nextEnd = Math.min(Math.max(range.endFrame, c.frame + 1), totalFrames)
-                  const nextStart = Math.max(0, Math.min(c.frame, nextEnd - 1))
-                  onRangeChange({ ...range, startFrame: nextStart, endFrame: nextEnd })
-                  seekToFrame(nextStart / fps, { force: true })
-                  setFrameTime(nextStart / fps)
-                }
                 return (
                   <button
                     key={c.frame}
                     className={`candidate-chip ${activeEnd ? 'active active-end' : ''} ${activeStart ? 'active active-start' : ''} ${i === 0 ? 'best' : ''}`}
-                    onClick={selectEndFrame}
+                    onClick={() => selectLoopCandidateEnd(c.frame)}
                     onContextMenu={(event) => {
                       event.preventDefault()
-                      selectStartFrame()
+                      selectLoopCandidateStart(c.frame)
                     }}
                     title={t('preview.candidateTitle', { frame: c.frame, similarity })}
                   >

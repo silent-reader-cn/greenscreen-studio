@@ -113,6 +113,10 @@ describe('ActionClipReviewPanel', () => {
     const idle = await screen.findByText('idle')
     const attack = screen.getByText('attack')
 
+    expect(screen.queryByText(t('review.title'))).toBeNull()
+    const refreshButton = screen.getByRole('button', { name: t('review.refresh') })
+    expect(refreshButton.classList.contains('compact-icon-action')).toBe(true)
+    expect(refreshButton.textContent).toBe('')
     expect(screen.queryByRole('button', { name: t('review.rename') })).toBeNull()
 
     fireEvent.click(idle)

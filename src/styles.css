@@ -1564,6 +1564,31 @@ body {
   box-shadow: 0 1px 4px rgba(0,0,0,0.2), 0 0 0 2px rgba(51, 102, 170, 0.3);
 }
 
+.timeline-current-frame-tip {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 7px);
+  transform: translate(-50%, 3px);
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: rgba(25, 34, 43, 0.9);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.timeline-current-marker.is-scrubbing .timeline-current-frame-tip,
+.timeline-current-marker:focus-visible .timeline-current-frame-tip {
+  transform: translate(-50%, 0);
+  opacity: 1;
+}
+
 /* 标记起点/终点按钮 */
 .timeline-mark-actions {
   display: flex;
@@ -2101,6 +2126,10 @@ body {
   to   { transform: scale(1);    opacity: 1; }
 }
 
+@keyframes mobile-preview-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ===== 移动端导航（桌面隐藏） ===== */
 .mobile-nav {
   display: none;
@@ -2319,40 +2348,168 @@ body {
     gap: 6px;
   }
 
-  /* 手机端：时间轴操作固定为五列等高，避免中文按钮因换行参差不齐。 */
-  .timeline-mark-actions {
-    display: grid;
-    grid-template-columns: 1.15fr 1fr 1.25fr 1fr 1.15fr;
-    gap: 4px;
-    align-items: stretch;
-    max-width: 100%;
+  .video-preview-stage.is-playable {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
 
-  .timeline-mark-actions .btn-mark {
-    width: 100%;
-    min-width: 0;
-    height: 42px;
-    min-height: 42px;
-    padding: 0 4px;
+  .video-preview-stage.is-playable:focus-visible {
+    outline: 2px solid var(--workspace-accent);
+    outline-offset: 3px;
+  }
+
+  .mobile-preview-tools {
+    position: relative;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .mobile-preview-tool {
+    position: relative;
+  }
+
+  .mobile-preview-icon-btn {
+    position: relative;
+    box-sizing: border-box;
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    font-size: 10px;
-    line-height: 1;
-    white-space: nowrap;
+    border: 1px solid var(--workspace-border);
+    border-radius: 6px;
+    background: var(--workspace-surface-soft);
+    color: var(--workspace-text-muted);
+    box-shadow: none;
+    cursor: pointer;
+    list-style: none;
+    -webkit-tap-highlight-color: transparent;
   }
 
-  .timeline-mark-actions .mark-range-info {
+  .mobile-preview-icon-btn::-webkit-details-marker {
+    display: none;
+  }
+
+  .mobile-preview-icon-btn:hover,
+  .mobile-preview-icon-btn:focus-visible,
+  .mobile-preview-menu[open] > .mobile-preview-icon-btn,
+  .mobile-preview-icon-btn.active {
+    border-color: var(--workspace-accent-border);
+    background: var(--workspace-accent);
+    color: #ffffff;
+    outline: none;
+  }
+
+  .mobile-preview-icon-btn:disabled {
+    cursor: default;
+    opacity: 0.65;
+  }
+
+  .mobile-preview-tool-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    display: grid;
+    place-items: center;
+    border: 2px solid var(--workspace-surface);
+    border-radius: 9px;
+    background: var(--workspace-accent);
+    color: #ffffff;
+    font-size: 9px;
+    font-weight: 750;
+    line-height: 1;
+  }
+
+  .mobile-preview-popover {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 8px);
+    bottom: auto;
+    z-index: 30;
+    min-width: 172px;
+    padding: 5px;
+    display: grid;
+    gap: 3px;
+    border: 1px solid var(--workspace-border-strong);
+    border-radius: var(--workspace-radius-sm);
+    background: var(--workspace-surface);
+    box-shadow: var(--workspace-shadow-lg);
+  }
+
+  .mobile-preview-popover button {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 40px;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--workspace-text);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .mobile-preview-popover button:hover,
+  .mobile-preview-popover button:focus-visible,
+  .mobile-preview-popover button.active {
+    background: var(--workspace-accent-soft);
+    color: var(--workspace-accent);
+    outline: none;
+  }
+
+  .mobile-candidate-menu {
+    width: min(232px, calc(100vw - 28px));
+    max-height: min(264px, 46vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .mobile-candidate-menu button {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto 16px;
+  }
+
+  .mobile-candidate-menu button.best:not(.active) {
+    color: var(--workspace-accent);
+  }
+
+  .mobile-candidate-main {
     min-width: 0;
-    align-self: center;
-    font-size: 10px;
-    line-height: 1;
-    white-space: nowrap;
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
   }
 
-  .timeline-mark-actions .loop-auto-checkbox {
-    flex: 0 0 auto;
+  .mobile-candidate-main strong {
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mobile-candidate-main small,
+  .mobile-candidate-score {
+    color: var(--workspace-text-muted);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .mobile-candidate-score {
+    justify-self: end;
+  }
+
+  .is-spinning {
+    animation: mobile-preview-spin 850ms linear infinite;
   }
 
   .time-label {
@@ -3200,13 +3357,14 @@ body {
 
 .timeline-semantic-marker {
   position: absolute;
-  bottom: 1px;
+  top: 50%;
+  bottom: auto;
   width: 9px;
   height: 9px;
   padding: 0;
   border: 1px solid #fff;
   border-radius: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   background: #cb4b45;
   box-shadow: 0 0 0 1px rgba(34, 34, 34, 0.45);
   cursor: pointer;
@@ -4196,19 +4354,43 @@ body {
   .tab-bar {
     min-height: 48px;
     padding: 6px 8px;
-    overflow-x: auto;
-    justify-content: flex-start;
+    overflow: visible;
+    justify-content: space-between;
+    gap: 6px;
   }
 
   .mode-switcher,
   .preview-mode-tabs {
     flex: 0 0 auto;
+    padding: 2px;
   }
 
   .mode-btn,
   .tab {
-    min-height: 32px;
-    padding: 0 9px;
+    width: 34px;
+    min-width: 34px;
+    min-height: 34px;
+    padding: 0;
+  }
+
+  .mode-btn > span,
+  .tab > span {
+    display: none;
+  }
+
+  .preview-toolbar-end {
+    min-width: 0;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+
+  .mobile-preview-tools-target {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
   }
 
   .canvas-wrapper {
@@ -5705,12 +5887,12 @@ body {
   }
 
   .mobile-sheet-panel .workspace-panel {
-    padding: 8px 10px calc(14px + env(safe-area-inset-bottom, 0));
+    padding: 8px 16px calc(14px + env(safe-area-inset-bottom, 0));
     gap: 8px;
   }
 
   .mobile-sheet-panel .workspace-panel-keying {
-    padding-top: 0;
+    padding-top: 16px;
   }
 
   .mobile-sheet-panel .workspace-panel-layout {
@@ -6014,6 +6196,7 @@ body {
 
 .workspace-panel-export .workspace-export-actions {
   padding-top: 10px;
+  border-top: 1px solid var(--workspace-border);
 }
 
 /* Review workspace: remove the fourth framing layer, retain meaningful item cards. */
@@ -8346,7 +8529,7 @@ body {
 
 .review-workspace-grid {
   min-width: 0;
-  margin-top: 10px;
+  margin-top: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: start;
@@ -9095,15 +9278,19 @@ body {
   }
 
   .review-clip-summary {
-    min-height: 96px;
-    padding: 11px 10px;
-    grid-template-columns: 30px minmax(0, 1fr) auto;
-    gap: 8px;
+    min-height: 60px;
+    padding: 8px;
+    grid-template-columns: 26px minmax(0, 1fr) auto;
+    grid-template-areas:
+      "index title side"
+      "index meta side";
+    align-items: center;
+    gap: 3px 8px;
   }
 
   .review-clip-index {
-    width: 30px;
-    height: 30px;
+    width: 26px;
+    height: 26px;
   }
 
   .review-clip-side {
@@ -9111,7 +9298,24 @@ body {
   }
 
   .review-clip-meta {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .review-clip-meta .review-meta-item {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .review-clip-meta .review-meta-item:not(:first-child) {
+    display: none;
+  }
+
+  .review-clip-item-copy > strong {
+    display: block;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    -webkit-line-clamp: 1;
   }
 
   .review-clip-expanded {
