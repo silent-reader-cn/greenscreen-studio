@@ -22,7 +22,7 @@ flowchart LR
 - A clip stores an inclusive start frame and exclusive end frame.
 - A clip may own any number of semantic markers.
 - Markers use a fixed machine-readable type plus an optional human label and JSON payload.
-- Only `approved` clips may be queued for AI export.
+- Only `approved` clips may move to the exported review state.
 - Godot export contains the clip range and an `events.json` companion artifact.
 - Every completed checklist item has focused tests and a build verification before its Git commit.
 
@@ -52,7 +52,6 @@ flowchart LR
 - [x] **Semantic markers**: Add, move, edit, and remove typed frame markers within a selected clip. (commit `774eaf4`)
 - [x] **Approval gate**: Move clips through `draft`, `needs_review`, `approved`, `exported`, `verified_in_game`, and `rejected`. (commit `f746ebc`)
 - [x] **Godot event artifact**: Export approved clip events as `events.json` beside the atlas, SpriteFrames, scene, metadata, and ZIP. (commit `9017557`)
-- [x] **AI collaboration gate**: Queue and claim export work only for approved clips; include immutable clip and marker data in the task payload. (commit `5fa1219`)
 - [x] **Automated review checks**: Surface loop-boundary, foreground-area, feet-anchor, crop, and frame-jitter warnings before approval. (commit `937f21c`)
 - [x] **Godot handoff**: Include an import-friendly event track and a minimal Godot dispatcher reference in exported metadata. (commit `081ec86`)
 - [x] **End-to-end verification**: Test project persistence, API validation, UI editing, export artifacts, and a real Godot import smoke path. (commit `04e84d5`)

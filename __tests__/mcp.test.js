@@ -19,25 +19,7 @@ import { spawnSync } from 'node:child_process'
 
 const require = createRequire(import.meta.url)
 const ffmpegPath = require('ffmpeg-static')
-const { createProjectStore, ACTION_CLIP_EXPORT_TASK_TYPE } = require('../lib/projectStore.cjs')
-
-function saveCurrentReviewChecks(store, clipId) {
-  const clip = store.getActionClip(clipId)
-  store.setActionClipReviewChecks(clipId, {
-    schemaVersion: 1,
-    generatedAt: new Date().toISOString(),
-    clip: {
-      id: clip.id,
-      version: clip.version,
-      status: clip.status,
-      startFrame: clip.startFrame,
-      endFrame: clip.endFrame,
-      loop: clip.loop,
-    },
-    summary: { status: 'pass', warningCount: 0, passCount: 5, skippedCount: 0 },
-    checks: [],
-  })
-}
+const { createProjectStore } = require('../lib/projectStore.cjs')
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -263,18 +245,13 @@ describe('Greenscreen Studio MCP protocol surface', () => {
     const sourcePath = path.join(protocolTmpDir, 'mcp-source.mp4')
     await fs.writeFile(sourcePath, 'video bytes')
     const project = store.createProject({ name: 'MCP Project' })
-    const asset = store.addAsset(project.id, {
+    store.addAsset(project.id, {
       kind: 'video',
       role: 'source',
       filePath: sourcePath,
       originalName: 'mcp-source.mp4',
       mimeType: 'video/mp4',
     })
-    const clip = store.createActionClip(project.id, { assetId: asset.id, name: 'attack_SE', startFrame: 0, endFrame: 12 })
-    store.addActionMarker(clip.id, { frame: 6, type: 'hit', payload: { hitbox: 'slash_a' } })
-    store.updateActionClip(clip.id, { status: 'needs_review' })
-    saveCurrentReviewChecks(store, clip.id)
-    store.updateActionClip(clip.id, { status: 'approved' })
 
     const server = createGreenscreenMcpServer({ projectRoot, baseDir: projectRoot, dataDir: protocolTmpDir, store })
     const client = new Client({ name: 'greenscreen-mcp-test-client', version: '1.0.0' })
@@ -298,7 +275,6 @@ describe('Greenscreen Studio MCP protocol surface', () => {
         'find_loop_end',
         'export_spritesheet',
         'export_godot_spriteframes',
-        'create_action_clip_export_task',
       ]))
 
       const resources = await client.listResources()
@@ -318,27 +294,17 @@ describe('Greenscreen Studio MCP protocol surface', () => {
       expect(info.structuredContent.name).toBe('greenscreen-studio')
             expect(info.structuredContent.tools).toContain('process_video')
             expect(info.structuredContent.tools).toContain('list_projects')
-            expect(info.structuredContent.tools).toContain('create_action_clip_export_task')
-            expect(info.structuredContent.tools).toContain('claim_next_task')
+            for (const removedTool of [
+              'list_project_tasks',
+              'create_project_task',
+              'create_action_clip_export_task',
+              'claim_next_task',
+              'complete_task',
+              'post_project_message',
+            ]) {
+              expect(info.structuredContent.tools).not.toContain(removedTool)
+            }
             expect(info.structuredContent.resources).toContain('greenscreen://studio/overview')
-
-      const queued = await client.callTool({
-        name: 'create_action_clip_export_task',
-        arguments: { projectId: project.id, clipId: clip.id, request: { target: 'godot' } },
-      })
-      expect(queued.structuredContent.payload).toMatchObject({
-        type: ACTION_CLIP_EXPORT_TASK_TYPE,
-        clipId: clip.id,
-        clip: { status: 'approved' },
-        markers: [expect.objectContaining({ type: 'hit', payload: { hitbox: 'slash_a' } })],
-      })
-
-      const claimed = await client.callTool({
-        name: 'claim_next_task',
-        arguments: { projectId: project.id, workerId: 'mcp-agent' },
-      })
-      expect(claimed.structuredContent.claimed).toBe(true)
-      expect(claimed.structuredContent.task.id).toBe(queued.structuredContent.id)
 
       const validated = await client.callTool({
         name: 'validate_processing_params',

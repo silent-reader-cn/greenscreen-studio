@@ -301,22 +301,3 @@ When `outputPath` is omitted, the tool chooses a basename from:
 - explicit override: `godot.exportName`
 
 The returned metadata includes basename, atlas dimensions, animation names, scene defaults, per-frame regions, per-frame source video frame indexes, flip flags, keying/layout params used, crop/placement information, cleanup statistics, and warnings. The ZIP contains the atlas, `.tres`, `.tscn`, and metadata as sibling files.
-
-## create_action_clip_export_task
-
-Queue AI export work for one approved action clip. The task payload contains an immutable snapshot of the clip and its semantic markers. Draft, needs-review, rejected, exported, and verified clips are rejected.
-
-Arguments:
-
-```json
-{
-  "projectId": "proj_...",
-  "clipId": "clip_...",
-  "priority": "normal",
-  "request": {
-    "target": "godot"
-  }
-}
-```
-
-Use this tool instead of `create_project_task` for action-clip export work. `claim_next_task` revalidates the current clip status and snapshot before returning the task; an export task whose clip was withdrawn from approval or changed is cancelled and skipped.

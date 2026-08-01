@@ -73,7 +73,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Project management + MCP status/logs + AI collaboration
+// Project management + MCP status/logs
 const { mountStudioApi } = require('./lib/studioApi.cjs');
 const studioServices = mountStudioApi(app);
 
@@ -1006,8 +1006,14 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     time: new Date().toISOString(),
     dataDir: studioServices.dataDir,
-    features: ['projects', 'mcp-status', 'collab', 'sse'],
+    features: ['projects', 'mcp-status', 'sse'],
   });
+});
+
+// Keep unknown API requests out of the SPA fallback. Without an explicit
+// response, unmatched GET requests can leave clients waiting indefinitely.
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'not found' });
 });
 
 // 生产环境服务前端静态文件

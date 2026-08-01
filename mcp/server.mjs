@@ -402,12 +402,6 @@ export function getCapabilities(projectRoot = DEFAULT_PROJECT_ROOT) {
           'get_project',
           'update_project',
           'add_project_asset',
-          'list_project_tasks',
-          'create_project_task',
-          'create_action_clip_export_task',
-          'claim_next_task',
-          'complete_task',
-          'post_project_message',
           'get_mcp_status',
           'get_mcp_logs',
         ],
@@ -1417,7 +1411,7 @@ export function createGreenscreenMcpServer(options = {}) {
     return toolResult(result, { filePath: true });
   });
 
-  // ===== Project management + AI collaboration =====
+  // ===== Project management =====
   registerLoggedTool('list_projects', {
     title: 'List Studio Projects',
     description: 'List Greenscreen Studio projects stored in the local SQLite database under the data folder.',
@@ -1445,7 +1439,7 @@ export function createGreenscreenMcpServer(options = {}) {
 
   registerLoggedTool('get_project', {
     title: 'Get Studio Project Bundle',
-    description: 'Return one project with assets, recent jobs, collaboration tasks, and messages.',
+    description: 'Return one project with assets, action clips, and recent jobs.',
     inputSchema: {
       projectId: z.string(),
     },
@@ -1498,98 +1492,6 @@ export function createGreenscreenMcpServer(options = {}) {
     copyIntoProject: args.copyIntoProject === true,
     meta: args.meta,
   })));
-
-  registerLoggedTool('list_project_tasks', {
-    title: 'List Collaboration Tasks',
-    description: 'List AI/human collaboration tasks for a project.',
-    inputSchema: {
-      projectId: z.string(),
-      status: z.string().optional(),
-      limit: z.number().int().positive().optional(),
-    },
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-  }, async ({ projectId, status, limit }) => toolResult({
-    tasks: store.listTasks(projectId, { status: status || null, limit }),
-  }));
-
-  registerLoggedTool('create_project_task', {
-    title: 'Create Collaboration Task',
-    description: 'Create a human/AI collaboration task on a project (export request, review, parameter tuning, etc.).',
-    inputSchema: {
-      projectId: z.string(),
-      title: z.string().min(1),
-      description: z.string().optional(),
-      assignee: z.string().optional(),
-      priority: z.enum(['high', 'normal', 'low']).optional(),
-      payload: z.record(z.string(), z.unknown()).optional(),
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, async (args) => toolResult(store.createTask(args.projectId, args)));
-
-  registerLoggedTool('create_action_clip_export_task', {
-    title: 'Create Action Clip Export Task',
-    description: 'Queue AI export work for one approved action clip and include immutable clip + marker data in the task payload.',
-    inputSchema: {
-      projectId: z.string(),
-      clipId: z.string(),
-      title: z.string().optional(),
-      description: z.string().optional(),
-      priority: z.enum(['high', 'normal', 'low']).optional(),
-      request: z.record(z.string(), z.unknown()).optional(),
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, async ({ projectId, clipId, ...options }) => toolResult(store.createActionClipExportTask(projectId, {
-    clipId,
-    ...options,
-    assignee: 'ai',
-  })));
-
-  registerLoggedTool('claim_next_task', {
-    title: 'Claim Next Collaboration Task',
-    description: 'AI worker claims the next open collaboration task, optionally scoped to one project.',
-    inputSchema: {
-      projectId: z.string().optional(),
-      workerId: z.string().optional(),
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, async ({ projectId, workerId }) => {
-    const task = store.claimNextTask({ projectId: projectId || null, workerId: workerId || 'ai' });
-    return toolResult({
-      claimed: Boolean(task),
-      task,
-      project: task ? store.getProject(task.projectId, { withCounts: true }) : null,
-    });
-  });
-
-  registerLoggedTool('complete_task', {
-    title: 'Complete Collaboration Task',
-    description: 'Mark a claimed/in-progress task as done/needs_review and optionally leave a result + message.',
-    inputSchema: {
-      taskId: z.string(),
-      status: z.enum(['done', 'needs_review', 'blocked', 'cancelled']).optional(),
-      result: z.record(z.string(), z.unknown()).optional(),
-      message: z.string().optional(),
-      author: z.string().optional(),
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, async (args) => {
-    const task = store.completeTask(args.taskId, args);
-    if (!task) throw new Error(`task not found: ${args.taskId}`);
-    return toolResult(task);
-  });
-
-  registerLoggedTool('post_project_message', {
-    title: 'Post Project Collaboration Message',
-    description: 'Leave a human or AI note on a project, optionally attached to a task.',
-    inputSchema: {
-      projectId: z.string(),
-      body: z.string().min(1),
-      author: z.string().optional(),
-      taskId: z.string().optional(),
-      meta: z.record(z.string(), z.unknown()).optional(),
-    },
-    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, async (args) => toolResult(store.addMessage(args.projectId, args)));
 
   registerLoggedTool('get_mcp_status', {
     title: 'Get MCP Live Status',
@@ -1652,7 +1554,7 @@ function registerResources(server, { store = null, dataDir = getDataDir() } = {}
 
   server.registerResource('studio-overview', 'greenscreen://studio/overview', {
     title: 'Studio Project Overview',
-    description: 'SQLite-backed project overview, open collaboration tasks, and active jobs.',
+    description: 'SQLite-backed project overview and active processing jobs.',
     mimeType: 'application/json',
   }, async (uri) => ({
     contents: [{

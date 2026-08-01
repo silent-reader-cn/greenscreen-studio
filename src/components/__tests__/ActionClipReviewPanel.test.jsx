@@ -25,10 +25,6 @@ function createApiMock({ reviewWarningCount = 0 } = {}) {
     const method = options.method || 'GET'
     if (method === 'GET') return jsonResponse({ clips })
 
-    if (method === 'POST' && String(url).endsWith('/export-task')) {
-      return jsonResponse({ id: 'task_1', payload: { type: 'action_clip_export' } }, 201)
-    }
-
     if (method === 'POST' && String(url) === '/api/video/review-checks') {
       const body = JSON.parse(options.body)
       const clip = clips.find((entry) => entry.id === body.clipId)
@@ -118,6 +114,9 @@ describe('ActionClipReviewPanel', () => {
     expect(refreshButton.classList.contains('compact-icon-action')).toBe(true)
     expect(refreshButton.textContent).toBe('')
     expect(screen.queryByRole('button', { name: t('review.rename') })).toBeNull()
+    const saveRangeButton = screen.getByRole('button', { name: t('review.createFromRange', { start: 30, end: 47 }) })
+    expect(saveRangeButton.querySelector('svg')).toBeTruthy()
+    expect(saveRangeButton.querySelector('span')).toBeTruthy()
 
     fireEvent.click(idle)
     expect(props.onSelectionChange).toHaveBeenLastCalledWith(['clip_1'])
@@ -209,11 +208,6 @@ describe('ActionClipReviewPanel', () => {
 
     expect(screen.queryByRole('button', { name: t('review.rename') })).toBeNull()
     expect(screen.queryByRole('button', { name: t('review.unloop') })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: t('review.queueExportTask') }))
-    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
-      '/api/projects/project_1/clips/clip_1/export-task',
-      expect.objectContaining({ method: 'POST' }),
-    ))
     expect(screen.queryByRole('button', { name: t('review.updateRange') })).toBeNull()
     expect(screen.getByRole('button', { name: t('review.marker.newMarker') }).disabled).toBe(true)
   })

@@ -63,6 +63,12 @@ describe('GET /api/health', () => {
     expect(res.body.status).toBe('ok')
     expect(res.body).toHaveProperty('time')
   })
+
+  it('returns 404 for removed collaboration API routes', async () => {
+    const res = await request(app).get('/api/collab/tasks')
+    expect(res.status).toBe(404)
+    expect(res.body).toEqual({ error: 'not found' })
+  })
 })
 
 // ===== POST /api/export 端点 =====

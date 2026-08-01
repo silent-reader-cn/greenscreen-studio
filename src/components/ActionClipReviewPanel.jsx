@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { ChevronDown, Layers3, Pencil, RefreshCw, Repeat2, Save, Trash2, UploadCloud, X } from 'lucide-react'
+import { ChevronDown, Layers3, Pencil, RefreshCw, Repeat2, Save, Trash2, X } from 'lucide-react'
 import { t } from '../i18n.js'
 import SemanticMarkerEditor from './SemanticMarkerEditor.jsx'
 import { useAppDialog } from './AppDialog.jsx'
@@ -290,23 +290,6 @@ export default function ActionClipReviewPanel({
     }
   }, [busy, dialog, keyingParams, layoutParams, projectId, refresh, region, videoJobId])
 
-  const handleQueueExportTask = useCallback(async (clip) => {
-    if (!projectId || !clip || busy) return
-    setBusy(true)
-    setError('')
-    try {
-      await api(`/api/projects/${projectId}/clips/${clip.id}/export-task`, {
-        method: 'POST',
-        body: JSON.stringify({}),
-      })
-      await refresh()
-    } catch (err) {
-      setError(err.message || t('review.exportTaskFailed'))
-    } finally {
-      setBusy(false)
-    }
-  }, [busy, projectId, refresh])
-
   const handleDeleteClip = useCallback(async (clip) => {
     if (!projectId || !clip?.id || busy) return
     if (!await dialog.confirm(t('review.deleteConfirm', { count: 1, names: clip.name }), {
@@ -407,7 +390,6 @@ export default function ActionClipReviewPanel({
                             <CompactIconButton size="small" icon={Layers3} label={t('review.updateRange')} onClick={() => void handleApplyRangeToClip(clip)} disabled={disabled || busy || !range} title={t('review.updateRangeHint')} />
                           </>
                         )}
-                        {clip.status === 'approved' && <CompactIconButton size="small" icon={UploadCloud} label={t('review.queueExportTask')} onClick={() => void handleQueueExportTask(clip)} disabled={busy || disabled} />}
                         <CompactIconButton size="small" icon={Trash2} label={t('review.deleteClip')} tone="danger" onClick={() => void handleDeleteClip(clip)} disabled={disabled || busy} />
                       </CompactActionGroup>
                     </div>

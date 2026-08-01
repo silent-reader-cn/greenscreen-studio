@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ChevronDown, Copy, ExternalLink, Play, Plus, RefreshCw, Trash2, X } from 'lucide-react'
 import { t } from '../i18n.js'
 import { useAppDialog } from './AppDialog.jsx'
 
@@ -40,12 +41,59 @@ function formatTime(value) {
   }
 }
 
+function ProjectDetail({ bundle, openingAssetId, onDelete, onOpenAsset, onPreviewAsset }) {
+  if (!bundle) return <p className="studio-empty">{t('studio.selectProject')}</p>
+
+  return (
+    <>
+      <div className="studio-detail-head">
+        <div>
+          <h3>{bundle.project.name}</h3>
+          <p>{bundle.project.description || t('studio.noDescription')}</p>
+        </div>
+        <button type="button" className="studio-danger-btn studio-delete-project-btn" onClick={onDelete} aria-label={t('studio.delete')} title={t('studio.delete')}>
+          <Trash2 size={15} aria-hidden="true" />
+          <span>{t('studio.delete')}</span>
+        </button>
+      </div>
+      <div className="studio-meta-grid">
+        <span className="studio-meta-item"><small>{t('studio.characterName')}</small><strong>{bundle.project.characterName || '—'}</strong></span>
+        <span className="studio-meta-item"><small>{t('studio.assets')}</small><strong>{bundle.assets?.length || 0}</strong></span>
+        <span className="studio-meta-item"><small>{t('studio.updated')}</small><strong>{formatTime(bundle.project.updatedAt)}</strong></span>
+      </div>
+      <div className="studio-section">
+        <h4>{t('studio.recentAssets')}</h4>
+        {(bundle.assets || []).map((asset) => (
+          <div key={asset.id} className="studio-row">
+            <span>{asset.role}/{asset.kind}</span>
+            <code title={asset.path}>{asset.originalName || asset.path}</code>
+            {asset.kind === 'video' && (
+              <div className="studio-asset-actions">
+                <button type="button" className="studio-primary-btn studio-asset-open" onClick={() => onOpenAsset(asset)} disabled={Boolean(openingAssetId)} aria-label={openingAssetId === asset.id ? t('studio.openingVideo') : t('studio.openInVideoKeying')} title={openingAssetId === asset.id ? t('studio.openingVideo') : t('studio.openInVideoKeying')}>
+                  <ExternalLink size={14} aria-hidden="true" />
+                  <span>{openingAssetId === asset.id ? t('studio.openingVideo') : t('studio.openInVideoKeying')}</span>
+                </button>
+                <button type="button" className="studio-mini-btn studio-asset-icon-action" onClick={() => onPreviewAsset(asset)} aria-label={t('studio.previewAsset')} title={t('studio.previewAsset')}>
+                  <Play size={14} aria-hidden="true" />
+                  <span>{t('studio.previewAsset')}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+        {(bundle.assets || []).length === 0 && <p className="studio-empty">{t('studio.noAssets')}</p>}
+      </div>
+    </>
+  )
+}
+
 export default function StudioPanel({ onOpenVideoAsset }) {
   const dialog = useAppDialog()
   const [open, setOpen] = useState(false)
-  const [tab, setTab] = useState('projects') // projects | collab | mcp
+  const [tab, setTab] = useState('projects') // projects | mcp
   const [projects, setProjects] = useState([])
   const [selectedId, setSelectedId] = useState('')
+  const [expandedProjectId, setExpandedProjectId] = useState('')
   const [bundle, setBundle] = useState(null)
   const [mcpStatus, setMcpStatus] = useState({ connected: false, state: 'disconnected' })
   const [mcpConfig, setMcpConfig] = useState(null)
@@ -55,9 +103,6 @@ export default function StudioPanel({ onOpenVideoAsset }) {
   const [busy, setBusy] = useState(false)
   const [newName, setNewName] = useState('')
   const [newCharacter, setNewCharacter] = useState('')
-  const [taskTitle, setTaskTitle] = useState('')
-  const [taskDesc, setTaskDesc] = useState('')
-  const [messageBody, setMessageBody] = useState('')
   const [copied, setCopied] = useState(false)
   const [previewAsset, setPreviewAsset] = useState(null)
   const [openingAssetId, setOpeningAssetId] = useState('')
@@ -148,7 +193,8 @@ export default function StudioPanel({ onOpenVideoAsset }) {
   }, [open, refreshProjects, refreshBundle, selectedId])
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView?.({ block: 'end' })
+    const logList = logEndRef.current?.parentElement
+    if (logList) logList.scrollTop = logList.scrollHeight
   }, [logs, open, tab])
 
   const handleCreateProject = async () => {
@@ -167,6 +213,7 @@ export default function StudioPanel({ onOpenVideoAsset }) {
       setNewCharacter('')
       await refreshProjects()
       setSelectedId(project.id)
+      setExpandedProjectId(project.id)
       setTab('projects')
     } catch (err) {
       setError(err.message)
@@ -184,6 +231,7 @@ export default function StudioPanel({ onOpenVideoAsset }) {
     setBusy(true)
     try {
       await api(`/api/projects/${selectedId}`, { method: 'DELETE' })
+      setExpandedProjectId('')
       setSelectedId('')
       setBundle(null)
       await refreshProjects()
@@ -194,54 +242,14 @@ export default function StudioPanel({ onOpenVideoAsset }) {
     }
   }
 
-  const handleCreateTask = async () => {
-    if (!selectedId || !taskTitle.trim()) return
-    setBusy(true)
-    try {
-      await api(`/api/projects/${selectedId}/tasks`, {
-        method: 'POST',
-        body: JSON.stringify({
-          title: taskTitle.trim(),
-          description: taskDesc.trim(),
-          assignee: 'ai',
-          priority: 'normal',
-        }),
-      })
-      setTaskTitle('')
-      setTaskDesc('')
-      await refreshBundle(selectedId)
-      setTab('collab')
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
+  const handleProjectToggle = (projectId) => {
+    if (expandedProjectId === projectId) {
+      setExpandedProjectId('')
+      return
     }
-  }
-
-  const handleInspectAsset = async (asset) => {
-    if (!selectedId || busy) return
-    setBusy(true)
-    setError('')
-    try {
-      const label = asset.originalName || asset.path
-      await api(`/api/projects/${selectedId}/tasks`, {
-        method: 'POST',
-        body: JSON.stringify({
-          title: t('studio.inspectAssetTask', { name: label }),
-          description: t('studio.inspectAssetDescription', { name: label }),
-          assignee: 'ai',
-          priority: 'normal',
-          payload: { assetId: asset.id, assetKind: asset.kind },
-        }),
-      })
-      await refreshBundle(selectedId)
-      setPreviewAsset(null)
-      setTab('collab')
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
-    }
+    if (projectId !== selectedId) setBundle(null)
+    setSelectedId(projectId)
+    setExpandedProjectId(projectId)
   }
 
   const handleOpenVideoAsset = async (asset) => {
@@ -269,45 +277,6 @@ export default function StudioPanel({ onOpenVideoAsset }) {
       setError(err.message || t('studio.openVideoFailed'))
     } finally {
       setOpeningAssetId('')
-    }
-  }
-
-  const handlePostMessage = async () => {
-    if (!selectedId || !messageBody.trim()) return
-    setBusy(true)
-    try {
-      await api(`/api/projects/${selectedId}/messages`, {
-        method: 'POST',
-        body: JSON.stringify({
-          author: 'human',
-          body: messageBody.trim(),
-        }),
-      })
-      setMessageBody('')
-      await refreshBundle(selectedId)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  const handleCompleteTask = async (taskId) => {
-    setBusy(true)
-    try {
-      await api(`/api/collab/tasks/${taskId}/complete`, {
-        method: 'POST',
-        body: JSON.stringify({
-          status: 'done',
-          author: 'human',
-          message: t('studio.taskMarkedDone'),
-        }),
-      })
-      await refreshBundle(selectedId)
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -361,11 +330,13 @@ export default function StudioPanel({ onOpenVideoAsset }) {
               </p>
             </div>
             <div className="studio-header-actions">
-              <button type="button" className="studio-mini-btn" onClick={() => void refreshAll()} disabled={busy}>
-                {t('studio.refresh')}
+              <button type="button" className="studio-mini-btn studio-icon-btn" onClick={() => void refreshAll()} disabled={busy} aria-label={t('studio.refresh')} title={t('studio.refresh')}>
+                <RefreshCw size={15} aria-hidden="true" />
+                <span>{t('studio.refresh')}</span>
               </button>
-              <button type="button" className="studio-mini-btn" onClick={() => setOpen(false)}>
-                {t('studio.close')}
+              <button type="button" className="studio-mini-btn studio-icon-btn" onClick={() => setOpen(false)} aria-label={t('studio.close')} title={t('studio.close')}>
+                <X size={16} aria-hidden="true" />
+                <span>{t('studio.close')}</span>
               </button>
             </div>
           </div>
@@ -373,9 +344,6 @@ export default function StudioPanel({ onOpenVideoAsset }) {
           <div className="studio-tabs" role="tablist" aria-label={t('studio.panelTitle')}>
             <button type="button" role="tab" aria-selected={tab === 'projects'} className={tab === 'projects' ? 'active' : ''} onClick={() => setTab('projects')}>
               {t('studio.tabProjects')}
-            </button>
-            <button type="button" role="tab" aria-selected={tab === 'collab'} className={tab === 'collab' ? 'active' : ''} onClick={() => setTab('collab')}>
-              {t('studio.tabCollab')}
             </button>
             <button type="button" role="tab" aria-selected={tab === 'mcp'} className={tab === 'mcp' ? 'active' : ''} onClick={() => setTab('mcp')}>
               {t('studio.tabMcp')}
@@ -385,7 +353,7 @@ export default function StudioPanel({ onOpenVideoAsset }) {
           {error && <p className="studio-error">{error}</p>}
 
           {tab === 'projects' && (
-            <div className="studio-body">
+            <div className="studio-body studio-body-projects">
               <div className="studio-create-row studio-project-create">
                 <input
                   value={newName}
@@ -397,173 +365,80 @@ export default function StudioPanel({ onOpenVideoAsset }) {
                   onChange={(e) => setNewCharacter(e.target.value)}
                   placeholder={t('studio.characterName')}
                 />
-                <button type="button" className="studio-primary-btn" onClick={() => void handleCreateProject()} disabled={busy}>
-                  {t('studio.create')}
+                <button type="button" className="studio-primary-btn studio-create-project-btn" onClick={() => void handleCreateProject()} disabled={busy} aria-label={t('studio.create')} title={t('studio.create')}>
+                  <Plus size={15} aria-hidden="true" />
+                  <span>{t('studio.create')}</span>
                 </button>
               </div>
 
               <div className="studio-split">
                 <div className="studio-list">
                   {projects.length === 0 && <p className="studio-empty">{t('studio.noProjects')}</p>}
-                  {projects.map((project) => (
-                    <button
-                      key={project.id}
-                      type="button"
-                      className={`studio-list-item ${project.id === selectedId ? 'active' : ''}`}
-                      onClick={() => setSelectedId(project.id)}
-                    >
-                      <strong>{project.name}</strong>
-                      <span>{project.characterName || project.id.slice(0, 12)}</span>
-                    </button>
-                  ))}
+                  {projects.map((project) => {
+                    const expanded = project.id === expandedProjectId
+                    const summary = project.description || project.characterName || t('studio.noDescription')
+                    return (
+                      <article key={project.id} className={`studio-project-item ${expanded ? 'expanded' : ''}`}>
+                        <button
+                          type="button"
+                          className={`studio-list-item ${project.id === selectedId ? 'active' : ''}`}
+                          aria-expanded={expanded}
+                          aria-controls={`studio-project-${project.id}`}
+                          onClick={() => handleProjectToggle(project.id)}
+                        >
+                          <span className="studio-project-summary">
+                            <strong>{project.name}</strong>
+                            <span>{summary}</span>
+                          </span>
+                          <span className="studio-project-updated">
+                            <small>{formatTime(project.updatedAt)}</small>
+                            <ChevronDown size={15} aria-hidden="true" />
+                          </span>
+                        </button>
+                        {expanded && project.id === selectedId && (
+                          <div id={`studio-project-${project.id}`} className="studio-project-expanded studio-detail">
+                            <ProjectDetail
+                              bundle={bundle}
+                              openingAssetId={openingAssetId}
+                              onDelete={() => void handleDeleteProject()}
+                              onOpenAsset={(asset) => void handleOpenVideoAsset(asset)}
+                              onPreviewAsset={setPreviewAsset}
+                            />
+                          </div>
+                        )}
+                      </article>
+                    )
+                  })}
                 </div>
 
-                <div className="studio-detail">
-                  {!bundle ? (
-                    <p className="studio-empty">{t('studio.selectProject')}</p>
-                  ) : (
-                    <>
-                      <div className="studio-detail-head">
-                        <div>
-                          <h3>{bundle.project.name}</h3>
-                          <p>{bundle.project.description || t('studio.noDescription')}</p>
-                        </div>
-                        <button type="button" className="studio-danger-btn" onClick={() => void handleDeleteProject()}>
-                          {t('studio.delete')}
-                        </button>
-                      </div>
-                      <div className="studio-meta-grid">
-                        <span>{t('studio.characterName')}</span>
-                        <strong>{bundle.project.characterName || '—'}</strong>
-                        <span>{t('studio.assets')}</span>
-                        <strong>{bundle.assets?.length || 0}</strong>
-                        <span>{t('studio.tasks')}</span>
-                        <strong>{bundle.tasks?.length || 0}</strong>
-                        <span>{t('studio.updated')}</span>
-                        <strong>{formatTime(bundle.project.updatedAt)}</strong>
-                      </div>
-                      <div className="studio-section">
-                        <h4>{t('studio.recentAssets')}</h4>
-                        {(bundle.assets || []).slice(0, 8).map((asset) => (
-                          <div key={asset.id} className="studio-row">
-                            <span>{asset.role}/{asset.kind}</span>
-                            <code title={asset.path}>{asset.originalName || asset.path}</code>
-                            {asset.kind === 'video' && (
-                              <div className="studio-asset-actions">
-                                <button type="button" className="studio-primary-btn" onClick={() => void handleOpenVideoAsset(asset)} disabled={Boolean(openingAssetId)}>
-                                  {openingAssetId === asset.id ? t('studio.openingVideo') : t('studio.openInVideoKeying')}
-                                </button>
-                                <button type="button" className="studio-mini-btn" onClick={() => setPreviewAsset(asset)}>
-                                  {t('studio.previewAsset')}
-                                </button>
-                                <button type="button" className="studio-mini-btn" onClick={() => void handleInspectAsset(asset)} disabled={busy}>
-                                  {t('studio.inspectAsset')}
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                        {(bundle.assets || []).length === 0 && <p className="studio-empty">{t('studio.noAssets')}</p>}
-                      </div>
-                    </>
-                  )}
+                <div className="studio-detail studio-desktop-detail">
+                  <ProjectDetail
+                    bundle={bundle}
+                    openingAssetId={openingAssetId}
+                    onDelete={() => void handleDeleteProject()}
+                    onOpenAsset={(asset) => void handleOpenVideoAsset(asset)}
+                    onPreviewAsset={setPreviewAsset}
+                  />
                 </div>
               </div>
             </div>
           )}
 
-          {tab === 'collab' && (
-            <div className="studio-body">
-              {!selectedId ? (
-                <p className="studio-empty">{t('studio.selectProject')}</p>
-              ) : (
-                <>
-                  <div className="studio-create-col">
-                    <input
-                      value={taskTitle}
-                      onChange={(e) => setTaskTitle(e.target.value)}
-                      placeholder={t('studio.taskTitle')}
-                    />
-                    <textarea
-                      value={taskDesc}
-                      onChange={(e) => setTaskDesc(e.target.value)}
-                      placeholder={t('studio.taskDescription')}
-                      rows={2}
-                    />
-                    <button type="button" className="studio-primary-btn" onClick={() => void handleCreateTask()} disabled={busy}>
-                      {t('studio.createTask')}
-                    </button>
-                  </div>
-
-                  <div className="studio-section">
-                    <h4>{t('studio.openTasks')}</h4>
-                    {(bundle?.tasks || []).filter((task) => !['done', 'cancelled'].includes(task.status)).map((task) => (
-                      <div key={task.id} className="studio-task">
-                        <div>
-                          <strong>{task.title}</strong>
-                          <p>{task.description || t('studio.noDescription')}</p>
-                          <span className="studio-chip">{task.status} · {task.assignee} · {task.priority}</span>
-                        </div>
-                        {task.status !== 'done' && (
-                          <button type="button" className="studio-mini-btn" onClick={() => void handleCompleteTask(task.id)}>
-                            {t('studio.markDone')}
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    {(bundle?.tasks || []).filter((task) => !['done', 'cancelled'].includes(task.status)).length === 0 && (
-                      <p className="studio-empty">{t('studio.noTasks')}</p>
-                    )}
-                  </div>
-
-                  <div className="studio-section">
-                    <h4>{t('studio.messages')}</h4>
-                    <div className="studio-messages">
-                      {(bundle?.messages || []).map((msg) => (
-                        <div key={msg.id} className="studio-message">
-                          <strong>{msg.author}</strong>
-                          <span>{formatTime(msg.createdAt)}</span>
-                          <p>{msg.body}</p>
-                        </div>
-                      ))}
-                      {(bundle?.messages || []).length === 0 && <p className="studio-empty">{t('studio.noMessages')}</p>}
-                    </div>
-                    <div className="studio-create-row studio-message-create">
-                      <input
-                        value={messageBody}
-                        onChange={(e) => setMessageBody(e.target.value)}
-                        placeholder={t('studio.messagePlaceholder')}
-                      />
-                      <button type="button" className="studio-primary-btn" onClick={() => void handlePostMessage()} disabled={busy}>
-                        {t('studio.send')}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
           {tab === 'mcp' && (
-            <div className="studio-body">
+            <div className="studio-body studio-body-mcp">
               <div className="studio-meta-grid">
-                <span>{t('studio.status')}</span>
-                <strong className={mcpStatus.connected ? 'ok' : ''}>
-                  {mcpStatus.connected ? t('studio.connected') : t('studio.disconnected')}
-                </strong>
-                <span>{t('studio.sessions')}</span>
-                <strong>{mcpStatus.activeSessionCount || 0}</strong>
-                <span>{t('studio.lastTool')}</span>
-                <strong>{mcpStatus.lastTool || '—'}</strong>
-                <span>{t('studio.lastSeen')}</span>
-                <strong>{formatTime(mcpStatus.lastSeenAt)}</strong>
+                <span className="studio-meta-item"><small>{t('studio.status')}</small><strong className={mcpStatus.connected ? 'ok' : ''}>{mcpStatus.connected ? t('studio.connected') : t('studio.disconnected')}</strong></span>
+                <span className="studio-meta-item"><small>{t('studio.sessions')}</small><strong>{mcpStatus.activeSessionCount || 0}</strong></span>
+                <span className="studio-meta-item"><small>{t('studio.lastTool')}</small><strong>{mcpStatus.lastTool || '—'}</strong></span>
+                <span className="studio-meta-item"><small>{t('studio.lastSeen')}</small><strong>{formatTime(mcpStatus.lastSeenAt)}</strong></span>
               </div>
 
               <div className="studio-section">
                 <div className="studio-detail-head">
                   <h4>{t('studio.mcpConfig')}</h4>
-                  <button type="button" className="studio-mini-btn" onClick={() => void copyMcpConfig()}>
-                    {copied ? t('studio.copied') : t('studio.copyJson')}
+                  <button type="button" className="studio-mini-btn studio-copy-config-btn" onClick={() => void copyMcpConfig()}>
+                    <Copy size={14} aria-hidden="true" />
+                    <span>{copied ? t('studio.copied') : t('studio.copyJson')}</span>
                   </button>
                 </div>
                 <pre className="studio-code">{mcpConfig?.formats?.json || t('studio.loading')}</pre>
@@ -613,9 +488,6 @@ export default function StudioPanel({ onOpenVideoAsset }) {
                   {openingAssetId === previewAsset.id ? t('studio.openingVideo') : t('studio.openInVideoKeying')}
                 </button>
               )}
-              <button type="button" className="studio-mini-btn" onClick={() => void handleInspectAsset(previewAsset)} disabled={busy}>
-                {t('studio.inspectAsset')}
-              </button>
             </div>
           </div>
         </div>
