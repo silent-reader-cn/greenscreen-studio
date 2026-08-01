@@ -120,7 +120,9 @@ describe('ActionClipReviewPanel', () => {
     expect(props.onApplyClipRange).toHaveBeenCalledWith(expect.objectContaining({ id: 'clip_1' }))
 
     rerender(<ActionClipReviewPanel {...props} selectedClipIds={['clip_1']} />)
-    expect(screen.getByRole('button', { name: t('review.rename') })).toBeTruthy()
+    const renameButton = screen.getByRole('button', { name: t('review.rename') })
+    expect(renameButton.classList.contains('compact-icon-action')).toBe(true)
+    expect(renameButton.textContent).toBe('')
     fireEvent.click(screen.getByText('attack'), { ctrlKey: true })
     expect(props.onSelectionChange).toHaveBeenLastCalledWith(['clip_1', 'clip_2'])
 
@@ -170,7 +172,7 @@ describe('ActionClipReviewPanel', () => {
       )
     })
 
-    fireEvent.click(screen.getByRole('button', { name: t('review.deleteSelected') }))
+    fireEvent.click(screen.getByRole('button', { name: t('review.deleteClip') }))
     await waitFor(() => expect(screen.queryByText('recover_fast')).toBeNull())
     expect(confirm).toHaveBeenCalledOnce()
   })
@@ -201,14 +203,14 @@ describe('ActionClipReviewPanel', () => {
     }))
     expect(screen.getByText(`${t('review.checks.foreground_area')}: ${t('review.checks.status.pass')}`)).toBeTruthy()
 
-    expect(screen.getByRole('button', { name: t('review.rename') }).disabled).toBe(true)
-    expect(screen.getByRole('button', { name: t('review.unloop') }).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: t('review.rename') })).toBeNull()
+    expect(screen.queryByRole('button', { name: t('review.unloop') })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: t('review.queueExportTask') }))
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(
       '/api/projects/project_1/clips/clip_1/export-task',
       expect.objectContaining({ method: 'POST' }),
     ))
-    expect(screen.getByRole('button', { name: t('review.updateRange') }).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: t('review.updateRange') })).toBeNull()
     expect(screen.getByRole('button', { name: t('review.marker.newMarker') }).disabled).toBe(true)
   })
 
@@ -230,21 +232,20 @@ describe('ActionClipReviewPanel', () => {
     expect(screen.getByText(`${t('review.checks.foreground_area')}: ${t('review.checks.status.warning')}`)).toBeTruthy()
   })
 
-  it('uses an explicit touch multi-select mode without applying clip ranges', async () => {
+  it('uses the same direct expand and collapse interaction on touch', async () => {
     const onSelectionChange = vi.fn()
     const onApplyClipRange = vi.fn()
     const { rerender, props } = renderPanel({ mobile: true, onSelectionChange, onApplyClipRange })
     await screen.findByText('idle')
 
     expect(screen.queryByText(t('review.selectHint'))).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: t('review.multiSelect') }))
     fireEvent.click(screen.getByText('idle'))
     expect(onSelectionChange).toHaveBeenLastCalledWith(['clip_1'])
-    expect(onApplyClipRange).not.toHaveBeenCalled()
+    expect(onApplyClipRange).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'clip_1' }))
 
     rerender(<ActionClipReviewPanel {...props} mobile selectedClipIds={['clip_1']} />)
-    fireEvent.click(screen.getByText('attack'))
-    expect(onSelectionChange).toHaveBeenLastCalledWith(['clip_1', 'clip_2'])
-    expect(onApplyClipRange).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: t('review.marker.newMarker') })).toBeTruthy()
+    fireEvent.click(screen.getByText('idle'))
+    expect(onSelectionChange).toHaveBeenLastCalledWith([])
   })
 })

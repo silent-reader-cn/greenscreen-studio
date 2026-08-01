@@ -71,6 +71,8 @@ describe('SemanticMarkerEditor', () => {
     )
 
     await screen.findByText('startup')
+    expect(screen.getByRole('button', { name: t('review.marker.newMarker') }).classList.contains('compact-icon-action')).toBe(true)
+    expect(screen.getByRole('button', { name: t('review.refresh') }).classList.contains('compact-icon-action')).toBe(true)
     expect(onMarkersChange).toHaveBeenLastCalledWith([
       expect.objectContaining({ id: 'marker_1', frame: 12, type: 'windup_end' }),
     ])

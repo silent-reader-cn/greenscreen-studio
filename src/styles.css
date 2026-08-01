@@ -8353,6 +8353,23 @@ body {
   gap: 10px;
 }
 
+.review-pane.review-slices-pane {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.review-slices-pane > .review-pane-header {
+  padding-inline: 2px;
+  border-bottom: 0;
+  background: transparent;
+}
+
+.review-slices-pane > .review-pane-body {
+  padding: 0;
+}
+
 .review-pane {
   min-width: 0;
   border: 1px solid var(--workspace-border);
@@ -8577,69 +8594,121 @@ body {
 }
 
 .review-clip-list {
-  max-height: 330px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  max-height: none;
+  overflow: visible;
 }
 
 .review-clip-item {
-  position: relative;
   min-width: 0;
-  min-height: 64px;
-  padding: 9px 8px 9px 36px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 8px;
+  padding: 0;
+  display: block;
+  gap: 0;
   border: 1px solid var(--workspace-border);
-  border-radius: var(--workspace-radius-sm);
+  border-radius: var(--workspace-radius-md);
   background: var(--workspace-surface);
-  cursor: pointer;
-  outline: none;
+  box-shadow: 0 1px 3px rgba(23, 33, 43, 0.06);
+  cursor: default;
+  overflow: hidden;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.review-clip-item:hover,
-.review-clip-item:focus-visible {
+.review-clip-item:hover {
   border-color: var(--workspace-accent-border);
-  background: #f8fbfa;
+  box-shadow: 0 3px 10px rgba(23, 33, 43, 0.08);
 }
 
 .review-clip-item.selected {
   border-color: var(--workspace-accent);
-  background: var(--workspace-accent-soft);
-  box-shadow: 0 0 0 1px rgba(22, 128, 90, 0.08);
+  box-shadow: inset 3px 0 0 var(--workspace-accent), 0 3px 10px rgba(23, 33, 43, 0.08);
 }
 
-.review-selection-mark {
-  position: absolute;
-  top: 10px;
-  left: 9px;
-  width: 18px;
-  height: 18px;
+.review-clip-summary {
+  width: 100%;
+  min-width: 0;
+  min-height: 92px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "index title side"
+    "index meta meta";
+  align-items: start;
+  gap: 9px 10px;
+  border: 0;
+  outline: none;
+  background: var(--workspace-surface);
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.review-clip-summary:hover,
+.review-clip-summary:focus-visible {
+  background: #f8fbfa;
+}
+
+.review-clip-summary:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--workspace-accent);
+}
+
+.review-clip-item.selected .review-clip-summary {
+  background: var(--workspace-accent-soft);
+}
+
+.review-clip-index {
+  grid-area: index;
+  width: 32px;
+  height: 32px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--workspace-border-strong);
-  border-radius: 5px;
-  background: var(--workspace-surface);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 800;
+  align-self: center;
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface-muted);
+  color: var(--workspace-text-muted);
+  font-size: 10px;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
 }
 
-.review-clip-item.selected .review-selection-mark {
-  border-color: var(--workspace-accent);
-  background: var(--workspace-accent);
+.review-clip-side {
+  grid-area: side;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: end;
+}
+
+.review-clip-chevron {
+  flex: 0 0 auto;
+  color: var(--workspace-text-muted);
+  transition: transform 160ms ease;
+}
+
+.review-clip-summary[aria-expanded="true"] .review-clip-chevron {
+  transform: rotate(180deg);
+}
+
+.review-clip-expanded {
+  min-width: 0;
+  padding: 12px;
+  border-top: 1px solid var(--workspace-border);
+  background: var(--workspace-surface);
 }
 
 .review-clip-item-copy > strong {
   display: -webkit-box;
   overflow: hidden;
   color: var(--workspace-text);
-  font-size: 12px;
-  line-height: 1.35;
+  font-size: 13px;
+  line-height: 1.4;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.review-clip-item-copy {
+  grid-area: title;
+  display: block;
 }
 
 .review-clip-meta,
@@ -8649,6 +8718,21 @@ body {
   display: flex;
   flex-wrap: wrap;
   gap: 5px 10px;
+}
+
+.review-clip-meta {
+  grid-area: meta;
+  margin-top: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px 8px;
+}
+
+.review-clip-meta .review-meta-item {
+  padding-left: 7px;
+  justify-content: flex-start;
+  border-left: 2px solid var(--workspace-border);
+  white-space: nowrap;
 }
 
 .review-meta-item {
@@ -8700,14 +8784,40 @@ body {
 .review-check-badge.status-pass { border-color: #b4d9c3; background: #eef9f3; color: #176342; }
 .review-check-badge.status-warning { border-color: #e7ca84; background: #fff8e7; color: #79570e; }
 
-.review-detail-actions {
-  flex-wrap: wrap;
-  padding-top: 9px;
-  border-top: 1px solid var(--workspace-border);
+.review-clip-toolbar {
+  min-width: 0;
+  min-height: 42px;
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-radius: var(--workspace-radius-sm);
+  background: var(--workspace-surface-soft);
 }
 
-.review-status-field {
-  width: 138px;
+.review-clip-status-control {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--workspace-text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.review-clip-status-control .review-status-select {
+  width: 96px;
+  min-width: 0;
+  min-height: 30px;
+  height: 30px;
+  padding: 3px 24px 3px 7px;
+  font-size: 11px;
+}
+
+.review-clip-tool-actions {
+  min-width: 0;
   margin-left: auto;
 }
 
@@ -8756,12 +8866,12 @@ body {
 
 .review-marker-editor {
   min-width: 0;
-  margin-top: 2px;
-  padding-top: 10px;
+  margin-top: 0;
+  padding-top: 2px;
   display: flex;
   flex-direction: column;
-  gap: 9px;
-  border-top: 1px solid var(--workspace-border);
+  gap: 8px;
+  border-top: 0;
 }
 
 .review-marker-head {
@@ -8774,6 +8884,14 @@ body {
 .review-marker-head-actions {
   flex: 0 0 auto;
   flex-direction: row;
+}
+
+.review-marker-head-actions .compact-icon-action {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  flex-basis: 34px;
 }
 
 .review-marker-title-row {
@@ -8858,48 +8976,13 @@ body {
 }
 
 @media (min-width: 901px) {
-  .sidebar.workspace-sidebar:has(.workspace-panel-review:not([hidden])) {
-    width: min(760px, 58vw);
-    min-width: min(760px, 58vw);
-  }
-
   .workspace-panel-review {
     padding: 12px;
-  }
-
-  .review-workspace-grid {
-    grid-template-columns: minmax(280px, 0.88fr) minmax(330px, 1.12fr);
-  }
-
-  .review-library-pane,
-  .review-detail-pane {
-    min-height: 480px;
-  }
-
-  .review-detail-empty .review-pane-body {
-    min-height: 410px;
-    justify-content: center;
   }
 }
 
 @media (min-width: 901px) and (max-width: 1179px) {
-  .sidebar.workspace-sidebar:has(.workspace-panel-review:not([hidden])) {
-    width: min(640px, 62vw);
-    min-width: min(640px, 62vw);
-  }
-
-  .review-workspace-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .review-library-pane,
-  .review-detail-pane {
-    min-height: 0;
-  }
-
-  .review-detail-empty .review-pane-body {
-    min-height: 180px;
-  }
+  .review-clip-summary { grid-template-columns: 32px minmax(0, 1fr) auto; }
 }
 
 @media (max-width: 900px) {
@@ -9011,23 +9094,41 @@ body {
     max-height: none;
   }
 
-  .review-detail-pane {
-    margin-top: 2px;
+  .review-clip-summary {
+    min-height: 96px;
+    padding: 11px 10px;
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    gap: 8px;
   }
 
-  .review-detail-actions {
-    display: flex;
-    flex-wrap: wrap;
+  .review-clip-index {
+    width: 30px;
+    height: 30px;
   }
 
-  .review-status-field {
-    width: auto;
-    margin: 0;
+  .review-clip-side {
+    gap: 4px;
   }
 
-  .review-detail-actions .review-status-field {
-    min-width: 0;
-    flex: 1 1 160px;
+  .review-clip-meta {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .review-clip-expanded {
+    padding: 10px 8px;
+  }
+
+  .review-clip-toolbar {
+    padding: 4px;
+    gap: 6px;
+  }
+
+  .review-clip-status-control {
+    gap: 4px;
+  }
+
+  .review-clip-status-control .review-status-select {
+    width: 90px;
   }
 
   .review-rename-form {
@@ -9056,11 +9157,11 @@ body {
   }
 
   .review-marker-head-actions .compact-icon-action {
-    width: 40px;
-    height: 40px;
-    min-width: 40px;
-    min-height: 40px;
-    flex-basis: 40px;
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    min-height: 34px;
+    flex-basis: 34px;
   }
 
   .review-marker-row {

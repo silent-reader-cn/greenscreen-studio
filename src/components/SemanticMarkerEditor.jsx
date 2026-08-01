@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Pencil, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react'
 import { t } from '../i18n.js'
 import { useAppDialog } from './AppDialog.jsx'
-import { CompactActionGroup, ResponsiveActionButton } from './ControlKit.jsx'
+import { CompactActionGroup, CompactIconButton, ResponsiveActionButton } from './ControlKit.jsx'
 import { CountBadge, EmptyState, ReviewField, ReviewRange } from './ReviewKit.jsx'
 import {
   MARKER_TYPES,
@@ -202,15 +202,15 @@ export default function SemanticMarkerEditor({
           <p>{t('review.marker.sectionHint')}</p>
         </div>
         <div className="review-marker-head-actions">
-          <ResponsiveActionButton
-            mobile={mobile}
+          <CompactIconButton
+            size="small"
             icon={RefreshCw}
             label={loading ? t('review.marker.loading') : t('review.refresh')}
             onClick={() => void refresh()}
             disabled={loading || busy}
           />
-          <ResponsiveActionButton
-            mobile={mobile}
+          <CompactIconButton
+            size="small"
             icon={createOpen ? X : Plus}
             label={createOpen ? t('review.marker.closeCreate') : t('review.marker.newMarker')}
             tone={createOpen ? 'secondary' : 'primary'}

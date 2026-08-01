@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Clapperboard,
   Download,
   Frame,
+  Scissors,
   SlidersHorizontal,
   Upload,
   WandSparkles,
@@ -13,7 +13,7 @@ const TOOL_DEFINITIONS = [
   { id: 'source', icon: Upload, labelKey: 'app.workspaceSource' },
   { id: 'keying', icon: WandSparkles, labelKey: 'app.workspaceKeying' },
   { id: 'layout', icon: Frame, labelKey: 'app.workspaceLayout' },
-  { id: 'review', icon: Clapperboard, labelKey: 'app.workspaceReview', videoOnly: true },
+  { id: 'review', icon: Scissors, labelKey: 'app.workspaceReview', videoOnly: true },
   { id: 'export', icon: Download, labelKey: 'app.workspaceExport' },
 ]
 
