@@ -130,7 +130,7 @@ describe('compact parameter panels', () => {
   })
 
   it('does not render a reset action on mobile keying controls', () => {
-    render(
+    const { container } = render(
       <KeyingPanel
         mobile
         params={{ keyColor: [0, 255, 0], tolerance: 30, spillSuppression: 40, feather: 15, edgeShrink: 0 }}
@@ -138,6 +138,8 @@ describe('compact parameter panels', () => {
       />,
     )
 
+    expect(container.querySelector('.mobile-keying-panel')).toBeTruthy()
+    expect(container.querySelector('.desktop-keying-panel')).toBeNull()
     expect(screen.queryByRole('button', { name: t('keying.reset') })).toBeNull()
   })
 })

@@ -18,8 +18,7 @@ import LayoutPanel from './components/LayoutPanel.jsx'
 import PreviewCanvas from './components/PreviewCanvas.jsx'
 import VideoPanel from './components/VideoPanel.jsx'
 import VideoPreview from './components/VideoPreview.jsx'
-import ProfileSwitcher from './components/ProfileSwitcher.jsx'
-import MobileProfilePanel from './components/MobileProfilePanel.jsx'
+import ProfileMenu from './components/ProfileMenu.jsx'
 import StudioPanel from './components/StudioPanel.jsx'
 import ActionClipReviewPanel from './components/ActionClipReviewPanel.jsx'
 import WorkspaceSidebar from './components/WorkspaceSidebar.jsx'
@@ -594,7 +593,7 @@ export default function App() {
   // Mobile: keep the preview visible while settings use a three-stage bottom sheet.
   const [mobileSheetState, setMobileSheetState] = useState('half')
   const [mobileSheetDragging, setMobileSheetDragging] = useState(false)
-  const [activeTool, setActiveTool] = useState('source')
+  const [activeTool, setActiveTool] = useState('keying')
   const appRef = useRef(null)
   const mobileSheetRef = useRef(null)
   const mobileSheetDragRef = useRef(null)
@@ -664,7 +663,7 @@ export default function App() {
   // 切换模式时保留另一边状态，避免 Tab 来回切换导致预览丢失
   const switchMode = useCallback((mode) => {
     setMediaMode(mode)
-    setActiveTool('source')
+    setActiveTool('keying')
     setRegionSelectionMode(false)
     setRegionDraft(null)
   }, [])
@@ -1433,9 +1432,14 @@ export default function App() {
     >
       <header className="header">
         <div className="header-brand">
-          <span className="header-brand-mark" aria-hidden="true">
-            <Layers3 size={19} strokeWidth={1.8} />
-          </span>
+          <ProfileMenu
+            profiles={profiles}
+            activeProfileId={activeProfileId}
+            onSelect={handleSelectProfile}
+            onCreate={handleCreateProfile}
+            onRename={handleRenameProfile}
+            onDelete={handleDeleteProfile}
+          />
           <div className="header-copy">
             <h1>{t('app.title')}</h1>
             <p title={currentAssetName || t('app.noAsset')}>
@@ -1444,16 +1448,6 @@ export default function App() {
           </div>
         </div>
         <div className="header-actions">
-          <div className="header-profiles desktop-profiles">
-            <ProfileSwitcher
-              profiles={profiles}
-              activeProfileId={activeProfileId}
-              onSelect={handleSelectProfile}
-              onCreate={handleCreateProfile}
-              onRename={handleRenameProfile}
-              onDelete={handleDeleteProfile}
-            />
-          </div>
           <StudioPanel onOpenVideoAsset={handleOpenProjectVideo} />
           <button type="button" className="header-import-btn" onClick={openFilePicker}>
             <Upload size={16} aria-hidden="true" />
@@ -1488,86 +1482,6 @@ export default function App() {
           onMobileSheetHandleClick={handleMobileSheetHandleClick}
           onToolChange={handleWorkspaceToolChange}
         >
-          <section
-            className="workspace-panel workspace-panel-source"
-            hidden={activeTool !== 'source'}
-            aria-label={t('app.workspaceSource')}
-          >
-            {mobileUi ? (
-              <>
-                <section className="mobile-source-card">
-                  <span className="mobile-source-icon" aria-hidden="true">
-                    <FolderInput size={21} strokeWidth={1.8} />
-                  </span>
-                  <div className="mobile-source-copy">
-                    <span>{t('file.title')}</span>
-                    <strong title={currentAssetName || t('app.noAsset')}>
-                      {currentAssetName || t('app.noAsset')}
-                    </strong>
-                  </div>
-                  <button type="button" className="mobile-source-import" onClick={openFilePicker}>
-                    <Upload size={17} aria-hidden="true" />
-                    {t('app.importAsset')}
-                  </button>
-                </section>
-                <FileMetaPanel
-                  mobile
-                  mediaMode={mediaMode}
-                  imageFile={imageFile}
-                  imageSize={imageSize}
-                  imageRegion={imageRegion}
-                  videoRegion={videoRegion}
-                  regionSelectionMode={regionSelectionMode}
-                  onSelectImageRegion={beginImageRegionSelection}
-                  onResetImageRegion={resetImageRegion}
-                  onSelectVideoRegion={beginVideoRegionSelection}
-                  onResetVideoRegion={resetVideoRegion}
-                  videoFile={videoFile}
-                  videoInfo={videoInfo}
-                />
-                <MobileProfilePanel
-                  profiles={profiles}
-                  activeProfileId={activeProfileId}
-                  onSelect={handleSelectProfile}
-                  onCreate={handleCreateProfile}
-                  onRename={handleRenameProfile}
-                  onDelete={handleDeleteProfile}
-                />
-              </>
-            ) : (
-              <>
-                <div className="source-chooser">
-                  <span className="source-chooser-icon" aria-hidden="true">
-                    <FolderInput size={20} strokeWidth={1.8} />
-                  </span>
-                  <span className="source-chooser-copy">
-                    <small>{t('file.title')}</small>
-                    <strong title={currentAssetName || t('app.noAsset')}>
-                      {currentAssetName || t('app.noAsset')}
-                    </strong>
-                  </span>
-                  <button type="button" onClick={openFilePicker}>
-                    <Upload size={15} aria-hidden="true" />
-                    {currentAssetName ? t('app.replaceAsset') : t('app.importAsset')}
-                  </button>
-                </div>
-                <FileMetaPanel
-                  mediaMode={mediaMode}
-                  imageFile={imageFile}
-                  imageSize={imageSize}
-                  imageRegion={imageRegion}
-                  videoRegion={videoRegion}
-                  regionSelectionMode={regionSelectionMode}
-                  onSelectImageRegion={beginImageRegionSelection}
-                  onResetImageRegion={resetImageRegion}
-                  onSelectVideoRegion={beginVideoRegionSelection}
-                  onResetVideoRegion={resetVideoRegion}
-                  videoFile={videoFile}
-                  videoInfo={videoInfo}
-                />
-              </>
-            )}
-          </section>
           <section
             className="workspace-panel workspace-panel-review"
             hidden={activeTool !== 'review'}
@@ -1622,6 +1536,21 @@ export default function App() {
             hidden={activeTool !== 'export'}
             aria-label={t('app.workspaceExport')}
           >
+            <FileMetaPanel
+              mobile={mobileUi}
+              mediaMode={mediaMode}
+              imageFile={imageFile}
+              imageSize={imageSize}
+              imageRegion={imageRegion}
+              videoRegion={videoRegion}
+              regionSelectionMode={regionSelectionMode}
+              onSelectImageRegion={beginImageRegionSelection}
+              onResetImageRegion={resetImageRegion}
+              onSelectVideoRegion={beginVideoRegionSelection}
+              onResetVideoRegion={resetVideoRegion}
+              videoFile={videoFile}
+              videoInfo={videoInfo}
+            />
             {mediaMode === 'video' && (
               <VideoPanel
                 mobile={mobileUi}

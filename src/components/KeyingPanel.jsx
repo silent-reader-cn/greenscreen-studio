@@ -2,10 +2,13 @@ import React from 'react'
 import { t } from '../i18n.js'
 import { ControlSection, SliderField } from './ControlKit.jsx'
 
-export default function KeyingPanel({ params, onChange }) {
+export default function KeyingPanel({ mobile = false, params, onChange }) {
   const update = (key, val) => onChange({ ...params, [key]: val })
   return (
-    <section className="parameter-panel keying-parameter-panel" aria-label={t('keying.title')}>
+    <section
+      className={`parameter-panel keying-parameter-panel ${mobile ? 'mobile-keying-panel' : 'desktop-keying-panel'}`}
+      aria-label={t('keying.title')}
+    >
       <ControlSection title={t('keying.colorExtraction')}>
         <label className="control-color-field">
           <span>{t('keying.keyColor')}</span>

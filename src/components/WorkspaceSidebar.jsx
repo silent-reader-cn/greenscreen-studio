@@ -4,13 +4,11 @@ import {
   Frame,
   Scissors,
   SlidersHorizontal,
-  Upload,
   WandSparkles,
 } from 'lucide-react'
 import { t } from '../i18n.js'
 
 const TOOL_DEFINITIONS = [
-  { id: 'source', icon: Upload, labelKey: 'app.workspaceSource' },
   { id: 'keying', icon: WandSparkles, labelKey: 'app.workspaceKeying' },
   { id: 'layout', icon: Frame, labelKey: 'app.workspaceLayout' },
   { id: 'review', icon: Scissors, labelKey: 'app.workspaceReview', videoOnly: true },
