@@ -5,6 +5,8 @@ import {
   FolderInput,
   Image as ImageIcon,
   Layers3,
+  Moon,
+  Sun,
   Upload,
   Video,
 } from 'lucide-react'
@@ -38,17 +40,31 @@ import {
 } from './lib/appProfiles.js'
 import { getBaseMediaMetadata, getClipboardMediaFile, getMediaKind, normalizeMediaFile } from './lib/mediaFiles.js'
 import { captureVideoFirstFrame, getContainSize, measureSourceCharacterHeight, putImageDataLike, readMediaIntrinsicMetadata } from './lib/mediaCanvas.js'
+import { applyTheme, getInitialTheme, storeTheme } from './lib/theme.js'
 
 const MOBILE_SHEET_STEPS = ['collapsed', 'half', 'full']
 const MOBILE_UI_QUERY = '(max-width: 900px)'
 
 export default function App() {
   const dialog = useAppDialog()
+  const [theme, setTheme] = useState(getInitialTheme)
   const [mobileUi, setMobileUi] = useState(() => (
     typeof window !== 'undefined' && typeof window.matchMedia === 'function'
       ? window.matchMedia(MOBILE_UI_QUERY).matches
       : false
   ))
+
+  useEffect(() => {
+    applyTheme(theme)
+  }, [theme])
+
+  const toggleTheme = useCallback(() => {
+    setTheme(current => {
+      const nextTheme = current === 'dark' ? 'light' : 'dark'
+      storeTheme(nextTheme)
+      return nextTheme
+    })
+  }, [])
 
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return undefined
@@ -945,6 +961,17 @@ export default function App() {
         </div>
         <div className="header-actions">
           <StudioPanel onOpenVideoAsset={handleOpenProjectVideo} />
+          <button
+            type="button"
+            className="theme-toggle"
+            onClick={toggleTheme}
+            aria-label={theme === 'dark' ? t('app.switchToLightMode') : t('app.switchToDarkMode')}
+            title={theme === 'dark' ? t('app.switchToLightMode') : t('app.switchToDarkMode')}
+          >
+            {theme === 'dark'
+              ? <Sun size={16} aria-hidden="true" />
+              : <Moon size={16} aria-hidden="true" />}
+          </button>
           <button type="button" className="header-import-btn" onClick={openFilePicker} aria-label={t('app.importAsset')}>
             <Upload size={16} aria-hidden="true" />
             <span>{t('app.importAsset')}</span>
