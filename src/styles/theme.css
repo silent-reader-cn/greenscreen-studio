@@ -257,3 +257,23 @@
   background: var(--workspace-accent-soft);
   color: var(--workspace-accent);
 }
+
+/* ===== Dark mode: review composer / marker create (was hardcoded light mint) ===== */
+:root[data-theme='dark'] .review-composer,
+:root[data-theme='dark'] .review-marker-create {
+  background: var(--workspace-accent-soft);
+}
+
+/* ===== Dark mode: delete buttons - dim the bright pink border ===== */
+:root[data-theme='dark'] .studio-danger-btn {
+  border-color: var(--workspace-danger-soft);
+}
+
+:root[data-theme='dark'] .studio-danger-btn:hover:not(:disabled) {
+  border-color: var(--workspace-danger);
+}
+
+/* ===== Dark mode: danger icon buttons (trash) - dim bright pink border ===== */
+:root[data-theme='dark'] .compact-icon-action.tone-danger {
+  border-color: var(--workspace-danger-soft);
+}
