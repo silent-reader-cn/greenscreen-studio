@@ -129,4 +129,69 @@ describe('SemanticMarkerEditor', () => {
     expect(screen.getByRole('button', { name: t('review.marker.newMarker') }).classList.contains('compact-icon-action')).toBe(true)
     expect(screen.getByRole('button', { name: t('review.refresh') }).classList.contains('compact-icon-action')).toBe(true)
   })
+
+  it('syncs the new-marker frame draft with the preview frame', async () => {
+    const onSeekRequest = vi.fn()
+    const { rerender } = render(
+      <SemanticMarkerEditor
+        projectId="project_1"
+        clip={{ id: 'clip_1', name: 'attack', startFrame: 10, endFrame: 40 }}
+        previewFrame={20}
+        onSeekRequest={onSeekRequest}
+      />,
+    )
+    await screen.findByText('startup')
+
+    // 表单未打开时不跟随
+    expect(screen.queryByLabelText(t('review.marker.frame'))).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: t('review.marker.newMarker') }))
+    expect(screen.getByLabelText(t('review.marker.frame')).value).toBe('20')
+
+    // 预览帧变化 → 表单帧号实时跟随
+    rerender(
+      <SemanticMarkerEditor
+        projectId="project_1"
+        clip={{ id: 'clip_1', name: 'attack', startFrame: 10, endFrame: 40 }}
+        previewFrame={33}
+        onSeekRequest={onSeekRequest}
+      />,
+    )
+    expect(screen.getByLabelText(t('review.marker.frame')).value).toBe('33')
+  })
+
+  it('seeks the preview when a marker row is clicked', async () => {
+    const onSeekRequest = vi.fn()
+    render(
+      <SemanticMarkerEditor
+        projectId="project_1"
+        clip={{ id: 'clip_1', name: 'attack', startFrame: 10, endFrame: 40 }}
+        onSeekRequest={onSeekRequest}
+      />,
+    )
+    const row = (await screen.findByText('startup')).closest('.review-marker-row')
+    fireEvent.click(within(row).getByRole('button', { name: t('review.marker.seekTo', { frame: 12 }) }))
+    expect(onSeekRequest).toHaveBeenCalledWith(12)
+  })
+
+  it('debounces frame draft input into a single seek request', async () => {
+    const onSeekRequest = vi.fn()
+    render(
+      <SemanticMarkerEditor
+        projectId="project_1"
+        clip={{ id: 'clip_1', name: 'attack', startFrame: 10, endFrame: 40 }}
+        previewFrame={20}
+        onSeekRequest={onSeekRequest}
+      />,
+    )
+    await screen.findByText('startup')
+    fireEvent.click(screen.getByRole('button', { name: t('review.marker.newMarker') }))
+    const frameInput = screen.getByLabelText(t('review.marker.frame'))
+    fireEvent.change(frameInput, { target: { value: '25' } })
+    fireEvent.change(frameInput, { target: { value: '26' } })
+
+    // 防抖窗口内不触发
+    expect(onSeekRequest).not.toHaveBeenCalled()
+    await waitFor(() => expect(onSeekRequest).toHaveBeenCalledTimes(1))
+    expect(onSeekRequest).toHaveBeenCalledWith(26)
+  })
 })

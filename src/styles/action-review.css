@@ -599,6 +599,20 @@
   gap: 6px;
   flex-wrap: wrap;
   font-size: 11px;
+  cursor: pointer;
+  border-radius: 5px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  transition: background-color 120ms ease;
+}
+
+.review-marker-summary:hover {
+  background: #f3f3ef;
+}
+
+.review-marker-summary:focus-visible {
+  outline: 2px solid var(--accent, #4a7dd6);
+  outline-offset: 1px;
 }
 
 .review-marker-summary strong {

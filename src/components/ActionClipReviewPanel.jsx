@@ -57,6 +57,8 @@ export default function ActionClipReviewPanel({
   keyingParams = {},
   layoutParams = {},
   region = null,
+  previewFrame = null,
+  onSeekRequest,
   disabled = false,
   mobile = false,
 }) {
@@ -395,7 +397,7 @@ export default function ActionClipReviewPanel({
                     </div>
                   )}
                 </div>
-                <SemanticMarkerEditor projectId={projectId} clip={clip} mobile={mobile} disabled={disabled || busy || !isClipEditable(clip.status)} onMarkersChange={onMarkersChange} />
+                <SemanticMarkerEditor projectId={projectId} clip={clip} mobile={mobile} disabled={disabled || busy || !isClipEditable(clip.status)} onMarkersChange={onMarkersChange} previewFrame={previewFrame} onSeekRequest={onSeekRequest} />
               </div>
             )}
           </article>

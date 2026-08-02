@@ -48,6 +48,8 @@ export default function SemanticMarkerEditor({
   disabled = false,
   onMarkersChange,
   mobile = false,
+  previewFrame = null,
+  onSeekRequest,
 }) {
   const dialog = useAppDialog()
   const [markers, setMarkers] = useState([])
@@ -62,6 +64,8 @@ export default function SemanticMarkerEditor({
   const [editingId, setEditingId] = useState('')
   const [editDraft, setEditDraft] = useState(null)
   const requestVersionRef = useRef(0)
+  const frameInputFocusedRef = useRef(false)
+  const seekDebounceRef = useRef(null)
 
   const orderedMarkers = useMemo(() => sortMarkers(markers), [markers])
 
@@ -102,6 +106,34 @@ export default function SemanticMarkerEditor({
     setEditingId('')
     setEditDraft(null)
   }, [clip?.endFrame, clip?.id, clip?.startFrame, onMarkersChange])
+
+  // 预览帧 → 新增表单帧号（表单打开且输入框未聚焦时实时跟随）
+  useEffect(() => {
+    if (!createOpen || frameInputFocusedRef.current) return
+    if (typeof previewFrame !== 'number' || !Number.isFinite(previewFrame) || previewFrame < 0) return
+    setFrameDraft(previewFrame)
+  }, [createOpen, previewFrame])
+
+  // 帧号输入 → 预览跳转（防抖，避免打字过程中反复 seek）
+  const handleFrameDraftChange = useCallback((value) => {
+    setFrameDraft(value)
+    const frame = Number(value)
+    if (!Number.isFinite(frame)) return
+    if (seekDebounceRef.current) clearTimeout(seekDebounceRef.current)
+    seekDebounceRef.current = setTimeout(() => {
+      seekDebounceRef.current = null
+      onSeekRequest?.(frame)
+    }, 150)
+  }, [onSeekRequest])
+
+  useEffect(() => () => {
+    if (seekDebounceRef.current) clearTimeout(seekDebounceRef.current)
+  }, [])
+
+  const handleSeekToMarker = useCallback((marker) => {
+    if (disabled || busy) return
+    onSeekRequest?.(marker.frame)
+  }, [busy, disabled, onSeekRequest])
 
   const handleCreate = useCallback(async () => {
     if (!projectId || !clip?.id || disabled || busy) return
@@ -239,7 +271,9 @@ export default function SemanticMarkerEditor({
             max={maxFrame}
             step="1"
             value={frameDraft}
-            onChange={(event) => setFrameDraft(event.target.value)}
+            onChange={(event) => handleFrameDraftChange(event.target.value)}
+            onFocus={() => { frameInputFocusedRef.current = true }}
+            onBlur={() => { frameInputFocusedRef.current = false }}
             disabled={disabled || busy}
           />
         </ReviewField>
@@ -313,7 +347,20 @@ export default function SemanticMarkerEditor({
                 </div>
               ) : (
                 <>
-                  <div className="review-marker-summary">
+                  <div
+                    className="review-marker-summary"
+                    role="button"
+                    tabIndex={0}
+                    title={t('review.marker.seekTo', { frame: marker.frame })}
+                    aria-label={t('review.marker.seekTo', { frame: marker.frame })}
+                    onClick={() => handleSeekToMarker(marker)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        handleSeekToMarker(marker)
+                      }
+                    }}
+                  >
                     <span className={`review-marker-dot type-${marker.type}`} aria-hidden="true" />
                     <strong>{markerTypeLabel(marker.type)}</strong>
                     <span>{t('review.marker.atFrame', { frame: marker.frame })}</span>

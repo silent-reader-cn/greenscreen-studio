@@ -132,6 +132,12 @@ export default function App() {
   const [reviewClips, setReviewClips] = useState([])
   const [reviewMarkers, setReviewMarkers] = useState([])
   const [selectedReviewClipIds, setSelectedReviewClipIds] = useState([])
+  const [previewFrame, setPreviewFrame] = useState(null)
+  const [markerSeekRequest, setMarkerSeekRequest] = useState(null)
+
+  const handleMarkerSeek = useCallback((frame) => {
+    setMarkerSeekRequest({ frame, nonce: Date.now() })
+  }, [])
   const pendingProjectVideoRef = useRef(null)
 
   // 视频帧范围
@@ -1027,6 +1033,8 @@ export default function App() {
                   keyingParams={keyingParams}
                   layoutParams={layoutParams}
                   region={videoRegion}
+                  previewFrame={previewFrame}
+                  onSeekRequest={handleMarkerSeek}
                 />
             )}
           </section>
@@ -1244,6 +1252,8 @@ export default function App() {
                   reviewClips={reviewClips}
                   reviewMarkers={reviewMarkers}
                   selectedReviewClipIds={selectedReviewClipIds}
+                  onPreviewFrameChange={setPreviewFrame}
+                  seekRequest={markerSeekRequest}
                   onChoose={openFilePicker}
                   onSelectReviewClip={(clip, event) => {
                     if (!clip?.id) return

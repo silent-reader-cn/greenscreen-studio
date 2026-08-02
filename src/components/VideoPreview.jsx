@@ -94,6 +94,8 @@ export default function VideoPreview({
   selectedReviewClipIds = [],
   onSelectReviewClip,
   onChoose,
+  onPreviewFrameChange,
+  seekRequest,
 }) {
   const [frameTime, setFrameTime] = useState(0)        // 当前选中的时间点（秒）
   const [frameImageData, setFrameImageData] = useState(null)  // 当前帧的 ImageData
@@ -271,6 +273,30 @@ export default function VideoPreview({
     setLoading(true)
     video.currentTime = Math.min(time, video.duration || 0)
   }, [])
+
+  // ===== 外部跳转请求（点击 marker 列表 / 输入帧号）=====
+  useEffect(() => {
+    if (!seekRequest || !seekRequest.nonce) return
+    const currentFps = videoInfo?.fps || 30
+    stopLoopPreview()
+    seekToFrame(seekRequest.frame / currentFps, { force: true })
+    setFrameTime(seekRequest.frame / currentFps)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seekRequest])
+
+  // ===== 当前帧变化通知外部（播放中节流 250ms，其余实时）=====
+  const lastFrameNotifyRef = useRef({ time: 0, frame: -1 })
+  useEffect(() => {
+    const currentFps = videoInfo?.fps || 30
+    const frame = Math.round(frameTime * currentFps)
+    const last = lastFrameNotifyRef.current
+    const now = performance.now()
+    if (frame === last.frame) return
+    if (isLoopPlaying && now - last.time < 250) return
+    last.time = now
+    last.frame = frame
+    onPreviewFrameChange?.(frame)
+  }, [frameTime, isLoopPlaying, onPreviewFrameChange, videoInfo?.fps])
 
   const renderLoopFrame = useCallback(() => {
     const video = videoRef.current
