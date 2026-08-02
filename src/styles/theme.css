@@ -133,3 +133,16 @@
     min-width: 34px;
   }
 }
+
+@media (max-width: 900px) {
+  .mobile-range-summary .compact-icon-action {
+    width: var(--mobile-compact-height, 34px);
+    height: var(--mobile-compact-height, 34px);
+    min-width: var(--mobile-compact-height, 34px);
+    min-height: var(--mobile-compact-height, 34px);
+    padding: 0;
+    flex: 0 0 var(--mobile-compact-height, 34px);
+    display: grid;
+    place-items: center;
+  }
+}

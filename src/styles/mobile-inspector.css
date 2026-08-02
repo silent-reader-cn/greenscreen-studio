@@ -566,7 +566,6 @@
     height: 5px;
     margin: 0;
     background: var(--workspace-border-strong);
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
     transition: width 120ms ease, background 120ms ease;
   }
 
@@ -1576,7 +1575,7 @@
     margin: 0 -10px;
     padding: 10px 10px calc(14px + env(safe-area-inset-bottom, 0));
     border-top: 1px solid var(--workspace-border);
-    background: rgba(255, 255, 255, 0.96);
+    background: var(--workspace-surface);
     backdrop-filter: blur(8px);
   }
 
@@ -1795,7 +1794,7 @@
     font-size: 12px;
   }
 
-  .mobile-range-summary button,
+  .mobile-range-summary button:not(.compact-icon-action),
   .mobile-godot-pack-grid button {
     min-height: var(--mobile-compact-height);
     padding: 0 10px;
