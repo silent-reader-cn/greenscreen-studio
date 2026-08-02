@@ -75,8 +75,8 @@ export default function VideoExportControls({
               ))}
             </div>
           </ExportSection>
-          <ExportSection title={t('videoPanel.frameRange')}>
-            <div className="mobile-export-grid">
+          <ExportSection title={t('videoPanel.frameRange')} className="mobile-frame-range-section">
+            <div className="mobile-export-grid mobile-frame-range-grid">
               <ExportField label={t('videoPanel.startFrame')}>
                 <input type="number" min={0} max={range.endFrame} value={range.startFrame} disabled={processing} onChange={event => { const value = Math.max(0, parseInt(event.target.value) || 0); onRangeChange({ ...range, startFrame: Math.min(value, range.endFrame) }) }} />
               </ExportField>

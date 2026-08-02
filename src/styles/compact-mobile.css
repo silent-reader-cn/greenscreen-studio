@@ -641,16 +641,43 @@
     font-size: 10px;
   }
 
-  .video-export-controls.is-mobile .mobile-export-section:has(.mobile-range-summary) {
-    position: relative;
+  .video-export-controls.is-mobile .mobile-frame-range-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
   }
 
-  .video-export-controls.is-mobile .mobile-range-summary {
-    position: absolute;
-    top: 3px;
-    right: 0;
+  .video-export-controls.is-mobile .mobile-frame-range-grid .mobile-export-field.control-field:has(input[type="number"]) {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+
+  .video-export-controls.is-mobile .mobile-frame-range-grid .mobile-export-field.control-field:has(input[type="number"]) .control-field-label,
+  .video-export-controls.is-mobile .mobile-frame-range-grid .mobile-export-field.control-field:has(input[type="number"]) .control-field-input {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .video-export-controls.is-mobile .mobile-frame-range-grid input[type="number"] {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .video-export-controls.is-mobile .mobile-frame-range-section .mobile-range-summary {
+    position: static;
+    min-width: 0;
     min-height: 28px;
-    margin: 0;
+    margin: 3px 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .video-export-controls.is-mobile .mobile-frame-range-section .mobile-range-summary > span {
+    min-width: 0;
   }
 
   .video-export-controls.is-mobile .mobile-range-summary .compact-icon-action {
