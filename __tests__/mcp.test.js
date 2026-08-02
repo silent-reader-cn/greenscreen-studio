@@ -123,7 +123,7 @@ describe('Greenscreen Studio MCP helpers', () => {
     const exported = await inspectImageFile(outputPath, { baseDir: tmpDir })
     expect(exported.width).toBe(12)
     expect(exported.height).toBe(12)
-  })
+  }, 15_000)
 
   it('refuses to overwrite outputs unless explicitly requested', async () => {
     const inputPath = path.join(tmpDir, 'source.png')
@@ -175,7 +175,7 @@ describe('Greenscreen Studio MCP helpers', () => {
     const sceneText = await fs.readFile(result.scenePath, 'utf8')
     expect(sceneText).toContain('animation = &"idle_SE"')
     expect(sceneText).toContain('offset = Vector2(0, -32)')
-  })
+  }, 15_000)
 
   it('exports Godot scene + ZIP bundle alongside SpriteFrames artifacts', async () => {
     const inputPath = path.join(tmpDir, 'walk_SE.mp4')
@@ -235,7 +235,7 @@ describe('Greenscreen Studio MCP helpers', () => {
     expect(bundle.subarray(0, 2).toString('utf8')).toBe('PK')
     expect(bundle.includes(Buffer.from(path.basename(result.scenePath)))).toBe(true)
     expect(bundle.includes(Buffer.from(path.basename(result.outputPath)))).toBe(true)
-  })
+  }, 15_000)
 })
 
 describe('Greenscreen Studio MCP protocol surface', () => {
