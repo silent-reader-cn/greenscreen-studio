@@ -146,3 +146,114 @@
     place-items: center;
   }
 }
+
+/* ===== Dark mode: studio project drawer ===== */
+:root[data-theme='dark'] .studio-drawer {
+  border-color: var(--workspace-border);
+  background: var(--workspace-surface);
+  box-shadow: var(--workspace-shadow-lg);
+}
+
+:root[data-theme='dark'] .studio-drawer,
+:root[data-theme='dark'] .studio-drawer h2,
+:root[data-theme='dark'] .studio-drawer h3,
+:root[data-theme='dark'] .studio-drawer h4 {
+  color: var(--workspace-text);
+}
+
+:root[data-theme='dark'] .studio-list,
+:root[data-theme='dark'] .studio-detail,
+:root[data-theme='dark'] .studio-logs {
+  border-color: var(--workspace-border);
+  background: var(--workspace-surface-soft);
+}
+
+:root[data-theme='dark'] .studio-list-item strong {
+  color: var(--workspace-text);
+}
+
+:root[data-theme='dark'] .studio-list-item span,
+:root[data-theme='dark'] .studio-detail p,
+:root[data-theme='dark'] .studio-empty,
+:root[data-theme='dark'] .studio-meta-grid span,
+:root[data-theme='dark'] .studio-project-updated small {
+  color: var(--workspace-text-muted);
+}
+
+:root[data-theme='dark'] .studio-meta-grid strong {
+  color: var(--workspace-text);
+}
+
+:root[data-theme='dark'] .studio-list-item.active,
+:root[data-theme='dark'] .studio-list-item:hover {
+  background: var(--workspace-surface-raised);
+}
+
+:root[data-theme='dark'] .studio-row,
+:root[data-theme='dark'] .studio-log {
+  border-top-color: var(--workspace-border);
+}
+
+:root[data-theme='dark'] .studio-row code {
+  color: var(--workspace-text-muted);
+}
+
+:root[data-theme='dark'] .studio-section h4 {
+  color: var(--workspace-text-muted);
+}
+
+:root[data-theme='dark'] .studio-logs {
+  background: var(--workspace-bg);
+}
+
+:root[data-theme='dark'] .studio-media-dialog {
+  border-color: var(--workspace-border);
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+}
+
+:root[data-theme='dark'] .studio-drawer input,
+:root[data-theme='dark'] .studio-drawer select,
+:root[data-theme='dark'] .studio-drawer textarea {
+  border-color: var(--workspace-border-strong);
+  background: var(--workspace-surface-soft);
+  color: var(--workspace-text);
+}
+
+/* ===== Dark mode: empty preview / video hint placeholder ===== */
+:root[data-theme='dark'] .empty-preview,
+:root[data-theme='dark'] .video-preview-hint {
+  background: var(--workspace-surface-soft);
+}
+
+/* ===== Dark mode: image Godot pose export card ===== */
+:root[data-theme='dark'] .image-godot-export > summary {
+  background: var(--workspace-surface-raised);
+}
+
+:root[data-theme='dark'] .image-godot-body {
+  border-top-color: var(--workspace-border);
+  background: var(--workspace-surface-soft);
+}
+
+:root[data-theme='dark'] .image-godot-fields input {
+  border-color: var(--workspace-border-strong);
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+}
+
+:root[data-theme='dark'] .image-godot-result {
+  color: var(--workspace-text-muted);
+}
+
+:root[data-theme='dark'] .image-godot-downloads button {
+  border-color: var(--workspace-border-strong);
+  background: var(--workspace-surface);
+  color: var(--workspace-text);
+}
+
+:root[data-theme='dark'] .image-godot-downloads button:hover {
+  border-color: var(--workspace-accent-border);
+  background: var(--workspace-accent-soft);
+  color: var(--workspace-accent);
+}

@@ -566,6 +566,7 @@
     height: 5px;
     margin: 0;
     background: var(--workspace-border-strong);
+    box-shadow: none;
     transition: width 120ms ease, background 120ms ease;
   }
 
