@@ -1218,9 +1218,11 @@
   }
 
   .studio-copy-config-btn {
-    height: 28px !important;
-    min-height: 28px !important;
-    padding: 0 7px;
+    top: 6px;
+    right: 6px;
+    height: 30px !important;
+    min-height: 30px !important;
+    padding: 0 8px;
     font-size: 10px;
   }
 

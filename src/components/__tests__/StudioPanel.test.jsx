@@ -88,6 +88,7 @@ describe('StudioPanel', () => {
     fireEvent.click(screen.getByRole('tab', { name: t('studio.tabMcp') }))
     expect(container.querySelector('.studio-body-mcp')).toBeTruthy()
     expect(container.querySelectorAll('.studio-body-mcp .studio-meta-item')).toHaveLength(4)
+    expect(container.querySelector('.studio-code-wrap .studio-copy-config-btn')).toBeTruthy()
     expect(container.querySelector('.studio-body-collab')).toBeNull()
     expect(container.querySelector('.studio-message-create')).toBeNull()
   })

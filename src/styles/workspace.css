@@ -239,6 +239,7 @@ body {
 
 .profile-menu-action {
   border-color: transparent;
+  background: transparent;
 }
 
 .profile-menu-action.danger:hover:not(:disabled) {
@@ -918,6 +919,14 @@ body {
 }
 
 @media (max-width: 520px) {
+  .profile-menu-list {
+    padding-right: 4px;
+  }
+
+  .profile-menu-row {
+    padding-right: 8px;
+  }
+
   .header-import-btn {
     width: 38px;
     padding: 0;

@@ -436,12 +436,14 @@ export default function StudioPanel({ onOpenVideoAsset }) {
               <div className="studio-section">
                 <div className="studio-detail-head">
                   <h4>{t('studio.mcpConfig')}</h4>
+                </div>
+                <div className="studio-code-wrap">
+                  <pre className="studio-code">{mcpConfig?.formats?.json || t('studio.loading')}</pre>
                   <button type="button" className="studio-mini-btn studio-copy-config-btn" onClick={() => void copyMcpConfig()}>
                     <Copy size={14} aria-hidden="true" />
                     <span>{copied ? t('studio.copied') : t('studio.copyJson')}</span>
                   </button>
                 </div>
-                <pre className="studio-code">{mcpConfig?.formats?.json || t('studio.loading')}</pre>
               </div>
 
               <div className="studio-section">

@@ -227,16 +227,45 @@
   overflow: auto;
   background: #fff;
 }
+.studio-code-wrap {
+  position: relative;
+}
 .studio-code {
   margin: 0;
   padding: 10px;
   max-height: 160px;
   overflow: auto;
+  scrollbar-width: none;
   background: #1a1a1a;
   color: #d7d7d0;
   border-radius: 8px;
   font-size: 11px;
   line-height: 1.45;
+}
+.studio-code::-webkit-scrollbar {
+  display: none;
+}
+.studio-code-wrap .studio-copy-config-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  height: 32px;
+  min-height: 30px;
+  padding: 5px 9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(42, 42, 42, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  color: #f4f4ef;
+  backdrop-filter: blur(4px);
+}
+.studio-code-wrap .studio-copy-config-btn:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.42);
+  background: rgba(58, 58, 58, 0.98);
+  color: #ffffff;
 }
 .studio-log.level-error strong,
 .studio-log.level-error p { color: #b42318; }
