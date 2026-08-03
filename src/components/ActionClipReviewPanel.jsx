@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Layers3, Pencil, RefreshCw, Repeat2, Save, Trash2, X } from 'lucide-react'
+import { ChevronDown, Layers3, Minus, Pencil, Plus, RefreshCw, Repeat2, Save, Trash2, X } from 'lucide-react'
 import { t } from '../i18n.js'
 import SemanticMarkerEditor from './SemanticMarkerEditor.jsx'
 import { useAppDialog } from './AppDialog.jsx'
@@ -69,6 +69,7 @@ export default function ActionClipReviewPanel({
   const [error, setError] = useState('')
   const [nameDraft, setNameDraft] = useState('')
   const [loopDraft, setLoopDraft] = useState(false)
+  const [composerOpen, setComposerOpen] = useState(() => !mobile)
   const [anchorId, setAnchorId] = useState(null)
   const [editingId, setEditingId] = useState('')
   const [editName, setEditName] = useState('')
@@ -418,15 +419,27 @@ export default function ActionClipReviewPanel({
           count={orderedClips.length}
           description={t('review.listHint')}
           actions={(
-            <CompactIconButton
-              size="small"
-              icon={RefreshCw}
-              label={loading ? t('review.loading') : t('review.refresh')}
-              onClick={() => void refresh()}
-              disabled={loading || busy}
-            />
+            <>
+              {mobile && (
+                <CompactIconButton
+                  size="small"
+                  icon={composerOpen ? Minus : Plus}
+                  label={t('review.createFromTimeline')}
+                  onClick={() => setComposerOpen((v) => !v)}
+                  aria-expanded={composerOpen}
+                />
+              )}
+              <CompactIconButton
+                size="small"
+                icon={RefreshCw}
+                label={loading ? t('review.loading') : t('review.refresh')}
+                onClick={() => void refresh()}
+                disabled={loading || busy}
+              />
+            </>
           )}
         >
+          {(!mobile || composerOpen) && (
           <ReviewComposer title={t('review.createFromTimeline')} actions={
             <>
               <ToggleField label={t('review.loop')} checked={loopDraft} onChange={setLoopDraft} disabled={disabled || busy} />
@@ -435,6 +448,7 @@ export default function ActionClipReviewPanel({
           }>
             <ReviewField label={t('review.name')} wide><input type="text" value={nameDraft} placeholder={t('review.namePlaceholder')} onChange={(event) => { nameTouchedRef.current = true; setNameDraft(event.target.value) }} disabled={disabled || busy} /></ReviewField>
           </ReviewComposer>
+          )}
           {clipList}
         </ReviewPane>
       </div>
