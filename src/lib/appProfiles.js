@@ -62,7 +62,52 @@ export const DEFAULT_FRAME_RANGE = {
   endFrame: 0,
 }
 
-// ===== localStorage 持久化 =====
+// ===== 项目内置 profile（绑定项目，存后端 projects.params.profile）=====
+export const PROJECT_PROFILE_ID_PREFIX = 'project:'
+
+export function isProjectProfile(profile) {
+  return Boolean(profile && typeof profile.id === 'string' && profile.id.startsWith(PROJECT_PROFILE_ID_PREFIX))
+}
+
+export function getProjectIdFromProfile(profile) {
+  return isProjectProfile(profile) ? profile.id.slice(PROJECT_PROFILE_ID_PREFIX.length) : null
+}
+
+export function makeProjectProfileId(projectId) {
+  return `${PROJECT_PROFILE_ID_PREFIX}${projectId}`
+}
+
+// 从任意参数构建项目内置 profile。sourceParams 可为 null（用默认值）。
+export function makeProjectProfile(projectId, projectName, sourceParams = null) {
+  const profile = makeProfile(t('profile.projectBuiltInName', { name: projectName }), sourceParams, {
+    id: makeProjectProfileId(projectId),
+  })
+  profile.isProjectProfile = true
+  profile.projectId = projectId
+  return profile
+}
+
+// 序列化：profile → projects.params.profile 存储结构（去掉运行时字段）
+export function profileToProjectParams(profile) {
+  if (!profile) return null
+  return {
+    name: profile.name,
+    keying: profile.keying,
+    layout: profile.layout,
+    video: profile.video,
+    frameRange: profile.frameRange,
+    updatedAt: profile.updatedAt || Date.now(),
+  }
+}
+
+// 反序列化：projects.params.profile → profile（无则返回 null）
+export function projectProfileFromParams(projectId, projectName, params = null) {
+  const stored = params?.profile
+  if (!stored || typeof stored !== 'object') return null
+  return makeProjectProfile(projectId, projectName, stored)
+}
+
+// localStorage 持久化
 export const STORAGE_KEY = 'greenscreen-studio-params'
 export const PROFILES_STORAGE_KEY = 'greenscreen-studio-profiles'
 
@@ -224,8 +269,10 @@ export function loadProfileState() {
     const saved = localStorage.getItem(PROFILES_STORAGE_KEY)
     if (saved) {
       const parsed = JSON.parse(saved)
+      // 项目内置 profile 只在项目上下文存在，刷新/重启后必须从列表剔除，
+      // 否则会留下幽灵条目（无 projectProfile 状态匹配）。
       const profiles = Array.isArray(parsed.profiles)
-        ? parsed.profiles.map(normalizeProfile).filter(profile => profile.id)
+        ? parsed.profiles.map(normalizeProfile).filter(profile => profile.id && !isProjectProfile(profile))
         : []
 
       if (profiles.length > 0) {

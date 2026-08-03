@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Layers3, Pencil, Plus, Search, Trash2 } from 'lucide-react'
 import { t, uiLanguage } from '../i18n.js'
+import { isProjectProfile } from '../lib/appProfiles.js'
 import { useAppDialog } from './AppDialog.jsx'
 
 function sortProfiles(profiles) {
@@ -106,8 +107,9 @@ export default function ProfileMenu({
           <div className="profile-menu-list">
             {visibleProfiles.map(profile => {
               const active = profile.id === activeProfileId
+              const locked = isProjectProfile(profile) // 项目内置：不可重命名/删除
               return (
-                <div key={profile.id} className={`profile-menu-row ${active ? 'active' : ''}`}>
+                <div key={profile.id} className={`profile-menu-row ${active ? 'active' : ''} ${locked ? 'locked' : ''}`}>
                   <button
                     type="button"
                     className="profile-menu-select"
@@ -123,19 +125,23 @@ export default function ProfileMenu({
                     </span>
                     <span title={profile.name}>{profile.name}</span>
                   </button>
-                  <button type="button" className="profile-menu-action" onClick={() => void handleRename(profile)} aria-label={`${t('profile.rename')}: ${profile.name}`} title={t('profile.rename')}>
-                    <Pencil size={15} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    className="profile-menu-action danger"
-                    onClick={() => onDelete(profile.id)}
-                    disabled={!canDelete}
-                    aria-label={t('profile.deleteLabel', { name: profile.name })}
-                    title={t('profile.deleteLabel', { name: profile.name })}
-                  >
-                    <Trash2 size={15} aria-hidden="true" />
-                  </button>
+                  {!locked && (
+                    <>
+                      <button type="button" className="profile-menu-action" onClick={() => void handleRename(profile)} aria-label={`${t('profile.rename')}: ${profile.name}`} title={t('profile.rename')}>
+                        <Pencil size={15} aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        className="profile-menu-action danger"
+                        onClick={() => onDelete(profile.id)}
+                        disabled={!canDelete}
+                        aria-label={t('profile.deleteLabel', { name: profile.name })}
+                        title={t('profile.deleteLabel', { name: profile.name })}
+                      >
+                        <Trash2 size={15} aria-hidden="true" />
+                      </button>
+                    </>
+                  )}
                 </div>
               )
             })}

@@ -18,6 +18,15 @@ function DialogHarness() {
       <button type="button" onClick={async () => setResult(String(await dialog.prompt('Profile name', 'Default')))}>
         Open prompt
       </button>
+      <button type="button" onClick={async () => setResult(String(await dialog.choose('Pick one?', {
+        title: 'Pick',
+        options: [
+          { label: 'Alpha', value: 'alpha' },
+          { label: 'Beta', value: 'beta', tone: 'danger' },
+        ],
+      }))) || 'null'}>
+        Open choose
+      </button>
       <output aria-label="dialog result">{result}</output>
     </>
   )
@@ -65,5 +74,27 @@ describe('AppDialogProvider', () => {
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(screen.getByLabelText('dialog result').textContent).toBe('false')
+  })
+
+  it('resolves choose actions to the selected option value', async () => {
+    renderHarness()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open choose' }))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Alpha' }))
+    await waitFor(() => expect(screen.getByLabelText('dialog result').textContent).toBe('alpha'))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open choose' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Beta' }))
+    await waitFor(() => expect(screen.getByLabelText('dialog result').textContent).toBe('beta'))
+  })
+
+  it('resolves choose dismissal (Escape) to null', async () => {
+    renderHarness()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open choose' }))
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    await waitFor(() => expect(screen.getByLabelText('dialog result').textContent).toBe('null'))
   })
 })

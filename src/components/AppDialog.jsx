@@ -10,7 +10,7 @@ const standaloneDialog = {
   prompt: async (message, defaultValue = '') => globalThis.prompt?.(message, defaultValue) ?? null,
 }
 
-const RESULT_BY_TYPE = { alert: true, confirm: false, prompt: null }
+const RESULT_BY_TYPE = { alert: true, confirm: false, prompt: null, choose: null }
 
 export function AppDialogProvider({ children }) {
   const [dialog, setDialog] = useState(null)
@@ -22,6 +22,7 @@ export function AppDialogProvider({ children }) {
       title: '',
       message: '',
       defaultValue: '',
+      options: [],
       tone: 'default',
       ...options,
       resolve,
@@ -59,6 +60,14 @@ export function AppDialogProvider({ children }) {
       message,
       defaultValue,
     }),
+    // One or more explicit action buttons; resolves to the selected option's
+    // `value` (string) or null when dismissed. Each option: { label, value, tone? }.
+    choose: (message, options = {}) => open({
+      ...options,
+      type: 'choose',
+      message,
+      options: Array.isArray(options.options) ? options.options : [],
+    }),
   }), [open])
 
   const Icon = dialog?.tone === 'danger' || dialog?.tone === 'warning'
@@ -66,6 +75,8 @@ export function AppDialogProvider({ children }) {
     : dialog?.type === 'alert'
       ? CheckCircle2
       : MessageSquareText
+
+  const handleOption = (option) => finish(option.value ?? true)
 
   return (
     <AppDialogContext.Provider value={api}>
@@ -105,14 +116,29 @@ export function AppDialogProvider({ children }) {
               />
             )}
             <div className="app-dialog-actions">
-              {dialog.type !== 'alert' && (
-                <button type="button" className="app-dialog-btn secondary" onClick={() => finish(RESULT_BY_TYPE[dialog.type])}>
-                  {t('common.cancel')}
-                </button>
-              )}
-              <button type="submit" className={`app-dialog-btn primary ${dialog.tone === 'danger' ? 'danger' : ''}`}>
-                {dialog.confirmLabel || (dialog.type === 'alert' ? t('common.ok') : t('common.confirm'))}
-              </button>
+              {dialog.type === 'choose'
+                ? dialog.options.map((option, index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    className={`app-dialog-btn ${option.tone === 'danger' ? 'primary danger' : option.tone === 'primary' ? 'primary' : 'secondary'}`}
+                    onClick={() => handleOption(option)}
+                  >
+                    {option.label}
+                  </button>
+                ))
+                : (
+                  <>
+                    {dialog.type !== 'alert' && (
+                      <button type="button" className="app-dialog-btn secondary" onClick={() => finish(RESULT_BY_TYPE[dialog.type])}>
+                        {t('common.cancel')}
+                      </button>
+                    )}
+                    <button type="submit" className={`app-dialog-btn primary ${dialog.tone === 'danger' ? 'danger' : ''}`}>
+                      {dialog.confirmLabel || (dialog.type === 'alert' ? t('common.ok') : t('common.confirm'))}
+                    </button>
+                  </>
+                )}
             </div>
           </form>
         </div>

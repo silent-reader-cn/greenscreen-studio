@@ -30,9 +30,15 @@ import { t } from './i18n.js'
 import {
   DEFAULT_FRAME_RANGE,
   getProfileParams,
+  getProjectIdFromProfile,
   getUniqueProfileName,
+  isProjectProfile,
   loadProfileState,
   makeProfile,
+  makeProjectProfile,
+  makeProjectProfileId,
+  profileToProjectParams,
+  projectProfileFromParams,
   resolveFrameRangeForVideo,
   saveParams,
   saveProfileState,
@@ -83,6 +89,16 @@ export default function App() {
   const [activeProfileId, setActiveProfileId] = useState(() => initialProfileStateRef.current.activeProfileId)
   const initialActiveProfile = profiles.find(profile => profile.id === activeProfileId) || profiles[0]
   const initialParams = getProfileParams(initialActiveProfile)
+
+  // 当前项目内置 profile（打开项目文件后注入；null = 不在项目上下文）
+  const [projectProfile, setProjectProfile] = useState(null)
+  const projectProfileRef = useRef(null)
+  projectProfileRef.current = projectProfile
+  // 进入项目前的活跃 profile id，退出项目上下文时恢复
+  const preProjectProfileIdRef = useRef(null)
+  // 项目内置 profile 写回后端（防抖）
+  const projectProfileSaveTimerRef = useRef(null)
+  const projectProfileSaveRef = useRef(null)
 
   const [imageData, setImageData] = useState(null)
   const [imageFile, setImageFile] = useState(null)
@@ -217,9 +233,67 @@ export default function App() {
     })
   }, [])
 
-  const handleSelectProfile = useCallback((profileId) => {
+  // ===== 项目内置 profile 写回后端（防抖）=====
+  const persistProjectProfile = useCallback(async (profile) => {
+    const projectId = getProjectIdFromProfile(profile)
+    if (!projectId) return
+    try {
+      await fetch(`/api/projects/${projectId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ params: { profile: profileToProjectParams(profile) } }),
+      })
+    } catch (err) { /* 后端不可用时静默，下次再试 */ }
+  }, [])
+
+  const scheduleProjectProfileSave = useCallback((profile) => {
+    projectProfileSaveRef.current = profile
+    if (projectProfileSaveTimerRef.current) return
+    projectProfileSaveTimerRef.current = setTimeout(() => {
+      projectProfileSaveTimerRef.current = null
+      persistProjectProfile(projectProfileSaveRef.current)
+    }, 600)
+  }, [persistProjectProfile])
+
+  const handleSelectProfile = useCallback(async (profileId) => {
     const profile = profiles.find(item => item.id === profileId)
     if (!profile) return
+    const currentActive = profiles.find(item => item.id === activeProfileId)
+
+    // 当前处于项目内置 profile，目标是普通 profile → 询问：切换 / 应用到项目内置
+    if (isProjectProfile(currentActive) && !isProjectProfile(profile)) {
+      const action = await dialog.choose(t('profile.projectSwitchPrompt', { name: profile.name }), {
+        title: t('profile.projectSwitchTitle'),
+        options: [
+          { label: t('profile.projectApply'), value: 'apply', tone: 'primary' },
+          { label: t('profile.projectSwitch'), value: 'switch' },
+        ],
+      })
+      if (action === 'apply') {
+        // 把选中 profile 的参数应用到项目内置 profile（active 保持项目内置）
+        const nextParams = getProfileParams(profile)
+        const now = Date.now()
+        setProjectProfile(prev => {
+          if (!prev) return prev
+          const merged = {
+            ...prev,
+            keying: { ...nextParams.keying },
+            layout: { ...nextParams.layout },
+            video: { ...nextParams.video, spriteParams: { ...nextParams.video.spriteParams } },
+            frameRange: { ...nextParams.frameRange },
+            updatedAt: now,
+          }
+          scheduleProjectProfileSave(merged)
+          return merged
+        })
+        setKeyingParams(nextParams.keying)
+        setLayoutParams(nextParams.layout)
+        setVideoParams(nextParams.video)
+        setFrameRange(resolveFrameRangeForVideo(nextParams.frameRange, videoInfo))
+        return
+      }
+      if (action !== 'switch') return // 取消
+    }
 
     const nextParams = getProfileParams(profile)
     const now = Date.now()
@@ -237,7 +311,7 @@ export default function App() {
           }
         : item
     )))
-  }, [profiles, videoInfo])
+  }, [activeProfileId, dialog, profiles, resolveFrameRangeForVideo, scheduleProjectProfileSave, videoInfo])
 
   const handleCreateProfile = useCallback((name) => {
     const profileName = getUniqueProfileName(name, profiles)
@@ -255,6 +329,8 @@ export default function App() {
   }, [frameRange, keyingParams, layoutParams, profiles, videoParams])
 
   const handleRenameProfile = useCallback((profileId, name) => {
+    // 项目内置 profile 名称由项目名生成，不可重命名
+    if (isProjectProfile(profiles.find(item => item.id === profileId))) return
     const nextName = String(name || '').trim()
     if (!nextName) return
 
@@ -281,6 +357,8 @@ export default function App() {
   const handleDeleteProfile = useCallback(async (profileId) => {
     const profile = profiles.find(item => item.id === profileId)
     if (!profile) return
+    // 项目内置 profile 不可删除（属于项目上下文，退出项目时自动移除）
+    if (isProjectProfile(profile)) return
 
     if (profiles.length <= 1) {
       await dialog.alert(t('profile.keepOne'), { title: t('profile.label'), tone: 'warning' })
@@ -321,6 +399,25 @@ export default function App() {
       setReviewClips([])
       setReviewMarkers([])
       setSelectedReviewClipIds([])
+      // 退出项目上下文：移除项目内置 profile，恢复进入前的活跃 profile
+      if (projectProfileRef.current) {
+        const restoreId = preProjectProfileIdRef.current
+        preProjectProfileIdRef.current = null
+        const leavingProfileId = projectProfileRef.current.id
+        setProjectProfile(null)
+        setProfiles(prev => prev.filter(item => !isProjectProfile(item)))
+        if (restoreId && restoreId !== leavingProfileId) {
+          const restore = profiles.find(item => item.id === restoreId)
+          if (restore) {
+            const nextParams = getProfileParams(restore)
+            setActiveProfileId(restore.id)
+            setKeyingParams(nextParams.keying)
+            setLayoutParams(nextParams.layout)
+            setVideoParams(nextParams.video)
+            setFrameRange(resolveFrameRangeForVideo(nextParams.frameRange, info))
+          }
+        }
+      }
     }
     // 新视频上传后重置帧范围为全视频
     if (info) {
@@ -329,9 +426,57 @@ export default function App() {
     } else {
       setFrameRange({ ...DEFAULT_FRAME_RANGE })
     }
-  }, [])
+  }, [profiles, videoInfo])
 
-  const handleOpenProjectVideo = useCallback((payload) => {
+  // 进入项目上下文：读取/初始化项目内置 profile，注入列表并选中
+  const enterProjectContext = useCallback(async (projectId) => {
+    if (projectProfileRef.current && getProjectIdFromProfile(projectProfileRef.current) === projectId) {
+      return // 已在此项目上下文
+    }
+    let builtIn = null
+    let hasStoredProfile = false
+    try {
+      const response = await fetch(`/api/projects/${projectId}`)
+      if (response.ok) {
+        const bundle = await response.json()
+        const project = bundle?.project
+        if (project) {
+          const active = profiles.find(item => item.id === activeProfileId) || profiles[0]
+          const stored = projectProfileFromParams(projectId, project.name, project.params)
+          hasStoredProfile = Boolean(stored)
+          builtIn = stored || makeProjectProfile(
+            projectId,
+            project.name,
+            isProjectProfile(active) ? null : active,
+          )
+        }
+      }
+    } catch (err) { /* 后端不可用时静默：不注入项目上下文 */ }
+
+    if (!builtIn) return
+
+    // 记住进入项目前的活跃 profile（退出项目上下文时恢复）
+    const currentActive = profiles.find(item => item.id === activeProfileId) || profiles[0]
+    if (!isProjectProfile(currentActive)) preProjectProfileIdRef.current = currentActive?.id || null
+
+    setProfiles(prev => [
+      ...prev.filter(item => !isProjectProfile(item) || getProjectIdFromProfile(item) !== projectId),
+      builtIn,
+    ])
+    setProjectProfile(builtIn)
+
+    const nextParams = getProfileParams(builtIn)
+    setActiveProfileId(builtIn.id)
+    setKeyingParams(nextParams.keying)
+    setLayoutParams(nextParams.layout)
+    setVideoParams(nextParams.video)
+    setFrameRange(resolveFrameRangeForVideo(nextParams.frameRange, videoInfo))
+
+    // 首次进入项目：立即初始化项目内置 profile（幂等）
+    if (!hasStoredProfile) persistProjectProfile(builtIn)
+  }, [activeProfileId, persistProjectProfile, profiles, videoInfo])
+
+  const handleOpenProjectVideo = useCallback(async (payload) => {
     const file = payload?.file || payload
     if (!file) return
     const nextContext = payload?.projectId && payload?.assetId
@@ -350,7 +495,12 @@ export default function App() {
     setPreviewMode('keying')
     setMobileSheetState('collapsed')
     setDroppedVideoFiles([file])
-  }, [switchMode])
+
+    // 打开项目文件：注入项目内置 profile 并自动选中
+    if (payload?.projectId) {
+      await enterProjectContext(payload.projectId)
+    }
+  }, [enterProjectContext, switchMode])
 
   const handleApplyReviewClipRange = useCallback((clip) => {
     if (!clip) return
@@ -384,7 +534,26 @@ export default function App() {
         : profile
     )))
     saveParams(keyingParams, layoutParams)
-  }, [activeProfileId, frameRange, keyingParams, layoutParams, videoParams])
+    // 项目内置 profile：同步更新状态并防抖写回后端
+    if (projectProfileRef.current && projectProfileRef.current.id === activeProfileId) {
+      setProjectProfile(prev => {
+        if (!prev || prev.id !== activeProfileId) return prev
+        const updated = {
+          ...prev,
+          keying: { ...keyingParams },
+          layout: { ...layoutParams },
+          video: {
+            ...videoParams,
+            spriteParams: { ...videoParams.spriteParams },
+          },
+          frameRange: { ...frameRange },
+          updatedAt: now,
+        }
+        scheduleProjectProfileSave(updated)
+        return updated
+      })
+    }
+  }, [activeProfileId, frameRange, keyingParams, layoutParams, scheduleProjectProfileSave, videoParams])
 
   useEffect(() => {
     saveProfileState(profiles, activeProfileId)

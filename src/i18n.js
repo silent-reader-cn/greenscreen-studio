@@ -80,6 +80,11 @@ const dictionaries = {
       rename: 'Rename',
       keepOne: 'At least one profile is required',
       deleteConfirm: 'Delete profile "{name}"?',
+      projectBuiltInName: 'Built-in · {name}',
+      projectSwitchTitle: 'Switch profile',
+      projectSwitchPrompt: 'For "{name}", apply it to the project built-in preset, or switch to it?',
+      projectApply: 'Apply to built-in',
+      projectSwitch: 'Switch',
     },
     keying: {
       title: 'Keying',
@@ -565,6 +570,11 @@ const dictionaries = {
       rename: '重命名',
       keepOne: '至少需要保留一个 profile',
       deleteConfirm: '删除 profile「{name}」？',
+      projectBuiltInName: '项目内置 · {name}',
+      projectSwitchTitle: '切换 profile',
+      projectSwitchPrompt: '选择「{name}」时：应用到项目内置 profile，还是直接切换？',
+      projectApply: '应用到项目内置',
+      projectSwitch: '切换',
     },
     keying: {
       title: '抠像参数',
