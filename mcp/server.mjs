@@ -22,11 +22,19 @@ const { createMcpRuntime, getMcpConfig, readMcpLogs, getMcpStatus } = require('.
 const { getDataDir, ensureDataLayout } = require('../lib/paths.cjs');
 
 const DEFAULT_KEYING = Object.freeze({
+  algorithm: 'classic',
   keyColor: [0, 255, 0],
+  keyColor2: [0, 180, 0],
+  gradientKey: false,
   tolerance: 30,
   spillSuppression: 40,
   feather: 15,
   edgeShrink: 0,
+  keyBalance: 80,
+  clipBlack: 0,
+  clipWhite: 100,
+  similarity: 20,
+  spill: 50,
 });
 
 const DEFAULT_LAYOUT = Object.freeze({
@@ -187,11 +195,19 @@ const PARAM_SCHEMA_RESOURCE = Object.freeze({
     keying: {
       type: 'object',
       properties: {
+        algorithm: { type: 'string', enum: ['classic', 'vlahos', 'chroma', 'saturation'] },
         keyColor: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'integer', minimum: 0, maximum: 255 } },
+        keyColor2: { type: 'array', minItems: 3, maxItems: 3, items: { type: 'integer', minimum: 0, maximum: 255 } },
+        gradientKey: { type: 'boolean' },
         tolerance: { type: 'number', minimum: 0, maximum: 100 },
         spillSuppression: { type: 'number', minimum: 0, maximum: 100 },
         feather: { type: 'number', minimum: 0, maximum: 100 },
         edgeShrink: { type: 'number', minimum: 0, maximum: 50 },
+        keyBalance: { type: 'number', minimum: 0, maximum: 150 },
+        clipBlack: { type: 'number', minimum: 0, maximum: 100 },
+        clipWhite: { type: 'number', minimum: 0, maximum: 100 },
+        similarity: { type: 'number', minimum: 0, maximum: 100 },
+        spill: { type: 'number', minimum: 0, maximum: 100 },
       },
     },
     layout: {
@@ -251,11 +267,19 @@ const colorSchema = z
   .describe('RGB triplet such as [0, 255, 0].');
 
 const keyingSchema = z.object({
+  algorithm: z.enum(['classic', 'vlahos', 'chroma', 'saturation']).optional(),
   keyColor: colorSchema.optional(),
+  keyColor2: colorSchema.optional(),
+  gradientKey: z.boolean().optional(),
   tolerance: z.number().min(0).max(100).optional(),
   spillSuppression: z.number().min(0).max(100).optional(),
   feather: z.number().min(0).max(100).optional(),
   edgeShrink: z.number().min(0).max(50).optional(),
+  keyBalance: z.number().min(0).max(150).optional(),
+  clipBlack: z.number().min(0).max(100).optional(),
+  clipWhite: z.number().min(0).max(100).optional(),
+  similarity: z.number().min(0).max(100).optional(),
+  spill: z.number().min(0).max(100).optional(),
 });
 
 const layoutSchema = z.object({
@@ -435,11 +459,19 @@ export function normalizeProcessingParams(input = {}) {
 
   return {
     keying: {
+      algorithm: ['classic', 'vlahos', 'chroma', 'saturation'].includes(keying.algorithm) ? keying.algorithm : DEFAULT_KEYING.algorithm,
       keyColor: normalizeColor(keying.keyColor, DEFAULT_KEYING.keyColor),
+      keyColor2: normalizeColor(keying.keyColor2, DEFAULT_KEYING.keyColor2),
+      gradientKey: keying.gradientKey === true,
       tolerance: clampNumber(keying.tolerance, 0, 100, DEFAULT_KEYING.tolerance),
       spillSuppression: clampNumber(keying.spillSuppression, 0, 100, DEFAULT_KEYING.spillSuppression),
       feather: clampNumber(keying.feather, 0, 100, DEFAULT_KEYING.feather),
       edgeShrink: clampNumber(keying.edgeShrink, 0, 50, DEFAULT_KEYING.edgeShrink),
+      keyBalance: clampNumber(keying.keyBalance, 0, 150, DEFAULT_KEYING.keyBalance),
+      clipBlack: clampNumber(keying.clipBlack, 0, 100, DEFAULT_KEYING.clipBlack),
+      clipWhite: clampNumber(keying.clipWhite, 0, 100, DEFAULT_KEYING.clipWhite),
+      similarity: clampNumber(keying.similarity, 0, 100, DEFAULT_KEYING.similarity),
+      spill: clampNumber(keying.spill, 0, 100, DEFAULT_KEYING.spill),
     },
     layout: {
       canvasWidth: positiveInt(layout.canvasWidth, DEFAULT_LAYOUT.canvasWidth),

@@ -1,11 +1,19 @@
 import { t, uiLanguage } from '../i18n.js'
 
 const DEFAULT_KEYING = {
+  algorithm: 'classic',
   keyColor: [0, 255, 0],
+  keyColor2: [0, 180, 0],
+  gradientKey: false,
   tolerance: 30,
   spillSuppression: 40,
   feather: 15,
   edgeShrink: 0,
+  keyBalance: 80,
+  clipBlack: 0,
+  clipWhite: 100,
+  similarity: 20,
+  spill: 50,
 }
 
 export const DEFAULT_LAYOUT = {
@@ -75,6 +83,8 @@ export function normalizeParams(params = {}) {
       ...DEFAULT_KEYING,
       ...keying,
       keyColor: cloneArray(keying.keyColor, DEFAULT_KEYING.keyColor),
+      keyColor2: cloneArray(keying.keyColor2, DEFAULT_KEYING.keyColor2),
+      gradientKey: keying.gradientKey === true,
     },
     layout: {
       ...DEFAULT_LAYOUT,

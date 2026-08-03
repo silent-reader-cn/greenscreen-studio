@@ -173,7 +173,7 @@ describe('applyKeying', () => {
 
     // spillSuppression=0 => g 不变
     expect(resultNoSpill.data[1]).toBe(200)
-    // spillSuppression=100 => g 被压到 max(r,b)=50
+    // spillSuppression=100 => g 被压到主通道限制器目标 (max(r,b)+avg(r,b))/2 = 50
     expect(resultSpill.data[1]).toBe(50)
   })
 
@@ -240,6 +240,120 @@ describe('applyKeying', () => {
     const result = applyKeying(img, { tolerance: 30 })
     // 绿幕区域 alpha 应保持 0
     expect(result.data[3]).toBe(0)
+  })
+})
+
+// ===== 多算法抠像测试（vlahos / chroma / saturation + 渐变键色）=====
+
+describe('applyKeying 多算法', () => {
+  const BASE = { spillSuppression: 0, edgeShrink: 0, feather: 15 }
+
+  it('未知 algorithm 回退 classic 行为', () => {
+    const img = createSolidImage(2, 2, 0, 255, 0)
+    const unknown = applyKeying(img, { ...BASE, algorithm: 'nope', tolerance: 30 })
+    const classic = applyKeying(img, { ...BASE, tolerance: 30 })
+    expect(unknown.data[3]).toBe(0)
+    expect(unknown.data[3]).toBe(classic.data[3])
+  })
+
+  it('vlahos: 纯绿幕全透明，人物像素不透明', () => {
+    const img = createPatternImage(2, 1, (x) =>
+      x === 0 ? [0, 255, 0, 255] : [200, 60, 40, 255])
+    const result = applyKeying(img, { ...BASE, algorithm: 'vlahos', keyColor: [0, 255, 0] })
+    expect(result.data[3]).toBe(0)
+    expect(result.data[4 + 3]).toBe(255)
+  })
+
+  it('vlahos: 半透明波纹混合色产生部分 alpha', () => {
+    // 波纹本体偏亮（含白光）：前景 (235,215,205) + 40% 绿幕 = (141,231,123)
+    // 绿色超出量 excess 介于纯背景与纯前景之间 → 部分 alpha
+    const img = createPatternImage(3, 1, (x) => {
+      if (x === 0) return [0, 255, 0, 255]       // 纯背景
+      if (x === 1) return [141, 231, 123, 255]   // 半透明混合
+      return [235, 215, 205, 255]                // 纯前景
+    })
+    const result = applyKeying(img, { ...BASE, algorithm: 'vlahos', keyColor: [0, 255, 0] })
+    expect(result.data[3]).toBe(0)
+    const mid = result.data[4 + 3]
+    expect(mid).toBeGreaterThan(20)
+    expect(mid).toBeLessThan(235)
+    expect(result.data[8 + 3]).toBe(255)
+  })
+
+  it('vlahos: clipBlack 去底噪、clipWhite 压实前景', () => {
+    // (0,200,0):未裁剪 alpha≈42(绿色残留底噪);clipBlack=40 → cBlack=0.2 → 裁掉
+    const noise = applyKeying(createSolidImage(1, 1, 0, 200, 0),
+      { ...BASE, algorithm: 'vlahos', keyColor: [0, 255, 0], clipBlack: 40 })
+    expect(noise.data[3]).toBe(0)
+    // (100,156,0)：未裁剪 alpha≈215；clipWhite=30 → cWhite=0.85 → 压到 255
+    const solid = applyKeying(createSolidImage(1, 1, 100, 156, 0),
+      { ...BASE, algorithm: 'vlahos', keyColor: [0, 255, 0], clipWhite: 30 })
+    expect(solid.data[3]).toBe(255)
+  })
+
+  it('chroma: 色度相同亮度不同仍判为背景(抗亮度渐变)', () => {
+    // (10,90,10) 与 (0,255,0) 都是「纯绿」色相(R=B),只是暗;
+    // 色度方向距离 ~0.22,similarity=60 (~0.30) 内 → 透明
+    const img = createPatternImage(2, 1, (x) =>
+      x === 0 ? [0, 255, 0, 255] : [10, 90, 10, 255])
+    const result = applyKeying(img, {
+      ...BASE, algorithm: 'chroma', keyColor: [0, 255, 0], similarity: 60, spill: 0,
+    })
+    expect(result.data[3]).toBe(0)
+    // 暗绿在色度域距离小 → 被抠掉(classic RGB 距离会把它留成前景)
+    expect(result.data[4 + 3]).toBe(0)
+  })
+
+  it('chroma: 前景人物像素不透明且 spill 去饱和只影响近键色像素', () => {
+    const img = createSolidImage(1, 1, 200, 60, 40)
+    const result = applyKeying(img, {
+      ...BASE, algorithm: 'chroma', keyColor: [0, 255, 0], similarity: 20, spill: 50,
+    })
+    expect(result.data[3]).toBe(255)
+    // 远离键色 → spillVal≈1 → 颜色基本不变
+    expect(result.data[0]).toBe(200)
+    expect(result.data[1]).toBe(60)
+  })
+
+  it('saturation: 纯绿幕全透明，饱和度低于键色的像素部分透明', () => {
+    const img = createPatternImage(3, 1, (x) => {
+      if (x === 0) return [0, 255, 0, 255]        // 纯背景 sat=satKey
+      if (x === 1) return [40, 180, 40, 255]      // 半饱和绿
+      return [200, 60, 40, 255]                   // 人物（G 非主通道→负 sat）
+    })
+    const result = applyKeying(img, { ...BASE, algorithm: 'saturation', keyColor: [0, 255, 0] })
+    expect(result.data[3]).toBe(0)
+    const mid = result.data[4 + 3]
+    expect(mid).toBeGreaterThan(20)
+    expect(mid).toBeLessThan(235)
+    expect(result.data[8 + 3]).toBe(255)
+  })
+
+  it('gradientKey: 暗端像素用 keyColor2 抠除（saturation）', () => {
+    // 16x16：左半亮绿 (0,255,0)，右半暗绿 (10,90,10)；存在亮度轴。
+    // saturation 档的 alpha 是「像素饱和度 / 键色饱和度」的比值，
+    // 键色随渐变变暗后分母同步缩小 → 暗端也能被完全抠除。
+    const img = createPatternImage(16, 16, (x) =>
+      x < 8 ? [0, 255, 0, 255] : [10, 90, 10, 255])
+    const off = applyKeying(img, {
+      ...BASE, algorithm: 'saturation', keyColor: [0, 255, 0], gradientKey: false,
+    })
+    const on = applyKeying(img, {
+      ...BASE, algorithm: 'saturation', keyColor: [0, 255, 0], keyColor2: [10, 90, 10], gradientKey: true,
+    })
+    // 亮端两档都应抠掉
+    expect(off.data[3]).toBe(0)
+    expect(on.data[3]).toBe(0)
+    // 暗端（右下角）：关渐变时 sat 比 <1 → 有残留 alpha；开渐变时键色=keyColor2 → 全透明
+    const corner = (15 * 16 + 15) * 4 + 3
+    expect(on.data[corner]).toBe(0)
+    expect(off.data[corner]).toBeGreaterThan(on.data[corner])
+  })
+
+  it('新算法与 classic 一样输出不修改原图', () => {
+    const img = createSolidImage(2, 2, 0, 255, 0)
+    applyKeying(img, { ...BASE, algorithm: 'vlahos', keyColor: [0, 255, 0] })
+    expect(img.data[3]).toBe(255) // 原图未动
   })
 })
 

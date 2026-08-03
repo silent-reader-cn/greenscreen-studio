@@ -142,4 +142,32 @@ describe('compact parameter panels', () => {
     expect(container.querySelector('.desktop-keying-panel')).toBeNull()
     expect(screen.queryByRole('button', { name: t('keying.reset') })).toBeNull()
   })
+
+  it('switches keying algorithm via combo box and swaps parameter controls', () => {
+    const onChange = vi.fn()
+    const base = { keyColor: [0, 255, 0], tolerance: 30, spillSuppression: 40, feather: 15, edgeShrink: 0 }
+    const { rerender } = render(<KeyingPanel params={base} onChange={onChange} />)
+
+    // 默认 classic：有色容差，无相似度
+    expect(screen.getByRole('slider', { name: t('keying.tolerance') })).toBeTruthy()
+    expect(screen.queryByRole('slider', { name: t('keying.similarity') })).toBeNull()
+
+    // combo box 在「颜色提取」标题行右侧
+    const select = screen.getByRole('combobox', { name: t('keying.algorithm') })
+    fireEvent.change(select, { target: { value: 'chroma' } })
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ algorithm: 'chroma' }))
+
+    // 切到 chroma：渲染 similarity + spill + 渐变开关，隐藏 tolerance
+    rerender(<KeyingPanel params={{ ...base, algorithm: 'chroma', similarity: 20, spill: 50 }} onChange={onChange} />)
+    expect(screen.getByRole('slider', { name: t('keying.similarity') })).toBeTruthy()
+    expect(screen.getByRole('slider', { name: t('keying.spill') })).toBeTruthy()
+    expect(screen.queryByRole('slider', { name: t('keying.tolerance') })).toBeNull()
+
+    // 渐变开关 → keyColor2 拾色出现
+    expect(screen.queryByText(t('keying.keyColor2'))).toBeNull()
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ gradientKey: true }))
+    rerender(<KeyingPanel params={{ ...base, algorithm: 'chroma', similarity: 20, spill: 50, gradientKey: true, keyColor2: [0, 180, 0] }} onChange={onChange} />)
+    expect(screen.getByText(t('keying.keyColor2'))).toBeTruthy()
+  })
 })

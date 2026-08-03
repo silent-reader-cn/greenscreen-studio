@@ -4,12 +4,28 @@
  * 接收 ImageData，返回抠像后的 ImageData（RGBA，绿幕区域 alpha=0）
  * 同一份代码前端 Canvas 预览和后端 node-canvas 导出共用，保证所见即所得。
  *
- * 参数说明：
+ * 多算法支持（algorithm 字段切换，详见 docs/chroma-key-algorithms-research.md）：
+ *   classic     经典距离：RGB 距离 + 羽化（旧行为，兼容默认）
+ *   vlahos      色差抠像：绿色超出量线性导出 alpha，半透明波纹最好
+ *   chroma      色度距离（OBS/FFmpeg）：CbCr 平面距离，对亮度不均渐变最鲁棒
+ *   saturation  饱和度比（Blender Keying）：主通道自适应，导出级质量
+ *
+ * 公共参数：
  *   keyColor:        [r, g, b]  键控色，默认 [0, 255, 0] 纯绿
- *   tolerance:       0-100      色容差，越大扣得越多
- *   spillSuppression:0-100      去绿溢强度，去除边缘绿色污染
+ *   keyColor2:       [r, g, b]  渐变键色第二端点（gradientKey 开启时生效）
+ *   gradientKey:     bool       双色渐变键色：沿画面亮度轴在 keyColor↔keyColor2 间插值
+ *   spillSuppression:0-100      去溢强度（按主通道自适应的 limiter）
  *   feather:         0-100      边缘羽化，alpha 过渡柔和度
  *   edgeShrink:      0-50       边缘收缩，向内收掉杂边
+ *
+ * vlahos 专有：
+ *   keyBalance:      20-150 (→0.2-1.5)  G 比 R/B 多多少算绿
+ *   clipBlack/clipWhite: 0-100           alpha 黑白点裁剪（去底噪/压实前景）
+ * chroma 专有：
+ *   similarity:      0-100      色度相似度阈值
+ *   spill:           0-100      去溢过渡带宽度（独立于 alpha 的去饱和）
+ * saturation 专有：
+ *   keyBalance:      0-100 (→0-1)  中值/最小值通道权重
  */
 
 /**
@@ -22,6 +38,84 @@ function colorDistance(r1, g1, b1, r2, g2, b2) {
   return Math.sqrt(dr * dr + dg * dg + db * db) / 441.67295593; // sqrt(255^2*3)
 }
 
+export const KEYING_ALGORITHMS = ['classic', 'vlahos', 'chroma', 'saturation'];
+
+export function normalizeKeyingAlgorithm(value) {
+  return KEYING_ALGORITHMS.includes(value) ? value : 'classic';
+}
+
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+// 球形色度坐标（色度方向 = rgb/luma）：亮度无关，低饱和度颜色自然聚拢。
+// 相比 OBS 的 BT.601 CbCr 平面距离，纯绿与暗绿/灰的距离更小、动态范围更均匀，
+// similarity 滑块在全量程内有效。
+// Rec.709 亮度
+const luma709 = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+function rgbToChromaDir(r, g, b, out) {
+  const l = luma709(r, g, b) + 1e-6;
+  out[0] = r / l;
+  out[1] = g / l;
+  out[2] = b / l;
+  return out;
+}
+
+/**
+ * 双色渐变键色：把 keyColor 钉在帧内最亮像素、keyColor2 钉在最暗像素，
+ * 沿「最亮→最暗」空间轴逐像素插值出 K(x)。对线性光照渐变几乎零成本。
+ * 分析在 1/4 分辨率网格上进行，返回预乘系数，逐像素热点只需 2 mul + 3 lerp。
+ */
+function prepareGradientKey(data, width, height, keyColor, keyColor2) {
+  const step = Math.max(1, Math.floor(Math.min(width, height) / 4));
+  let minL = Infinity, maxL = -Infinity;
+  let minX = 0, minY = 0, maxX = 0, maxY = 0;
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const i = (y * width + x) * 4;
+      const l = luma709(data[i] / 255, data[i + 1] / 255, data[i + 2] / 255);
+      if (l < minL) { minL = l; minX = x; minY = y; }
+      if (l > maxL) { maxL = l; maxX = x; maxY = y; }
+    }
+  }
+  const dx = minX - maxX;
+  const dy = minY - maxY;
+  const denom = dx * dx + dy * dy;
+  if (denom < 1 || maxL - minL < 0.01) return null; // 无有效亮度梯度 → 退回全局键色
+  const k0 = [keyColor[0] / 255, keyColor[1] / 255, keyColor[2] / 255];
+  const k1 = [keyColor2[0] / 255, keyColor2[1] / 255, keyColor2[2] / 255];
+  return { ax: maxX, ay: maxY, dx, dy, denom, k0, k1 };
+}
+
+function gradientKeyAt(grad, x, y, out) {
+  const t = clamp01(((x - grad.ax) * grad.dx + (y - grad.ay) * grad.dy) / grad.denom);
+  out[0] = grad.k0[0] + (grad.k1[0] - grad.k0[0]) * t;
+  out[1] = grad.k0[1] + (grad.k1[1] - grad.k0[1]) * t;
+  out[2] = grad.k0[2] + (grad.k1[2] - grad.k0[2]) * t;
+  return out;
+}
+
+/**
+ * 主通道自适应 despill 限制器（Blender Keying 思路）：
+ * 找出键色的主通道（绿幕=G），把该通道压向其余两通道的加权均值。
+ * limit 0..1，weightedAvg = lerp(max(other), avg(other), 0.5) 介于两者之间。
+ */
+function applySpillLimit(out, i, r, g, b, kr, kg, kb, limit) {
+  let primary = 0;
+  if (kg >= kr && kg >= kb) primary = 1;
+  else if (kb >= kr && kb >= kg) primary = 2;
+  const channels = [r, g, b];
+  const p = channels[primary];
+  const o1 = channels[(primary + 1) % 3];
+  const o2 = channels[(primary + 2) % 3];
+  const weightedAvg = (Math.max(o1, o2) + (o1 + o2) / 2) / 2;
+  if (p > weightedAvg) {
+    channels[primary] = p - (p - weightedAvg) * limit;
+    out[i] = channels[0];
+    out[i + 1] = channels[1];
+    out[i + 2] = channels[2];
+  }
+}
+
 /**
  * 核心抠像函数
  * @param {ImageData} imageData - 输入图像数据
@@ -30,11 +124,19 @@ function colorDistance(r1, g1, b1, r2, g2, b2) {
  */
 export function applyKeying(imageData, params) {
   const {
+    algorithm = 'classic',
     keyColor = [0, 255, 0],
+    keyColor2 = [0, 180, 0],
+    gradientKey = false,
     tolerance = 30,
     spillSuppression = 40,
     feather = 15,
     edgeShrink = 0,
+    keyBalance,
+    clipBlack = 0,
+    clipWhite = 100,
+    similarity = 20,
+    spill = 50,
   } = params;
 
   const { data, width, height } = imageData;
@@ -42,63 +144,131 @@ export function applyKeying(imageData, params) {
   const out = new Uint8ClampedArray(data);
 
   const [kr, kg, kb] = keyColor;
+  const algo = normalizeKeyingAlgorithm(algorithm);
 
-  // 将参数映射到算法内部范围
-  // tolerance 0-100 → 色彩距离阈值 0.0-0.5
+  // 双色渐变键色（vlahos/chroma/saturation 支持；classic 保持单键色旧行为）
+  const grad = gradientKey && algo !== 'classic'
+    ? prepareGradientKey(data, width, height, keyColor, keyColor2)
+    : null;
+  const kBuf = [keyColor[0] / 255, keyColor[1] / 255, keyColor[2] / 255];
+  const keyDirGlobal = rgbToChromaDir(kBuf[0], kBuf[1], kBuf[2], [0, 0, 0]);
+  const keyDirBuf = [0, 0, 0];
+  const pixDirBuf = [0, 0, 0];
+
+  // classic 参数映射（旧行为保持不变）
   const tolDist = (tolerance / 100) * 0.5;
-  // feather 0-100 → 过渡带宽度（在距离空间）
   const featherWidth = (feather / 100) * 0.15;
-  // edgeShrink 0-50 → 像素收缩数（后面处理）
   const shrinkPixels = Math.round(edgeShrink);
 
+  // vlahos 参数映射
+  const vb = (keyBalance ?? 80) / 80;                     // 默认 1.0
+  const satBalance = (keyBalance ?? 50) / 100;            // saturation 档用
+  // chroma 参数映射
+  const sim = (similarity / 100) * 0.5;                   // 0-0.5 色度方向距离
+  const smooth = 0.01 + (feather / 100) * 0.3;            // alpha 斜坡宽度
+  const spillRange = 0.05 + (spill / 100) * 0.45;         // 去饱和斜坡宽度
+
+  // clip black/white（vlahos/chroma/saturation 公共）
+  const cBlack = (clipBlack / 100) * 0.5;
+  const cWhite = 1 - ((100 - clipWhite) / 100) * 0.5;
+  const clipRange = Math.max(0.02, cWhite - cBlack);
+
+  const k1 = 80 / 255;   // vlahos 绿色超出量满量程
+  const k2 = 220 / 255;  // 超出量饱和上限
+
   // ===== Pass 1: 逐像素计算 alpha =====
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = (y * width + x) * 4;
+      const r = data[i] / 255;
+      const g = data[i + 1] / 255;
+      const b = data[i + 2] / 255;
 
-    const dist = colorDistance(r, g, b, kr, kg, kb);
+      let keyDir = keyDirGlobal;
+      if (grad) {
+        gradientKeyAt(grad, x, y, kBuf);
+        if (algo === 'chroma') {
+          rgbToChromaDir(kBuf[0], kBuf[1], kBuf[2], keyDirBuf);
+          keyDir = keyDirBuf;
+        }
+      }
 
-    let alpha;
-    if (dist < tolDist) {
-      // 完全是绿幕 → 完全透明
-      alpha = 0;
-    } else if (dist > tolDist + featherWidth) {
-      // 远离绿幕 → 完全不透明
-      alpha = 255;
-    } else {
-      // 过渡带 → 线性插值
-      const t = (dist - tolDist) / featherWidth;
-      alpha = Math.round(t * 255);
+      let alpha;
+      if (algo === 'vlahos') {
+        // Vlahos 色差：alpha 由「主通道超出量」线性导出，天然支持半透明
+        const excess = g - vb * Math.max(r, b);
+        const t = clamp01((excess - k1) / (k2 - k1));
+        alpha = 1 - Math.pow(t, 0.85);
+      } else if (algo === 'chroma') {
+        // 色度方向距离：亮度无关，对光照渐变鲁棒；1.5 次幂斜坡出部分 alpha
+        rgbToChromaDir(r, g, b, pixDirBuf);
+        const d0 = pixDirBuf[0] - keyDir[0];
+        const d1 = pixDirBuf[1] - keyDir[1];
+        const d2 = pixDirBuf[2] - keyDir[2];
+        const dist = Math.sqrt(d0 * d0 + d1 * d1 + d2 * d2) / 2; // 归一化到 ~0-1
+        const baseMask = dist - sim;
+        alpha = Math.pow(clamp01(baseMask / smooth), 1.5);
+        // OBS 式去溢：越接近键色越去饱和（独立于 alpha）
+        if (spill > 0) {
+          const spillVal = Math.pow(clamp01(baseMask / spillRange), 1.5);
+          const desat = luma709(r, g, b);
+          const nr = desat + (r - desat) * spillVal;
+          const ng = desat + (g - desat) * spillVal;
+          const nb = desat + (b - desat) * spillVal;
+          out[i] = Math.round(clamp01(nr) * 255);
+          out[i + 1] = Math.round(clamp01(ng) * 255);
+          out[i + 2] = Math.round(clamp01(nb) * 255);
+        }
+      } else if (algo === 'saturation') {
+        // Blender Keying 饱和度比：主通道自适应，饱和度域线性出 alpha
+        // kBuf 已是当前像素键色（0-1，gradientKey 开启时逐像素插值）
+        const kc = kBuf;
+        const primary = kc[1] >= kc[0] && kc[1] >= kc[2] ? 1 : (kc[2] >= kc[0] ? 2 : 0);
+        const satOf = (c0, c1, c2) => {
+          const ch = [c0, c1, c2];
+          const p = ch[primary];
+          const others = [ch[(primary + 1) % 3], ch[(primary + 2) % 3]].sort((m, n) => n - m);
+          const wa = others[0] + (others[1] - others[0]) * satBalance;
+          return (p - wa) * Math.abs(1 - wa);
+        };
+        const satKey = satOf(kc[0], kc[1], kc[2]);
+        const satIn = satOf(r, g, b);
+        if (satIn < 0) alpha = 1;
+        else if (satKey <= 1e-6 || satIn >= satKey) alpha = 0;
+        else alpha = 1 - satIn / satKey;
+      } else {
+        // classic：RGB 距离 + 羽化（旧行为）
+        const dist = colorDistance(data[i], data[i + 1], data[i + 2], kr, kg, kb);
+        if (dist < tolDist) {
+          alpha = 0;
+        } else if (dist > tolDist + featherWidth) {
+          alpha = 255 / 255;
+        } else {
+          alpha = (dist - tolDist) / featherWidth;
+        }
+        out[i + 3] = Math.round(clamp01(alpha) * 255);
+        continue;
+      }
+
+      // 新算法公共：clip black/white 重塑 alpha
+      if (algo !== 'classic' && (cBlack > 0 || clipWhite < 100)) {
+        alpha = clamp01((alpha - cBlack) / clipRange);
+      }
+      out[i + 3] = Math.round(clamp01(alpha) * 255);
     }
-
-    out[i + 3] = alpha;
   }
 
-  // ===== Pass 2: 去绿溢 =====
-  // 对所有非完全透明的像素，抑制绿色通道
+  // ===== Pass 2: 去绿溢（limiter，主通道自适应）=====
   if (spillSuppression > 0) {
     const spillFactor = spillSuppression / 100; // 0-1
     for (let i = 0; i < out.length; i += 4) {
       const a = out[i + 3];
       if (a === 0) continue; // 跳过透明像素
-
-      const r = out[i];
-      const g = out[i + 1];
-      const b = out[i + 2];
-
-      // 如果 G 是最大通道且有溢出（g > max(r,b)），压低 G
-      const maxRB = Math.max(r, b);
-      if (g > maxRB) {
-        // 将 G 向 max(r,b) 拉近，拉多少由 spillFactor 决定
-        const excess = g - maxRB;
-        out[i + 1] = Math.round(g - excess * spillFactor);
-      }
+      applySpillLimit(out, i, out[i], out[i + 1], out[i + 2], kr, kg, kb, spillFactor);
     }
   }
 
   // ===== Pass 3: 边缘收缩（可选）=====
-  // 向内侵蚀 alpha 通道，去掉边缘杂色
   if (shrinkPixels > 0) {
     erodeAlpha(out, width, height, shrinkPixels);
   }
@@ -106,6 +276,8 @@ export function applyKeying(imageData, params) {
   // 返回纯数据对象（不依赖 ImageData 构造器，前后端通用）
   return { data: out, width, height };
 }
+
+
 
 /**
  * Alpha 通道侵蚀（向内收缩边缘）
