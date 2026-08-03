@@ -230,6 +230,27 @@ describe('ActionClipReviewPanel', () => {
     expect(screen.getByText(`${t('review.checks.foreground_area')}: ${t('review.checks.status.warning')}`)).toBeTruthy()
   })
 
+  it('auto-fills a suggested name but stops after the user clears the field', async () => {
+    renderPanel()
+    await screen.findByText('idle')
+
+    const nameInput = screen.getByPlaceholderText(t('review.namePlaceholder'))
+    // Initial auto-fill: hero.mp4 -> hero (fires before clips finish loading)
+    await waitFor(() => expect(nameInput.value).toBe('hero'))
+
+    // User clears the field: it must STAY empty, no re-fill loop.
+    fireEvent.change(nameInput, { target: { value: '' } })
+    expect(nameInput.value).toBe('')
+
+    // Give the auto-fill effect time to (incorrectly) re-run; value must not come back.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(nameInput.value).toBe('')
+
+    // Typing a custom name keeps working.
+    fireEvent.change(nameInput, { target: { value: 'jump_pose' } })
+    expect(nameInput.value).toBe('jump_pose')
+  })
+
   it('uses the same direct expand and collapse interaction on touch', async () => {
     const onSelectionChange = vi.fn()
     const onApplyClipRange = vi.fn()

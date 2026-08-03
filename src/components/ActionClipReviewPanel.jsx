@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Layers3, Pencil, RefreshCw, Repeat2, Save, Trash2, X } from 'lucide-react'
 import { t } from '../i18n.js'
 import SemanticMarkerEditor from './SemanticMarkerEditor.jsx'
@@ -72,6 +72,8 @@ export default function ActionClipReviewPanel({
   const [anchorId, setAnchorId] = useState(null)
   const [editingId, setEditingId] = useState('')
   const [editName, setEditName] = useState('')
+  // Once the user edits (or clears) the name field, stop auto-filling suggestions.
+  const nameTouchedRef = useRef(false)
 
   const orderedClips = useMemo(() => sortClipsForTimeline(clips), [clips])
   const selectedSet = useMemo(() => new Set(selectedClipIds.map(String)), [selectedClipIds])
@@ -106,7 +108,7 @@ export default function ActionClipReviewPanel({
   }, [refresh])
 
   useEffect(() => {
-    if (!nameDraft && sourceLabel) {
+    if (!nameTouchedRef.current && !nameDraft && sourceLabel) {
       setNameDraft(suggestClipName(sourceLabel, (clips?.length || 0) + 1))
     }
   }, [clips?.length, nameDraft, sourceLabel])
@@ -431,7 +433,7 @@ export default function ActionClipReviewPanel({
               <ActionButton icon={Save} tone="primary" onClick={() => void handleCreate()} disabled={disabled || busy || !range || !(range.endFrame > range.startFrame)} aria-label={t('review.createFromRange', { start: rangeStart, end: rangeEnd })} title={t('review.createFromRange', { start: rangeStart, end: rangeEnd })}>{t('review.saveClip')}</ActionButton>
             </>
           }>
-            <ReviewField label={t('review.name')} wide><input type="text" value={nameDraft} placeholder={t('review.namePlaceholder')} onChange={(event) => setNameDraft(event.target.value)} disabled={disabled || busy} /></ReviewField>
+            <ReviewField label={t('review.name')} wide><input type="text" value={nameDraft} placeholder={t('review.namePlaceholder')} onChange={(event) => { nameTouchedRef.current = true; setNameDraft(event.target.value) }} disabled={disabled || busy} /></ReviewField>
           </ReviewComposer>
           {clipList}
         </ReviewPane>
