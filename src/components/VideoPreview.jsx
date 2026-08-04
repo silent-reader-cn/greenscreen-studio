@@ -103,6 +103,7 @@ export default function VideoPreview({
   const [detecting, setDetecting] = useState(false)
   const [loopCandidates, setLoopCandidates] = useState(null) // [{frame, score}, ...]
   const [similarityHeatmap, setSimilarityHeatmap] = useState(null) // [{pct, opacity}, ...]
+  const [similarityScores, setSimilarityScores] = useState(null) // [{frame, score, displayOnly}, ...]
   const [scoreRange, setScoreRange] = useState(null) // {min, max} 用于全局归一化
   const [isLoopPlaying, setIsLoopPlaying] = useState(false)
   const [isTimelineScrubbing, setIsTimelineScrubbing] = useState(false)
@@ -145,6 +146,17 @@ export default function VideoPreview({
   const endPct = duration > 0 ? clamp((endFrame / fps / duration) * 100, 0, 100) : 0
   const currentPct = duration > 0 ? clamp((frameTime / duration) * 100, 0, 100) : 0
   const currentFrame = clamp(Math.round(frameTime * fps), 0, totalFrames)
+  // 当前帧相似度（与热力图同归一化：相对全量扫描分数）
+  const currentSimilarity = useMemo(() => {
+    if (!similarityScores?.length) return null
+    const entry = similarityScores.find(s => s.frame === currentFrame)
+    if (!entry) return null
+    const minScore = Math.min(...similarityScores.map(s => s.score))
+    const maxScore = Math.max(...similarityScores.map(s => s.score))
+    const scoreSpan = maxScore - minScore
+    if (scoreSpan <= 0) return 100
+    return clamp(Math.round(100 * (maxScore - entry.score) / scoreSpan), 0, 100)
+  }, [similarityScores, currentFrame])
   const loopCandidateItems = useMemo(() => {
     if (!loopCandidates?.length) return []
     const minScore = scoreRange?.min ?? Math.min(...loopCandidates.map(candidate => candidate.score))
@@ -461,6 +473,7 @@ export default function VideoPreview({
         const scoreMax = Math.max(...scoreBase.map(s => s.score))
 
         setScoreRange({ min: scoreMin, max: scoreMax })
+        setSimilarityScores(scores)
         setSimilarityHeatmap(scores.map(s => ({
           pct: (s.frame / totalFrames) * 100,
           opacity: 1 - (s.score - minScore) / heatmapScoreRange,
@@ -497,6 +510,7 @@ export default function VideoPreview({
     setDetecting(false)
     setLoopCandidates(null)
     setSimilarityHeatmap(null)
+    setSimilarityScores(null)
     setScoreRange(null)
   }, [loopDetectionSignature, videoInfo?.jobId])
 
@@ -531,6 +545,7 @@ export default function VideoPreview({
       setFrameTime(0)
       setLoopCandidates(null)
       setSimilarityHeatmap(null)
+      setSimilarityScores(null)
       setScoreRange(null)
       setLoadedVideoJobId(null)
       return
@@ -1170,6 +1185,7 @@ export default function VideoPreview({
             >
               <span className="timeline-current-frame-tip">
                 {t('preview.currentFrameTip', { frame: currentFrame })}
+                {currentSimilarity != null && t('preview.currentFrameSimilarityTip', { similarity: currentSimilarity })}
               </span>
             </div>
           </div>

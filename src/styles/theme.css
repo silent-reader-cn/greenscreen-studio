@@ -401,6 +401,10 @@
 :root[data-theme='dark'] .review-clip-summary:focus-visible {
   background: var(--workspace-surface-raised);
 }
+:root[data-theme='dark'] .review-marker-summary:hover,
+:root[data-theme='dark'] .review-marker-summary:focus-visible {
+  background: var(--workspace-surface-raised);
+}
 :root[data-theme='dark'] .review-status.status-needs_review {
   border-color: #7a6423;
   background: #332b14;
