@@ -281,7 +281,7 @@ function collectMissingCachedFrameRanges(frameMap, ranges) {
   return missing;
 }
 
-async function ensureLoopHashRanges(entry, ranges, scanRange) {
+async function ensureLoopHashRanges(entry, ranges, scanRange, onProgress) {
   const normalizedRanges = normalizeFrameRanges(ranges, entry.totalFrames);
   if (normalizedRanges.length === 0) {
     return { scannedFrameCount: 0, missingRanges: [] };
@@ -292,10 +292,18 @@ async function ensureLoopHashRanges(entry, ranges, scanRange) {
     .then(async () => {
       const missingRanges = collectMissingFrameRanges(entry.hashes, normalizedRanges);
       let scannedFrameCount = 0;
+      let progressDone = 0;
+      const rangeTotal = missingRanges.reduce((acc, r) => acc + (r.endFrame - r.startFrame), 0);
+
+      if (onProgress && rangeTotal > 0) {
+        onProgress(0, rangeTotal);
+      }
 
       for (const range of missingRanges) {
         const scanned = await scanRange(range.startFrame, range.endFrame, (frameIndex, hash) => {
           entry.hashes[frameIndex] = hash;
+          progressDone++;
+          if (onProgress) onProgress(progressDone, rangeTotal);
         });
         scannedFrameCount += scanned;
       }
@@ -2006,10 +2014,21 @@ async function findLoopEndFrameWithHashCache({
   });
   entry.totalFrames = totalFrames;
 
-  await ensureLoopHashRanges(entry, [{ startFrame, endFrame: endSearch }], scanRange);
+  // 进度累加器：跨多次 ensureLoopHashRanges 调用（主范围 + 尾帧）累计 done/total
+  const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
+  const progressState = onProgress ? { done: 0, total: 0 } : null;
+  const reportProgress = onProgress
+    ? (done, total) => {
+        if (total > 0 && done === 0) progressState.total += total;
+        progressState.done += done;
+        onProgress(progressState.done, progressState.total);
+      }
+    : undefined;
+
+  await ensureLoopHashRanges(entry, [{ startFrame, endFrame: endSearch }], scanRange, reportProgress);
   if (lastFrameIdx > startFrame && endSearch <= lastFrameIdx) {
     try {
-      await ensureLoopHashRanges(entry, [{ startFrame: lastFrameIdx, endFrame: lastFrameIdx + 1 }], scanRange);
+      await ensureLoopHashRanges(entry, [{ startFrame: lastFrameIdx, endFrame: lastFrameIdx + 1 }], scanRange, reportProgress);
     } catch (err) {
       // 尾帧补扫失败不影响主结果
     }

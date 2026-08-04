@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDown, ArrowUp, Check, FileVideo, Flag, List, LoaderCircle, Repeat2, Upload } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, FileVideo, Flag, List, Repeat2, Upload } from 'lucide-react'
 import { applyKeying, composeToCanvas, cropKeyedToBounds, expandBoundsToSourceCenter, findAlphaBounds } from '../lib/keying.js'
 import { clamp, cropImageData, getRegionOverlayStyle, makeRegionFromPoints, normalizeRegion } from '../lib/region.js'
 import { clipTimelineStyle } from '../lib/actionReviewClips.js'
@@ -10,6 +10,104 @@ import { t } from '../i18n.js'
 const AUTO_LOOP_DETECT_KEY = 'greenscreen-studio-auto-loop-detect'
 const PREVIEW_STABLE_CROP_ALPHA_THRESHOLD = 10
 const EMPTY_STABLE_PREVIEW_CROP = Object.freeze({ status: 'idle', bounds: null, scan: null })
+
+// 解析 /api/video/find-loop-end 的 NDJSON 流式响应：
+// 逐行读取，progress 行实时回调，result 行作为返回值；兼容旧版纯 JSON 响应
+async function readStreamedDetection(resp, onProgress) {
+  if (!resp.body || !resp.body.getReader) {
+    return resp.json()
+  }
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let result = null
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    let nl
+    while ((nl = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, nl).trim()
+      buffer = buffer.slice(nl + 1)
+      if (!line) continue
+      let msg
+      try {
+        msg = JSON.parse(line)
+      } catch {
+        continue
+      }
+      if (msg.type === 'progress') {
+        onProgress?.(msg)
+      } else if (msg.type === 'error') {
+        throw new Error(msg.error || t('preview.detectFailed'))
+      } else if (msg.type === 'result') {
+        result = msg
+      } else {
+        // 兼容：旧版整段纯 JSON 直接当结果
+        result = msg
+      }
+    }
+  }
+  const rest = buffer.trim()
+  if (!result && rest) {
+    try {
+      return JSON.parse(rest)
+    } catch { /* 非 JSON 残留，忽略 */ }
+  }
+  if (!result) {
+    throw new Error(t('preview.detectFailed'))
+  }
+  return result
+}
+
+// 圆圈进度条（SVG 环形），用于移动端自动检测按钮 loading 态
+function CircularProgressRing({ percent = 0, size = 24, showText = false }) {
+  const stroke = 3
+  const r = (size - stroke) / 2
+  const circumference = 2 * Math.PI * r
+  const offset = circumference * (1 - clamp(percent, 0, 100) / 100)
+  const rounded = Math.round(percent)
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className="detect-progress-ring"
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={rounded}
+      aria-label={t('preview.detecting')}
+    >
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="currentColor" strokeOpacity={0.25} strokeWidth={stroke} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={offset}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+      {showText && (
+        <text
+          x="50%"
+          y="50%"
+          dominantBaseline="central"
+          textAnchor="middle"
+          fontSize={Math.max(6, size * 0.32)}
+          fontWeight={700}
+          fill="currentColor"
+        >
+          {rounded}
+        </text>
+      )}
+    </svg>
+  )
+}
 
 function mergeAlphaBounds(current, next) {
   if (!next) return current || null
@@ -101,6 +199,7 @@ export default function VideoPreview({
   const [frameImageData, setFrameImageData] = useState(null)  // 当前帧的 ImageData
   const [loading, setLoading] = useState(false)
   const [detecting, setDetecting] = useState(false)
+  const [detectProgress, setDetectProgress] = useState(null) // {current,total,percent}|null 相似度检测进度
   const [loopCandidates, setLoopCandidates] = useState(null) // [{frame, score}, ...]
   const [similarityHeatmap, setSimilarityHeatmap] = useState(null) // [{pct, opacity}, ...]
   const [similarityScores, setSimilarityScores] = useState(null) // [{frame, score, displayOnly}, ...]
@@ -123,6 +222,7 @@ export default function VideoPreview({
   const mobileMarkerMenuRef = useRef(null)
   const mobileCandidateMenuRef = useRef(null)
   const seekRef = useRef(false)  // 防止 seek 事件重入
+  const pendingSeekRef = useRef(null)  // seek 进行中被丢弃的请求，seeked 后补执行
   const scrubbingRef = useRef(false)
   const regionDragRef = useRef(null)
   const rangeRef = useRef(range)
@@ -276,11 +376,18 @@ export default function VideoPreview({
   }, [])
 
   // ===== Seek 到指定时间并提取帧 =====
+  // 注意：seek 进行中（seekRef=true）会丢弃新请求，但记录到 pendingSeekRef，
+  // 等 seeked 后补执行 —— 保证快速拖动时间轴时视频最终收敛到最新位置
+  // （否则 onSeeked 会把 frameTime 回拉到旧位置，导致标记起点/终点标到靠前帧）
   const seekToFrame = useCallback((time, { force = false } = {}) => {
     const video = videoRef.current
     if (!video || !video.videoWidth) return
-    if (seekRef.current && !force) return
+    if (seekRef.current && !force) {
+      pendingSeekRef.current = time
+      return
+    }
     seekRef.current = true
+    pendingSeekRef.current = null
 
     setLoading(true)
     video.currentTime = Math.min(time, video.duration || 0)
@@ -347,6 +454,16 @@ export default function VideoPreview({
       setFrameTime(video.currentTime)
     }
 
+    // 补执行拖动期间被丢弃的 seek，让预览收敛到最新帧
+    const pending = pendingSeekRef.current
+    pendingSeekRef.current = null
+    if (pending != null && !wasLoopSeek && video && video.videoWidth) {
+      seekRef.current = true
+      setLoading(true)
+      video.currentTime = Math.min(pending, video.duration || 0)
+      return
+    }
+
     if (wasLoopSeek) {
       playbackRef.current.loopSeekPending = false
       if (playbackRef.current.playing && video) {
@@ -388,19 +505,41 @@ export default function VideoPreview({
     }
   }, [isLoopPlaying, range, renderLoopFrame, stopLoopPreview, videoInfo])
 
+  // 标记时读「用户实际指向的时间」而非可能滞后的 frameTime state：
+  // 快速拖动时间轴时 seek 是异步的（未落地的目标记在 pendingSeekRef），
+  // 优先取 pendingSeekRef，其次 video.currentTime，最后才回退 frameTime
+  const getPreviewVideoTime = useCallback(() => {
+    const video = videoRef.current
+    if (video && video.videoWidth) {
+      return pendingSeekRef.current ?? video.currentTime
+    }
+    return frameTime
+  }, [frameTime])
+
   const markCurrentFrameAsStart = useCallback(() => {
     stopLoopPreview()
     const currentFps = videoInfo?.fps || 30
-    const frame = Math.round(frameTime * currentFps)
-    onRangeChange({ ...range, startFrame: Math.min(frame, range.endFrame) })
-  }, [frameTime, onRangeChange, range, stopLoopPreview, videoInfo?.fps])
+    const currentTime = getPreviewVideoTime()
+    const frame = Math.round(currentTime * currentFps)
+    setFrameTime(currentTime)
+    // 起点不能 ≥ 终点：若标记位置在终点之后，把终点顺延（与 selectLoopCandidateStart 同策略），
+    // 避免「标了却落在旧终点上」导致标不到当前帧
+    const nextEnd = Math.min(Math.max(range.endFrame, frame + 1), totalFrames)
+    const nextStart = Math.max(0, Math.min(frame, nextEnd - 1))
+    onRangeChange({ ...range, startFrame: nextStart, endFrame: nextEnd })
+  }, [frameTime, getPreviewVideoTime, onRangeChange, range, stopLoopPreview, totalFrames, videoInfo?.fps])
 
   const markCurrentFrameAsEnd = useCallback(() => {
     stopLoopPreview()
     const currentFps = videoInfo?.fps || 30
-    const frame = Math.round(frameTime * currentFps)
-    onRangeChange({ ...range, endFrame: Math.max(frame, range.startFrame + 1) })
-  }, [frameTime, onRangeChange, range, stopLoopPreview, videoInfo?.fps])
+    const currentTime = getPreviewVideoTime()
+    const frame = Math.round(currentTime * currentFps)
+    setFrameTime(currentTime)
+    // 终点不能 ≤ 起点：若标记位置在起点之前，把起点顺延（对称策略）
+    const nextStart = Math.max(0, Math.min(range.startFrame, frame - 1))
+    const nextEnd = Math.max(frame, nextStart + 1)
+    onRangeChange({ ...range, startFrame: nextStart, endFrame: nextEnd })
+  }, [frameTime, getPreviewVideoTime, onRangeChange, range, stopLoopPreview, totalFrames, videoInfo?.fps])
 
   const selectLoopCandidateEnd = useCallback((frame) => {
     const currentFps = videoInfo?.fps || 30
@@ -444,6 +583,7 @@ export default function VideoPreview({
 
     setDetecting(true)
     setLoopCandidates(null)
+    setDetectProgress({ current: 0, total: 0, percent: 0 })
     try {
       const resp = await fetch('/api/video/find-loop-end', {
         method: 'POST',
@@ -455,7 +595,10 @@ export default function VideoPreview({
         })
       })
       if (!resp.ok) throw new Error(t('preview.detectFailed'))
-      const data = await resp.json()
+      // NDJSON 流式响应：进度行实时更新，最后一行是 result（兼容旧版纯 JSON）
+      const data = await readStreamedDetection(resp, (progress) => {
+        if (requestId === detectRequestRef.current) setDetectProgress(progress)
+      })
       if (requestId !== detectRequestRef.current) return
 
       const candidates = data.candidates || []
@@ -500,6 +643,7 @@ export default function VideoPreview({
     } finally {
       if (requestId === detectRequestRef.current) {
         setDetecting(false)
+        setDetectProgress(null)
       }
     }
   }, [loopDetectionParams, onRangeChange, seekToFrame, stopLoopPreview, videoInfo])
@@ -512,6 +656,7 @@ export default function VideoPreview({
     setSimilarityHeatmap(null)
     setSimilarityScores(null)
     setScoreRange(null)
+    setDetectProgress(null)
   }, [loopDetectionSignature, videoInfo?.jobId])
 
   useEffect(() => {
@@ -547,6 +692,7 @@ export default function VideoPreview({
       setSimilarityHeatmap(null)
       setSimilarityScores(null)
       setScoreRange(null)
+      setDetectProgress(null)
       setLoadedVideoJobId(null)
       return
     }
@@ -1043,7 +1189,7 @@ export default function VideoPreview({
               disabled={detecting}
             >
               {detecting
-                ? <LoaderCircle className="is-spinning" size={18} aria-hidden="true" />
+                ? <CircularProgressRing percent={detectProgress?.percent ?? 0} size={24} showText />
                 : <Repeat2 size={18} aria-hidden="true" />}
             </button>
 
@@ -1208,6 +1354,23 @@ export default function VideoPreview({
         <span className="time-label">{formatTime(duration)}</span>
       </div>
 
+      {/* 相似度检测进度条（桌面端，时间轴下方细条） */}
+      {detecting && detectProgress && !mobile && (
+        <div
+          className="detect-progress-track"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={detectProgress.percent}
+          aria-label={t('preview.detecting')}
+        >
+          <div
+            className="detect-progress-fill"
+            style={{ width: `${clamp(detectProgress.percent, 0, 100)}%` }}
+          />
+        </div>
+      )}
+
       {/* 标记起点 / 终点 / 自动检测按钮 */}
       {videoInfo && !mobile && (
         <div className="timeline-mark-actions">
@@ -1241,7 +1404,7 @@ export default function VideoPreview({
               disabled={detecting}
               aria-label={t('preview.autoLoopAria')}
             />
-            <span>{detecting ? t('preview.detecting') : t('preview.autoLoop')}</span>
+            <span>{detecting ? `${t('preview.detecting')}${detectProgress != null ? ` ${detectProgress.percent}%` : ''}` : t('preview.autoLoop')}</span>
           </button>
         </div>
       )}

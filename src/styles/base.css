@@ -1669,6 +1669,28 @@ body {
   text-align: center;
 }
 
+/* 相似度检测进度条（桌面端：时间轴下方细条；移动端：按钮内圆圈环） */
+.detect-progress-track {
+  position: relative;
+  height: 3px;
+  margin: 4px 0 0;
+  border-radius: 2px;
+  background: var(--workspace-accent-soft);
+  overflow: hidden;
+}
+
+.detect-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--workspace-accent);
+  transition: width 0.15s ease-out;
+}
+
+.detect-progress-ring {
+  display: block;
+  flex: 0 0 auto;
+}
+
 /* 循环候选帧列表 */
 .loop-candidates {
   display: flex;

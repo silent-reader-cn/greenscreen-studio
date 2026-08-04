@@ -1370,6 +1370,7 @@ export default function App() {
               </button>
             </div>
             <div className="preview-toolbar-end">
+              <div ref={mobilePreviewToolsRef} className="mobile-preview-tools-target" />
               <div className="preview-mode-tabs">
                 <button
                   className={`tab ${previewMode === 'keying' ? 'active' : ''}`}
@@ -1392,7 +1393,6 @@ export default function App() {
                   <span>{t('app.compositePreview')}</span>
                 </button>
               </div>
-              <div ref={mobilePreviewToolsRef} className="mobile-preview-tools-target" />
             </div>
           </div>
             <div className="canvas-wrapper" ref={imagePreviewWrapperRef}>

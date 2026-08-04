@@ -307,7 +307,12 @@ describe('POST /api/video/find-loop-end', () => {
         params,
     })
     expect(detectRes.status).toBe(200)
-    expect(detectRes.body.candidates[0].frame).toBe(180)
+    // NDJSON 流式响应：progress 行 + 末尾 result 行
+    const lines = detectRes.text.trim().split('\n').map(line => JSON.parse(line))
+    expect(lines.some(line => line.type === 'progress')).toBe(true)
+    const resultMsg = lines.find(line => line.type === 'result')
+    expect(resultMsg).toBeDefined()
+    expect(resultMsg.candidates[0].frame).toBe(180)
     expect(fakeVideoProcessor.findLoopEndFrame).toHaveBeenCalledWith(
       expect.any(String),
       61,

@@ -481,6 +481,16 @@ app.post('/api/video/find-loop-end', express.json({ limit: '1mb' }), async (req,
 
     console.log(`  🔍 检测循环帧: ${jobId} 起始帧=${startFrame}, 总帧=${totalFrames}`);
 
+    // NDJSON 流式响应：先逐条推送 { type: 'progress' }，最后推 { type: 'result' }
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders?.();
+
+    const emit = (obj) => {
+      if (!res.writableEnded) res.write(`${JSON.stringify(obj)}\n`);
+    };
+
     const result = await findLoopEndFrame(
       job.inputPath,
       startFrame,
@@ -491,6 +501,10 @@ app.post('/api/video/find-loop-end', express.json({ limit: '1mb' }), async (req,
         params,
         sourceWidth: info.width,
         sourceHeight: info.height,
+        onProgress: (current, total) => {
+          const percent = total > 0 ? Math.round((current / total) * 100) : 0;
+          emit({ type: 'progress', current, total, percent });
+        },
       }
     );
 
@@ -499,10 +513,21 @@ app.post('/api/video/find-loop-end', express.json({ limit: '1mb' }), async (req,
       result.candidates.map(c => `#${c.frame}(${c.score.toFixed(0)})`).join(', ')
     }`);
 
-    res.json(result);
+    emit({ type: 'progress', current: 1, total: 1, percent: 100 });
+    emit({ type: 'result', ...result });
+    res.end();
   } catch (err) {
     console.error('  ❌ 循环帧检测失败:', err.message);
-    res.status(500).json({ error: err.message });
+    if (res.headersSent) {
+      try {
+        if (!res.writableEnded) {
+          res.write(`${JSON.stringify({ type: 'error', error: err.message })}\n`);
+          res.end();
+        }
+      } catch (e) { /* 忽略：连接可能已关闭 */ }
+    } else {
+      res.status(500).json({ error: err.message });
+    }
   }
 });
 
