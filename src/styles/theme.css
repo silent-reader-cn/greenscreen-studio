@@ -426,3 +426,14 @@
   background: #182033;
   color: #7da7ff;
 }
+/* ===== Dark: sidebar export dock + media badge ===== */
+:root[data-theme='dark'] .sidebar-dock {
+  background: var(--workspace-surface);
+  border-top-color: var(--workspace-border);
+  box-shadow: none;
+}
+:root[data-theme='dark'] .workspace-media-badge.mode-video {
+  border-color: var(--workspace-border);
+  background: var(--workspace-surface-soft);
+  color: var(--workspace-info);
+}
