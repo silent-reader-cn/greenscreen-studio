@@ -87,7 +87,7 @@ function ProjectDetail({ bundle, openingAssetId, onDelete, onOpenAsset, onPrevie
   )
 }
 
-export default function StudioPanel({ onOpenVideoAsset }) {
+export default function StudioPanel({ onOpenVideoAsset, onOpenProgress }) {
   const dialog = useAppDialog()
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState('projects') // projects | mcp
@@ -255,18 +255,37 @@ export default function StudioPanel({ onOpenVideoAsset }) {
   const handleOpenVideoAsset = async (asset) => {
     if (!selectedId || !onOpenVideoAsset || openingAssetId) return
     setOpeningAssetId(asset.id)
+    setPreviewAsset(null)
+    // 立即关闭项目弹窗（手机端：点击后直接进入加载流程）
+    setOpen(false)
     setError('')
+    // 点击即进入加载流程：先显示 0% 遮罩，等响应头后再报真实进度
+    onOpenProgress?.(0)
     try {
       const response = await fetch(`/api/projects/${selectedId}/assets/${asset.id}/content`)
       if (!response.ok) throw new Error(t('studio.openVideoFailed'))
-      const blob = await response.blob()
+      let blob
+      const total = Number(response.headers.get('Content-Length')) || 0
+      if (total > 0 && response.body && typeof response.body.getReader === 'function') {
+        const reader = response.body.getReader()
+        const chunks = []
+        let received = 0
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done) break
+          chunks.push(value)
+          received += value.length
+          onOpenProgress?.(Math.min(100, Math.round((received / total) * 100)))
+        }
+        blob = new Blob(chunks, { type: asset.mimeType || 'video/mp4' })
+      } else {
+        blob = await response.blob()
+      }
       const type = blob.type || asset.mimeType || 'video/mp4'
       const file = new File([blob], asset.originalName || 'project-video.mp4', {
         type,
         lastModified: Date.parse(asset.createdAt) || Date.now(),
       })
-      setPreviewAsset(null)
-      setOpen(false)
       onOpenVideoAsset({
         file,
         projectId: selectedId,
@@ -275,6 +294,8 @@ export default function StudioPanel({ onOpenVideoAsset }) {
       })
     } catch (err) {
       setError(err.message || t('studio.openVideoFailed'))
+      setOpen(true)
+      onOpenProgress?.(null)
     } finally {
       setOpeningAssetId('')
     }

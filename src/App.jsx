@@ -144,6 +144,8 @@ export default function App() {
   // 全局拖放状态
   const [dragOver, setDragOver] = useState(false)
   const [droppedVideoFiles, setDroppedVideoFiles] = useState(null)
+  // 打开项目视频的全局加载提示：{ stage: 'download'|'upload', percent: number|null } | null
+  const [projectOpening, setProjectOpening] = useState(null)
   const [reviewContext, setReviewContext] = useState(null) // { projectId, assetId, sourceLabel }
   const [reviewClips, setReviewClips] = useState([])
   const [reviewMarkers, setReviewMarkers] = useState([])
@@ -153,6 +155,18 @@ export default function App() {
 
   const handleMarkerSeek = useCallback((frame) => {
     setMarkerSeekRequest({ frame, nonce: Date.now() })
+  }, [])
+  // 项目视频下载进度上报（StudioPanel 流式下载中；null = 下载失败/取消）
+  const handleProjectOpenProgress = useCallback((percent) => {
+    if (percent == null) {
+      setProjectOpening(null)
+      return
+    }
+    setProjectOpening({ stage: 'download', percent })
+  }, [])
+  // 项目视频打开失败：收起全局加载提示（错误在 VideoPanel/StudioPanel 内展示）
+  const handleProjectOpenError = useCallback(() => {
+    setProjectOpening(null)
   }, [])
   const pendingProjectVideoRef = useRef(null)
 
@@ -385,6 +399,8 @@ export default function App() {
   }, [activeProfileId, dialog, profiles, videoInfo])
 
   const handleVideoUpload = useCallback((file, info) => {
+    // 项目视频打开流程结束：无论成败都收起全局加载提示
+    setProjectOpening(null)
     setVideoFile(file)
     setVideoInfo(info)
     setVideoRegion(null)
@@ -491,6 +507,8 @@ export default function App() {
     setReviewMarkers([])
     setSelectedReviewClipIds([])
     pendingProjectVideoRef.current = nextContext ? file : null
+    // 下载已完成，进入上传/处理阶段：显示无百分比进度条
+    setProjectOpening({ stage: 'upload', percent: null })
     switchMode('video')
     setPreviewMode('keying')
     setMobileSheetState('collapsed')
@@ -1135,7 +1153,7 @@ export default function App() {
           </div>
         </div>
         <div className="header-actions">
-          <StudioPanel onOpenVideoAsset={handleOpenProjectVideo} />
+          <StudioPanel onOpenVideoAsset={handleOpenProjectVideo} onOpenProgress={handleProjectOpenProgress} />
           <button
             type="button"
             className="theme-toggle"
@@ -1259,6 +1277,7 @@ export default function App() {
                 videoParams={videoParams}
                 onVideoParamsChange={setVideoParams}
                 onVideoUpload={handleVideoUpload}
+                onVideoUploadError={handleProjectOpenError}
                 range={frameRange}
                 onRangeChange={handleRangeChange}
                 region={videoRegion}
@@ -1461,6 +1480,24 @@ export default function App() {
           onCancel={handleCancelClipboardImport}
           onConfirm={handleConfirmClipboardImport}
         />
+      )}
+      {projectOpening && (
+        <div className="project-opening-overlay" role="status" aria-live="polite">
+          <div className="project-opening-card">
+            <p className="project-opening-label">
+              {projectOpening.stage === 'download' ? t('studio.openingDownloading') : t('studio.openingProcessing')}
+            </p>
+            <div className="progress-bar-container project-opening-track">
+              <div
+                className={`progress-bar ${projectOpening.percent == null ? 'indeterminate' : ''}`}
+                style={projectOpening.percent == null ? undefined : { width: `${projectOpening.percent}%` }}
+              />
+            </div>
+            {projectOpening.percent != null && (
+              <p className="project-opening-pct">{projectOpening.percent}%</p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

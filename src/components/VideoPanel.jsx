@@ -78,6 +78,7 @@ export default function VideoPanel({
   videoParams,
   onVideoParamsChange,
   onVideoUpload,
+  onVideoUploadError,
   range,
   onRangeChange,
   region,
@@ -608,11 +609,12 @@ export default function VideoPanel({
     } catch (err) {
       setErrorMsg(err.message)
       setStatus('error')
+      onVideoUploadError?.(err.message)
       return null
     } finally {
       setUploading(false)
     }
-  }, [cleanupVideoJob, godotClips, onVideoUpload, reviewAssetId, reviewProjectId])
+  }, [cleanupVideoJob, godotClips, onVideoUpload, onVideoUploadError, reviewAssetId, reviewProjectId])
 
   const uploadVideoQuiet = useCallback(async (file) => {
     if (!isVideoFile(file)) return null
@@ -761,6 +763,7 @@ export default function VideoPanel({
     } catch (err) {
       setErrorMsg(err.message)
       setStatus('error')
+      onVideoUploadError?.(err.message)
     } finally {
       setUploading(false)
     }
@@ -774,6 +777,7 @@ export default function VideoPanel({
     handleFile,
     onVideoParamsChange,
     onVideoUpload,
+    onVideoUploadError,
     safeVideoParams,
     spriteParams.maxFrames,
     spriteParams.sampleEvery,

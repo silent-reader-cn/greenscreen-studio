@@ -338,3 +338,59 @@
     justify-content: space-between;
   }
 }
+
+/* 项目视频打开中的全局加载提示（下载/处理阶段） */
+.project-opening-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 76px;
+  pointer-events: none;
+}
+
+.project-opening-card {
+  min-width: 240px;
+  max-width: 340px;
+  background: var(--workspace-surface);
+  border: 1px solid var(--workspace-border);
+  border-radius: 10px;
+  padding: 14px 16px 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  display: grid;
+  gap: 8px;
+}
+
+.project-opening-label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.project-opening-pct {
+  margin: 0;
+  font-size: 12px;
+  text-align: right;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
+}
+
+.project-opening-track {
+  height: 6px;
+}
+
+.progress-bar.indeterminate {
+  width: 40% !important;
+  animation: project-opening-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes project-opening-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
