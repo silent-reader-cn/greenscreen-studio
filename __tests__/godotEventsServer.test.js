@@ -139,7 +139,7 @@ describe('reviewed Godot event export', () => {
       })
       studioServices.store.addActionMarker(approved.id, {
         frame: 14,
-        type: 'hit',
+        type: 'instant',
         label: 'damage',
         payload: { hitbox: 'slash_a' },
       })

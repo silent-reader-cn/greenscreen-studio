@@ -25,7 +25,7 @@ describe('Godot events artifact', () => {
             loop: false,
           },
           markers: [
-            { id: 'late', frame: 14, type: 'hit', label: 'damage', payload },
+            { id: 'late', frame: 14, type: 'instant', label: 'damage', payload },
             { id: 'exact', frame: 12, type: 'active_start', label: '', payload: {} },
           ],
         },

@@ -17,7 +17,7 @@ function jsonResponse(data, status = 200) {
 
 function createMarkerApiMock() {
   let markers = [
-    { id: 'marker_1', clipId: 'clip_1', frame: 12, type: 'windup_end', label: 'startup', payload: {} },
+    { id: 'marker_1', clipId: 'clip_1', frame: 12, type: 'windup_end', label: 'startup', payload: { startupFrames: 3 } },
   ]
 
   return vi.fn(async (url, options = {}) => {
@@ -77,21 +77,21 @@ describe('SemanticMarkerEditor', () => {
       expect.objectContaining({ id: 'marker_1', frame: 12, type: 'windup_end' }),
     ])
 
-    expect(screen.queryByLabelText(t('review.marker.payload'))).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: t('review.marker.newMarker') }))
+    // 创建表单不再提供 JSON 荷载编辑框（AI 走 API 维护 payload，人不需要改）
+    expect(document.querySelectorAll('.review-marker-create textarea')).toHaveLength(0)
     fireEvent.change(screen.getByLabelText(t('review.marker.type')), { target: { value: 'active_start' } })
     fireEvent.change(screen.getByLabelText(t('review.marker.frame')), { target: { value: '24' } })
     fireEvent.change(screen.getByLabelText(t('review.marker.label')), { target: { value: 'damage window' } })
-    fireEvent.change(screen.getByLabelText(t('review.marker.payload')), { target: { value: '{"hitbox":"slash_a"}' } })
     fireEvent.click(screen.getByRole('button', { name: t('review.marker.add') }))
     await screen.findByText('damage window')
 
     let markerRow = screen.getByText('damage window').closest('.review-marker-row')
     fireEvent.click(within(markerRow).getByRole('button', { name: t('review.marker.edit') }))
-    fireEvent.change(within(markerRow).getByLabelText(t('review.marker.type')), { target: { value: 'hit' } })
+    expect(within(markerRow).queryByLabelText(t('review.marker.payload'))).toBeNull()
+    fireEvent.change(within(markerRow).getByLabelText(t('review.marker.type')), { target: { value: 'instant' } })
     fireEvent.change(within(markerRow).getByLabelText(t('review.marker.frame')), { target: { value: '27' } })
     fireEvent.change(within(markerRow).getByLabelText(t('review.marker.label')), { target: { value: 'impact moved' } })
-    fireEvent.change(within(markerRow).getByLabelText(t('review.marker.payload')), { target: { value: '{"damage":2}' } })
     fireEvent.click(within(markerRow).getByRole('button', { name: t('review.marker.save') }))
     await screen.findByText('impact moved')
 
@@ -101,9 +101,8 @@ describe('SemanticMarkerEditor', () => {
         method: 'PATCH',
         body: JSON.stringify({
           frame: 27,
-          type: 'hit',
+          type: 'instant',
           label: 'impact moved',
-          payload: { damage: 2 },
         }),
       }),
     )
@@ -193,5 +192,23 @@ describe('SemanticMarkerEditor', () => {
     expect(onSeekRequest).not.toHaveBeenCalled()
     await waitFor(() => expect(onSeekRequest).toHaveBeenCalledTimes(1))
     expect(onSeekRequest).toHaveBeenCalledWith(26)
+  })
+
+  it('shows a payload viewer toggle for markers carrying JSON payload', async () => {
+    const alert = vi.spyOn(window, 'alert').mockReturnValue(undefined)
+    render(
+      <SemanticMarkerEditor
+        projectId="project_1"
+        clip={{ id: 'clip_1', name: 'attack', startFrame: 10, endFrame: 40 }}
+        onMarkersChange={vi.fn()}
+      />,
+    )
+    await screen.findByText('startup')
+
+    // 带荷载的 marker 显示查看按钮；点击弹出荷载内容
+    const toggle = screen.getByRole('button', { name: t('review.marker.payloadView') })
+    expect(toggle).toBeTruthy()
+    fireEvent.click(toggle)
+    expect(alert).toHaveBeenCalledWith(expect.stringContaining('"startupFrames": 3'))
   })
 })

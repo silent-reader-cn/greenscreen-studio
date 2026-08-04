@@ -442,14 +442,11 @@
   pointer-events: auto;
 }
 
-.timeline-semantic-marker.type-loop_start,
-.timeline-semantic-marker.type-loop_end {
+.timeline-semantic-marker.type-hold {
   background: #2f8f62;
 }
 
-.timeline-semantic-marker.type-sfx,
-.timeline-semantic-marker.type-vfx,
-.timeline-semantic-marker.type-camera {
+.timeline-semantic-marker.type-instant {
   background: #7654a8;
 }
 
@@ -632,6 +629,21 @@
   color: #375f8c;
 }
 
+.review-marker-payload-toggle {
+  border: 0;
+  background: none;
+  padding: 2px;
+  color: #8a8f98;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.review-marker-payload-toggle:hover {
+  color: #375f8c;
+}
+
 .review-marker-dot {
   width: 8px;
   height: 8px;
@@ -640,14 +652,11 @@
   background: #cb4b45;
 }
 
-.review-marker-dot.type-loop_start,
-.review-marker-dot.type-loop_end {
+.review-marker-dot.type-hold {
   background: #2f8f62;
 }
 
-.review-marker-dot.type-sfx,
-.review-marker-dot.type-vfx,
-.review-marker-dot.type-camera {
+.review-marker-dot.type-instant {
   background: #7654a8;
 }
 

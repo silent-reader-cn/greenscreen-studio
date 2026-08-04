@@ -22,14 +22,14 @@ describe('semantic marker payloads', () => {
   it('creates a typed marker with an object payload', () => {
     expect(buildCreateMarkerPayload({
       frame: 24,
-      type: 'hit',
+      type: 'instant',
       label: ' sword impact ',
       payloadText: '{"damageMultiplier":1.25}',
     }, { clip })).toEqual({
       ok: true,
       payload: {
         frame: 24,
-        type: 'hit',
+        type: 'instant',
         label: 'sword impact',
         payload: { damageMultiplier: 1.25 },
       },
@@ -45,7 +45,7 @@ describe('semantic marker payloads', () => {
   it('builds partial move and metadata patches', () => {
     expect(buildUpdateMarkerPayload(
       { frame: 30, label: 'late hit', payload: { strength: 2 } },
-      { clip, current: { frame: 20, type: 'hit' } },
+      { clip, current: { frame: 20, type: 'instant' } },
     )).toEqual({
       ok: true,
       payload: { frame: 30, label: 'late hit', payload: { strength: 2 } },
@@ -56,16 +56,17 @@ describe('semantic marker payloads', () => {
 
 describe('semantic marker display helpers', () => {
   it('keeps the fixed machine-readable type catalog', () => {
-    expect(MARKER_TYPES).toHaveLength(14)
+    expect(MARKER_TYPES).toHaveLength(7)
     expect(MARKER_TYPES).toContain('active_start')
-    expect(MARKER_TYPES).toContain('camera')
+    expect(MARKER_TYPES).toContain('instant')
+    expect(MARKER_TYPES).toContain('hold')
   })
 
   it('sorts markers by frame and computes timeline position', () => {
     const markers = sortMarkers([
-      { id: 'b', frame: 20, type: 'hit' },
-      { id: 'a', frame: 10, type: 'vfx' },
-      { id: 'c', frame: 20, type: 'camera' },
+      { id: 'b', frame: 20, type: 'instant' },
+      { id: 'a', frame: 10, type: 'note' },
+      { id: 'c', frame: 20, type: 'hold' },
     ])
     expect(markers.map((marker) => marker.id)).toEqual(['a', 'c', 'b'])
     expect(markerTimelineStyle({ frame: 25 }, 100)).toEqual({ left: '25%' })

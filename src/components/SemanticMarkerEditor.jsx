@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Pencil, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react'
+import { Info, Pencil, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react'
 import { t } from '../i18n.js'
 import { useAppDialog } from './AppDialog.jsx'
 import { CompactActionGroup, CompactIconButton, ResponsiveActionButton } from './ControlKit.jsx'
@@ -28,7 +28,7 @@ function payloadText(payload) {
 }
 
 function markerTypeLabel(type) {
-  return t(`review.markerTypes.${type}`)
+  return t(`review.markerTypes.${type}`) || type
 }
 
 function validationMessage(error) {
@@ -56,10 +56,9 @@ export default function SemanticMarkerEditor({
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [typeDraft, setTypeDraft] = useState('hit')
+  const [typeDraft, setTypeDraft] = useState('active_start')
   const [frameDraft, setFrameDraft] = useState(clip?.startFrame ?? 0)
   const [labelDraft, setLabelDraft] = useState('')
-  const [payloadDraft, setPayloadDraft] = useState('{}')
   const [createOpen, setCreateOpen] = useState(false)
   const [editingId, setEditingId] = useState('')
   const [editDraft, setEditDraft] = useState(null)
@@ -141,7 +140,6 @@ export default function SemanticMarkerEditor({
       frame: frameDraft,
       type: typeDraft,
       label: labelDraft,
-      payloadText: payloadDraft,
     }, { clip })
     if (!built.ok) {
       setError(validationMessage(built.error))
@@ -155,7 +153,6 @@ export default function SemanticMarkerEditor({
         body: JSON.stringify(built.payload),
       })
       setLabelDraft('')
-      setPayloadDraft('{}')
       await refresh()
       setCreateOpen(false)
     } catch (err) {
@@ -163,18 +160,22 @@ export default function SemanticMarkerEditor({
     } finally {
       setBusy(false)
     }
-  }, [busy, clip, disabled, frameDraft, labelDraft, payloadDraft, projectId, refresh, typeDraft])
+  }, [busy, clip, disabled, frameDraft, labelDraft, projectId, refresh, typeDraft])
 
   const beginEdit = useCallback((marker) => {
     setEditingId(marker.id)
+    // 人编辑不修改 JSON 荷载（AI 走 API 维护 payload），编辑时保持原 payload 不变
     setEditDraft({
       frame: marker.frame,
       type: marker.type,
       label: marker.label || '',
-      payloadText: payloadText(marker.payload),
     })
     setError('')
   }, [])
+
+  const handleViewPayload = useCallback((marker) => {
+    void dialog.alert(payloadText(marker.payload), { title: t('review.marker.payloadTitle') })
+  }, [dialog])
 
   const handleSave = useCallback(async (marker) => {
     if (!projectId || !clip?.id || !editDraft || disabled || busy) return
@@ -286,15 +287,6 @@ export default function SemanticMarkerEditor({
             disabled={disabled || busy}
           />
         </ReviewField>
-        <ReviewField label={t('review.marker.payload')} wide>
-          <textarea
-            rows="2"
-            value={payloadDraft}
-            placeholder={t('review.marker.payloadPlaceholder')}
-            onChange={(event) => setPayloadDraft(event.target.value)}
-            disabled={disabled || busy}
-          />
-        </ReviewField>
         <div className="review-marker-create-actions review-marker-wide">
           <ResponsiveActionButton
             mobile={mobile}
@@ -327,9 +319,6 @@ export default function SemanticMarkerEditor({
                   </ReviewField>
                   <ReviewField label={t('review.marker.label')} wide>
                     <input type="text" value={editDraft.label} onChange={(event) => setEditDraft((prev) => ({ ...prev, label: event.target.value }))} disabled={disabled || busy} />
-                  </ReviewField>
-                  <ReviewField label={t('review.marker.payload')} wide>
-                    <textarea rows="2" value={editDraft.payloadText} onChange={(event) => setEditDraft((prev) => ({ ...prev, payloadText: event.target.value }))} disabled={disabled || busy} />
                   </ReviewField>
                   <CompactActionGroup className="review-marker-actions" label={t('review.marker.editActions')}>
                     <ResponsiveActionButton mobile={mobile} icon={Save} label={t('review.marker.save')} tone="primary" onClick={() => void handleSave(marker)} disabled={disabled || busy} />
@@ -365,7 +354,20 @@ export default function SemanticMarkerEditor({
                     <strong>{markerTypeLabel(marker.type)}</strong>
                     <span>{t('review.marker.atFrame', { frame: marker.frame })}</span>
                     {marker.label && <span className="review-marker-label">{marker.label}</span>}
-                    <code>{JSON.stringify(marker.payload || {})}</code>
+                    {Object.keys(marker.payload || {}).length > 0 && (
+                      <button
+                        type="button"
+                        className="review-marker-payload-toggle"
+                        title={t('review.marker.payloadView')}
+                        aria-label={t('review.marker.payloadView')}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          handleViewPayload(marker)
+                        }}
+                      >
+                        <Info size={13} />
+                      </button>
+                    )}
                   </div>
                   <CompactActionGroup className="review-marker-actions" label={t('review.marker.rowActions', { type: markerTypeLabel(marker.type), frame: marker.frame })}>
                     <ResponsiveActionButton mobile={mobile} icon={Pencil} label={t('review.marker.edit')} onClick={() => beginEdit(marker)} disabled={disabled || busy} />

@@ -1,17 +1,10 @@
 export const MARKER_TYPES = Object.freeze([
-  'clip_start',
-  'clip_end',
-  'loop_start',
-  'loop_end',
   'windup_end',
+  'hold',
   'active_start',
-  'hit',
   'active_end',
+  'instant',
   'recovery_start',
-  'cancel_open',
-  'sfx',
-  'vfx',
-  'camera',
   'note',
 ])
 

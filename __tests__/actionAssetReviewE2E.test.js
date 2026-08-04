@@ -95,18 +95,18 @@ describe.skipIf(!hasGodot)('action asset review end-to-end', () => {
 
       const editedMarkerRes = await request(app)
         .patch(`/api/projects/${projectId}/clips/${clipId}/markers/${markerId}`)
-        .send({ frame: 3, type: 'hit', label: 'impact', payload: { hitbox: 'slash_b', damage: 2 } })
+        .send({ frame: 3, type: 'instant', label: 'impact', payload: { hitbox: 'slash_b', damage: 2 } })
       expect(editedMarkerRes.status).toBe(200)
       expect(editedMarkerRes.body).toMatchObject({
         frame: 3,
-        type: 'hit',
+        type: 'instant',
         label: 'impact',
         payload: { hitbox: 'slash_b', damage: 2 },
       })
 
       const invalidMarkerRes = await request(app)
         .post(`/api/projects/${projectId}/clips/${clipId}/markers`)
-        .send({ frame: 6, type: 'hit' })
+        .send({ frame: 6, type: 'instant' })
       expect(invalidMarkerRes.status).toBe(400)
       expect(invalidMarkerRes.body.code).toBe('MARKER_FRAME_OUTSIDE_CLIP')
 
@@ -193,7 +193,7 @@ describe.skipIf(!hasGodot)('action asset review end-to-end', () => {
       const events = JSON.parse(zip.readAsText('events.json'))
       expect(events.tracks[0]).toMatchObject({
         clip: { id: clipId, status: 'approved', range: { startFrame: 0, endFrame: 6 } },
-        events: [{ id: markerId, type: 'hit', animationFrame: 3, payload: { hitbox: 'slash_b', damage: 2 } }],
+        events: [{ id: markerId, type: 'instant', animationFrame: 3, payload: { hitbox: 'slash_b', damage: 2 } }],
         godotMethodTrack: { method: 'dispatch_action_event', targetNodePath: 'ActionEventDispatcher' },
       })
 
@@ -204,7 +204,7 @@ describe.skipIf(!hasGodot)('action asset review end-to-end', () => {
         animation: 'attack_SE',
         eventsValidated: true,
         eventId: markerId,
-        eventType: 'hit',
+        eventType: 'instant',
       })
 
       await request(app).delete(`/api/video/${jobId}`)
@@ -221,7 +221,7 @@ describe.skipIf(!hasGodot)('action asset review end-to-end', () => {
         })
         expect(reopened.getActionClipBundle(clipId)).toMatchObject({
           clip: { id: clipId, status: 'approved', reviewChecks: { clip: { id: clipId } } },
-          markers: [{ id: markerId, frame: 3, type: 'hit', payload: { hitbox: 'slash_b', damage: 2 } }],
+          markers: [{ id: markerId, frame: 3, type: 'instant', payload: { hitbox: 'slash_b', damage: 2 } }],
         })
       } finally {
         reopened.close()
