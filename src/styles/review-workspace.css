@@ -1,6 +1,6 @@
 /* ===== Review workspace ===== */
 .review-workspace {
-  --review-control-height: 38px;
+  --review-control-height: 32px;
   min-width: 0;
   color: var(--workspace-text);
 }
@@ -250,12 +250,20 @@
 }
 
 .review-composer-actions .control-toggle {
-  min-width: 112px;
+  min-width: 0;
   min-height: var(--review-control-height);
-  padding: 4px 8px;
-  border: 1px solid var(--workspace-border);
-  border-radius: var(--workspace-radius-sm);
-  background: var(--workspace-surface);
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.review-workspace.is-desktop .compact-icon-action,
+.review-workspace.is-desktop .compact-icon-action.size-small {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  flex-basis: 32px;
 }
 
 .review-field {
@@ -542,8 +550,8 @@
 .review-clip-status-control .review-status-select {
   width: 96px;
   min-width: 0;
-  min-height: 30px;
-  height: 30px;
+  min-height: var(--review-control-height);
+  height: var(--review-control-height);
   padding: 3px 24px 3px 7px;
   font-size: 11px;
 }
