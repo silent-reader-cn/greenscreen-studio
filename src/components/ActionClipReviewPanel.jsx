@@ -139,7 +139,12 @@ export default function ActionClipReviewPanel({
   }, [anchorId, emitSelection, onApplyClipRange, orderedClips, selectedClipIds, selectedSet])
 
   const handleCreate = useCallback(async () => {
-    if (!projectId || !assetId || busy) return
+    if (busy) return
+    if (!projectId || !assetId) {
+      // 未绑定项目素材：不能静默失败（保存按钮可用但点了没反应会让用户以为已保存）
+      setError(t('review.assetRequired'))
+      return
+    }
     const built = buildCreateClipPayload({
       assetId,
       name: nameDraft,
@@ -417,7 +422,7 @@ export default function ActionClipReviewPanel({
           className="review-slices-pane"
           title={t('review.clipList')}
           count={orderedClips.length}
-          description={t('review.listHint')}
+          description={sourceLabel ? `${t('review.listHint')} · ${t('review.boundSource', { name: sourceLabel })}` : t('review.listHint')}
           actions={(
             <>
               {mobile && (

@@ -168,7 +168,7 @@ export default function App() {
   const handleProjectOpenError = useCallback(() => {
     setProjectOpening(null)
   }, [])
-  const pendingProjectVideoRef = useRef(null)
+  const pendingProjectFilesRef = useRef(new Set())
 
   // 视频帧范围
   const [frameRange, setFrameRange] = useState(initialParams.frameRange)
@@ -408,8 +408,7 @@ export default function App() {
     setRegionDraft(null)
     setResultJobId(null)
     setResultVideoFormat(null)
-    const isPendingProjectVideo = Boolean(file && pendingProjectVideoRef.current === file)
-    pendingProjectVideoRef.current = null
+    const isPendingProjectVideo = Boolean(file && pendingProjectFilesRef.current.delete(file))
     if (!isPendingProjectVideo) {
       setReviewContext(null)
       setReviewClips([])
@@ -506,7 +505,7 @@ export default function App() {
     setReviewClips([])
     setReviewMarkers([])
     setSelectedReviewClipIds([])
-    pendingProjectVideoRef.current = nextContext ? file : null
+    if (nextContext) pendingProjectFilesRef.current.add(file)
     // 下载已完成，进入上传/处理阶段：显示无百分比进度条
     setProjectOpening({ stage: 'upload', percent: null })
     switchMode('video')

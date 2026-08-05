@@ -267,4 +267,18 @@ describe('ActionClipReviewPanel', () => {
     fireEvent.click(screen.getByText('idle'))
     expect(onSelectionChange).toHaveBeenLastCalledWith([])
   })
+  it('shows an explicit empty state when no project asset is bound (no silent save)', async () => {
+    renderPanel({ projectId: '', assetId: '' })
+    // 未绑定素材：显示空状态说明，而不是看起来像「没有切片」
+    expect(screen.getByText(t('review.needProjectVideo'))).toBeTruthy()
+    // 没有保存按钮 → 不存在「点了没反应」的静默失败路径
+    expect(screen.queryByRole('button', { name: /存为切片|Save range/ })).toBeNull()
+  })
+
+  it('shows the bound source video in the slice list header', async () => {
+    renderPanel({ sourceLabel: 'hero.mp4' })
+    await screen.findByText('idle')
+    const expected = `${t('review.listHint')} · ${t('review.boundSource', { name: 'hero.mp4' })}`
+    expect(screen.getByText(expected)).toBeTruthy()
+  })
 })

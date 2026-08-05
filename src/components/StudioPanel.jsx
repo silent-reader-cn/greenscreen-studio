@@ -253,7 +253,12 @@ export default function StudioPanel({ onOpenVideoAsset, onOpenProgress }) {
   }
 
   const handleOpenVideoAsset = async (asset) => {
-    if (!selectedId || !onOpenVideoAsset || openingAssetId) return
+    if (!selectedId || !onOpenVideoAsset) return
+    if (openingAssetId) {
+      // 有打开操作进行中：不能静默吞掉点击，否则用户会误以为已切到新视频（切片会存到旧素材）
+      setError(t('studio.openingAnother'))
+      return
+    }
     setOpeningAssetId(asset.id)
     setPreviewAsset(null)
     // 立即关闭项目弹窗（手机端：点击后直接进入加载流程）
@@ -262,7 +267,10 @@ export default function StudioPanel({ onOpenVideoAsset, onOpenProgress }) {
     // 点击即进入加载流程：先显示 0% 遮罩，等响应头后再报真实进度
     onOpenProgress?.(0)
     try {
-      const response = await fetch(`/api/projects/${selectedId}/assets/${asset.id}/content`)
+      const controller = new AbortController()
+      const openTimeout = setTimeout(() => controller.abort(), 30000)
+      const response = await fetch(`/api/projects/${selectedId}/assets/${asset.id}/content`, { signal: controller.signal })
+      clearTimeout(openTimeout)
       if (!response.ok) throw new Error(t('studio.openVideoFailed'))
       let blob
       const total = Number(response.headers.get('Content-Length')) || 0
@@ -293,7 +301,7 @@ export default function StudioPanel({ onOpenVideoAsset, onOpenProgress }) {
         asset,
       })
     } catch (err) {
-      setError(err.message || t('studio.openVideoFailed'))
+      setError(err?.name === 'AbortError' ? t('studio.openTimedOut') : (err.message || t('studio.openVideoFailed')))
       setOpen(true)
       onOpenProgress?.(null)
     } finally {
