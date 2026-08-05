@@ -938,7 +938,7 @@
 
 /* Project drawer and media dialog share the same form rhythm. */
 .studio-drawer {
-  --studio-control-height: 40px;
+  --studio-control-height: 32px;
   overflow: hidden;
 }
 
