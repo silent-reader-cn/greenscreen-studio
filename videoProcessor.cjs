@@ -2015,12 +2015,18 @@ async function findLoopEndFrameWithHashCache({
   entry.totalFrames = totalFrames;
 
   // 进度累加器：跨多次 ensureLoopHashRanges 调用（主范围 + 尾帧）累计 done/total
+  // done/total 是「段内绝对进度」：每段先宣告 onProgress(0, total)，再逐帧 onProgress(1..total, total)。
+  // 不能把段内 done 当增量累加（会累成三角数，percent 爆表到 10000+）——按段偏移拼接。
   const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
-  const progressState = onProgress ? { done: 0, total: 0 } : null;
+  const progressState = onProgress ? { done: 0, total: 0, base: 0 } : null;
   const reportProgress = onProgress
     ? (done, total) => {
-        if (total > 0 && done === 0) progressState.total += total;
-        progressState.done += done;
+        if (total > 0 && done === 0) {
+          // 新段宣告：累计总帧数，并记住本段起始偏移
+          progressState.base = progressState.total;
+          progressState.total += total;
+        }
+        progressState.done = progressState.base + done;
         onProgress(progressState.done, progressState.total);
       }
     : undefined;

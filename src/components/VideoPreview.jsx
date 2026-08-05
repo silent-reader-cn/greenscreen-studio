@@ -66,7 +66,8 @@ function CircularProgressRing({ percent = 0, size = 24, showText = false }) {
   const r = (size - stroke) / 2
   const circumference = 2 * Math.PI * r
   const offset = circumference * (1 - clamp(percent, 0, 100) / 100)
-  const rounded = Math.round(percent)
+  // 显示层防御：任何数据源（含后端异常）都不能让数字/aria 值超过 100
+  const rounded = Math.round(clamp(percent, 0, 100))
   return (
     <svg
       width={size}
@@ -1361,7 +1362,7 @@ export default function VideoPreview({
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={detectProgress.percent}
+          aria-valuenow={clamp(detectProgress.percent, 0, 100)}
           aria-label={t('preview.detecting')}
         >
           <div
@@ -1404,7 +1405,7 @@ export default function VideoPreview({
               disabled={detecting}
               aria-label={t('preview.autoLoopAria')}
             />
-            <span>{detecting ? `${t('preview.detecting')}${detectProgress != null ? ` ${detectProgress.percent}%` : ''}` : t('preview.autoLoop')}</span>
+            <span>{detecting ? `${t('preview.detecting')}${detectProgress != null ? ` ${clamp(detectProgress.percent, 0, 100)}%` : ''}` : t('preview.autoLoop')}</span>
           </button>
         </div>
       )}
