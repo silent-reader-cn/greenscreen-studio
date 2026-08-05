@@ -131,7 +131,7 @@
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
-  height: 40px;
+  height: 32px;
   padding: 0 11px;
   border: 1px solid var(--workspace-border-strong);
   border-radius: var(--workspace-radius-sm);
@@ -242,7 +242,7 @@
 .control-segments button {
   box-sizing: border-box;
   min-width: 0;
-  height: 36px;
+  height: 32px;
   padding: 0 9px;
   overflow: hidden;
   border: 0;
@@ -349,7 +349,7 @@
 }
 
 .control-color-input {
-  height: 36px;
+  height: 32px;
   padding: 3px 9px 3px 3px;
   display: flex;
   align-items: center;
@@ -466,7 +466,7 @@
 .control-action,
 .control-inline-action {
   box-sizing: border-box;
-  min-height: 36px;
+  min-height: 32px;
   padding: 0 11px;
   display: inline-flex;
   align-items: center;
@@ -526,14 +526,14 @@
 }
 
 .compact-icon-action {
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  min-height: 40px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
   padding: 0;
   display: inline-grid;
   place-items: center;
-  flex: 0 0 40px;
+  flex: 0 0 32px;
   border: 1px solid var(--workspace-border-strong);
   border-radius: var(--workspace-radius-sm);
   background: var(--workspace-surface);
@@ -543,11 +543,11 @@
 }
 
 .compact-icon-action.size-small {
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
-  min-height: 34px;
-  flex-basis: 34px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  flex-basis: 32px;
 }
 
 .compact-icon-action:hover:not(:disabled),

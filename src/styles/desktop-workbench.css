@@ -51,7 +51,7 @@
   .workspace-panel-source .source-chooser button {
     box-sizing: border-box;
     width: auto;
-    min-height: 36px;
+    min-height: 32px;
     padding: 0 11px;
     border: 1px solid var(--workspace-border-strong);
     border-radius: var(--workspace-radius-sm);
@@ -167,7 +167,7 @@
 
   .desktop-file-overview .file-region-btn {
     box-sizing: border-box;
-    min-height: 38px;
+    min-height: 32px;
     padding: 0 11px;
     border-radius: var(--workspace-radius-sm);
     background: var(--workspace-accent);
@@ -248,7 +248,7 @@
   .video-export-controls.is-desktop .mobile-export-segments button {
     box-sizing: border-box;
     min-width: 0;
-    height: 36px;
+    height: 32px;
     padding: 0 8px;
     overflow: hidden;
     border: 0;
@@ -299,7 +299,7 @@
   .video-export-controls.is-desktop .mobile-range-summary button,
   .video-export-controls.is-desktop .mobile-godot-pack-grid button {
     box-sizing: border-box;
-    min-height: 36px;
+    min-height: 32px;
     padding: 0 10px;
     border: 1px solid var(--workspace-border-strong);
     border-radius: var(--workspace-radius-sm);
@@ -313,7 +313,7 @@
   .video-export-controls.is-desktop .mobile-godot-save {
     box-sizing: border-box;
     width: 100%;
-    min-height: 40px;
+    min-height: 32px;
     padding: 0 12px;
     border: 1px solid var(--workspace-accent);
     border-radius: var(--workspace-radius-sm);
@@ -352,7 +352,7 @@
   .workspace-panel-export .image-godot-fields .control-field-input input {
     box-sizing: border-box;
     width: 100%;
-    height: 40px;
+    height: 32px;
     margin: 0;
     padding: 0 11px;
     font-size: 14px;
@@ -412,7 +412,7 @@
   .workspace-panel-review .review-clip-head > .control-action,
   .workspace-panel-review .review-clip-bulk-actions > .control-action,
   .workspace-panel-review .review-clip-actions > .control-action {
-    min-height: 36px;
+    min-height: 32px;
   }
 
   .workspace-panel-review .review-clip-create-actions {
@@ -426,7 +426,7 @@
 
   .workspace-panel-review .review-clip-create-actions .control-action {
     min-width: 124px;
-    min-height: 40px;
+    min-height: 32px;
   }
 
   .workspace-panel-review .review-clip-list-title h4 {

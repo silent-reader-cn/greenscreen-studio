@@ -302,7 +302,7 @@ body {
 }
 
 .header-import-btn {
-  min-height: 34px;
+  min-height: 32px;
   padding: 0 12px;
   display: inline-flex;
   align-items: center;
@@ -534,7 +534,7 @@ body {
 }
 
 .workspace-export-actions .dock-btn {
-  min-height: 38px;
+  min-height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -650,7 +650,7 @@ body {
 }
 
 .empty-preview-action {
-  min-height: 38px;
+  min-height: 32px;
   padding: 0 13px;
   display: inline-flex;
   align-items: center;
@@ -1303,7 +1303,7 @@ body {
 }
 
 .clipboard-btn {
-  min-height: 38px;
+  min-height: 32px;
   border-radius: var(--workspace-radius-sm);
 }
 

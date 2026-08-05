@@ -128,7 +128,7 @@
 .studio-primary-btn,
 .studio-mini-btn,
 .studio-danger-btn {
-  min-height: 34px;
+  min-height: 32px;
   padding: 7px 12px;
   border-radius: 6px;
   border: 1px solid transparent;

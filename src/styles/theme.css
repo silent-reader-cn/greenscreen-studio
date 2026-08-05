@@ -28,9 +28,9 @@
 }
 
 .theme-toggle {
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
   padding: 0;
   display: inline-grid;
   place-items: center;
@@ -436,4 +436,12 @@
   border-color: var(--workspace-border);
   background: var(--workspace-surface-soft);
   color: var(--workspace-info);
+}
+/* ===== Dark: workspace tool rail hover ===== */
+:root[data-theme='dark'] .workspace-tool-btn:hover {
+  background: var(--workspace-surface-raised);
+  color: var(--workspace-text);
+}
+:root[data-theme='dark'] .workspace-tool-btn.active {
+  border-color: var(--workspace-accent-border);
 }

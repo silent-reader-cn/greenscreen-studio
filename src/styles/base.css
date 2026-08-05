@@ -319,7 +319,7 @@ body {
 
 .dock-btn {
   width: 100%;
-  min-height: 34px;
+  min-height: 32px;
   padding: 7px 10px;
   border: 1px solid transparent;
   border-radius: 6px;
@@ -2105,7 +2105,7 @@ body {
 
 .clipboard-btn {
   min-width: 84px;
-  min-height: 36px;
+  min-height: 32px;
   padding: 8px 14px;
   border: 1px solid transparent;
   border-radius: 6px;

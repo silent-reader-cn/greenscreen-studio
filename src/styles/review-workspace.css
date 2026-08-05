@@ -627,11 +627,11 @@
 }
 
 .review-marker-head-actions .compact-icon-action {
-  width: 34px;
-  height: 34px;
-  min-width: 34px;
-  min-height: 34px;
-  flex-basis: 34px;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  flex-basis: 32px;
 }
 
 .review-marker-title-row {
