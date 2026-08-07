@@ -886,14 +886,15 @@ export default function VideoPreview({
       canvas.height = layoutParams.canvasHeight
       const ctx = canvas.getContext('2d')
       if (layoutParams.autoCrop !== false) {
-        // The stable union crop prevents placement drift after its scan finishes.
-        // While it is scanning or unavailable, keep composing from the current
-        // frame instead of rendering a misleading green-only placeholder.
-        keyed = cropKeyedToBounds(
-          keyed,
-          stablePreviewCrop.status === 'ready' ? stablePreviewCrop.bounds : null,
-          PREVIEW_STABLE_CROP_ALPHA_THRESHOLD,
-        )
+        // 稳定裁剪框与当前帧 alpha 边界取 union，避免两个问题：
+        // 1. 扫描完成前(status!=='ready')回退到当前帧独立裁剪，避免整帧 fit
+        //    缩放导致人物过小（sourceCharacterHeight=0 时 scale 依赖 src 尺寸）
+        // 2. 当前帧人物超出全局 union（如该帧双臂张开/位移出框）时合并当前帧
+        //    边界，防止左右两侧被全局裁剪框切掉
+        const stableBounds = stablePreviewCrop.status === 'ready' ? stablePreviewCrop.bounds : null
+        const frameBounds = findAlphaBounds(keyed, PREVIEW_STABLE_CROP_ALPHA_THRESHOLD)
+        const cropBounds = mergeAlphaBounds(stableBounds, frameBounds)
+        keyed = cropKeyedToBounds(keyed, cropBounds, PREVIEW_STABLE_CROP_ALPHA_THRESHOLD)
       }
       composeToCanvas(ctx, keyed, layoutParams, tempCanvasRef.current, keyingParams.keyColor)
     }
