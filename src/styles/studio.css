@@ -2,7 +2,7 @@
 .studio-toggle {
   position: relative;
   flex: 0 0 auto;
-  min-height: 34px;
+  min-height: 32px;
   padding: 7px 12px;
   display: inline-flex;
   align-items: center;
@@ -87,7 +87,7 @@
 }
 .studio-tabs button {
   flex: 1;
-  min-height: 34px;
+  min-height: 32px;
   border: 1px solid #e5e5dd;
   border-radius: 8px;
   background: #fafaf8;
