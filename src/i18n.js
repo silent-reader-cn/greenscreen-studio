@@ -489,6 +489,7 @@ const dictionaries = {
     },
     webuiAuth: {
       loginTitle: 'WebUI Password Required',
+      loginPageTitle: 'Sign In',
       loginSubtitle: 'This Studio instance is password-protected.',
       passwordLabel: 'Password',
       loginButton: 'Unlock',
@@ -998,6 +999,7 @@ const dictionaries = {
     },
     webuiAuth: {
       loginTitle: '需要访问密码',
+      loginPageTitle: '登录界面',
       loginSubtitle: '此 Studio 实例已启用密码保护。',
       passwordLabel: '密码',
       loginButton: '解锁',

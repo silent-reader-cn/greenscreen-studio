@@ -17,6 +17,13 @@ export default function LoginScreen() {
     inputRef.current?.focus()
   }, [])
 
+  // 登录页显示期间改浏览器标题，卸载时恢复
+  useEffect(() => {
+    const originalTitle = document.title
+    document.title = t('webuiAuth.loginPageTitle')
+    return () => { document.title = originalTitle }
+  }, [])
+
   const handleSubmit = async (event) => {
     event.preventDefault()
     if (busy) return

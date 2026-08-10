@@ -1156,8 +1156,12 @@ export default function App() {
     }
   }, [finishMobileSheetDrag, handleMobileSheetPointerMove, mobileSheetDragging])
 
+  // WebUI 访问密码：checking 时渲染登录页同款背景占位（防解锁界面闪烁），locked 时登录页
   if (authState === 'locked') {
     return <LoginScreen />
+  }
+  if (authState === 'checking') {
+    return <div className="auth-login-screen" aria-hidden="true" />
   }
 
   return (
