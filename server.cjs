@@ -68,10 +68,16 @@ app.use(express.json({ limit: '50mb' }));
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
+
+// WebUI 访问密码：认证闸门必须最先注册（Express 按注册顺序执行），
+// 白名单内（/api/auth/*、/api/health）放行后继续向下，其余校验 token
+const webuiAuth = require('./lib/webuiAuth.cjs');
+app.use('/api', webuiAuth.middleware);
+app.use('/api/auth', webuiAuth.router());
 
 // Project management + MCP status/logs
 const { mountStudioApi } = require('./lib/studioApi.cjs');

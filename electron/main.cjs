@@ -132,7 +132,7 @@ function startBackendServer() {
   console.log(`  [electron] 启动后端: node ${serverPath} (port ${serverPort})`);
 
   serverProcess = fork(serverPath, [], {
-    env: { ...process.env, PORT: String(serverPort) },
+    env: { ...process.env, PORT: String(serverPort), GSS_WEBUI_AUTH_DISABLED: '1' },
     stdio: 'inherit',
   });
 

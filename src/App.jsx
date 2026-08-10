@@ -6,6 +6,7 @@ import {
   Image as ImageIcon,
   Layers3,
   Moon,
+  Settings,
   Sun,
   Upload,
   Video,
@@ -23,9 +24,12 @@ import ActionClipReviewPanel from './components/ActionClipReviewPanel.jsx'
 import WorkspaceSidebar from './components/WorkspaceSidebar.jsx'
 import ClipboardImportDialog from './components/ClipboardImportDialog.jsx'
 import FileMetaPanel from './components/FileMetaPanel.jsx'
+import LoginScreen from './components/LoginScreen.jsx'
+import WebuiAuthSettings from './components/WebuiAuthSettings.jsx'
 import { useAppDialog } from './components/AppDialog.jsx'
 import { ControlGrid, TextField } from './components/ControlKit.jsx'
 import { t } from './i18n.js'
+import { fetchAuthStatus } from './lib/webuiAuthClient.js'
 
 import {
   DEFAULT_FRAME_RANGE,
@@ -54,6 +58,9 @@ const MOBILE_UI_QUERY = '(max-width: 900px)'
 export default function App() {
   const dialog = useAppDialog()
   const [theme, setTheme] = useState(getInitialTheme)
+  // WebUI 访问密码：checking（探测中）| locked（需登录）| open（已放行）
+  const [authState, setAuthState] = useState('checking')
+  const [authSettingsOpen, setAuthSettingsOpen] = useState(false)
   const [mobileUi, setMobileUi] = useState(() => (
     typeof window !== 'undefined' && typeof window.matchMedia === 'function'
       ? window.matchMedia(MOBILE_UI_QUERY).matches
@@ -70,6 +77,26 @@ export default function App() {
       storeTheme(nextTheme)
       return nextTheme
     })
+  }, [])
+
+  // ===== WebUI 访问密码：探测状态 + 监听登录/登出事件 =====
+  useEffect(() => {
+    let cancelled = false
+    const check = async () => {
+      const status = await fetchAuthStatus()
+      if (cancelled) return
+      setAuthState(status.enabled && !status.authenticated ? 'locked' : 'open')
+    }
+    const onUnauthorized = () => setAuthState('locked')
+    const onAuthenticated = () => setAuthState('open')
+    check()
+    window.addEventListener('webui-unauthorized', onUnauthorized)
+    window.addEventListener('webui-authenticated', onAuthenticated)
+    return () => {
+      cancelled = true
+      window.removeEventListener('webui-unauthorized', onUnauthorized)
+      window.removeEventListener('webui-authenticated', onAuthenticated)
+    }
   }, [])
 
   useEffect(() => {
@@ -1129,11 +1156,18 @@ export default function App() {
     }
   }, [finishMobileSheetDrag, handleMobileSheetPointerMove, mobileSheetDragging])
 
+  if (authState === 'locked') {
+    return <LoginScreen />
+  }
+
   return (
     <div
       ref={appRef}
       className={`app mobile-sheet-${mobileSheetState} ${mobileSheetDragging ? 'mobile-sheet-dragging' : ''}`}
     >
+      {authSettingsOpen && (
+        <WebuiAuthSettings onClose={() => setAuthSettingsOpen(false)} />
+      )}
       <header className="header">
         <div className="header-brand">
           <ProfileMenu
@@ -1153,6 +1187,15 @@ export default function App() {
         </div>
         <div className="header-actions">
           <StudioPanel onOpenVideoAsset={handleOpenProjectVideo} onOpenProgress={handleProjectOpenProgress} />
+          <button
+            type="button"
+            className="theme-toggle auth-settings-trigger"
+            onClick={() => setAuthSettingsOpen(true)}
+            aria-label={t('webuiAuth.openSettings')}
+            title={t('webuiAuth.openSettings')}
+          >
+            <Settings size={16} aria-hidden="true" />
+          </button>
           <button
             type="button"
             className="theme-toggle"
