@@ -4,12 +4,17 @@
  * 使用 supertest 对 Express app 做 HTTP 级别的测试。
  * 关键依赖（canvas、multer、videoProcessor）mock 掉以避免需要真实文件和图像处理库。
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest'
 import request from 'supertest'
 import fs from 'fs'
 import { createRequire } from 'module'
 
 const nodeRequire = createRequire(import.meta.url)
+
+// WebUI 密码认证与 API 测试无关：整个文件豁免，避免读到真实 data/webui-config.json
+beforeAll(() => {
+  vi.stubEnv('GSS_WEBUI_AUTH_DISABLED', '1')
+})
 
 // Mock videoProcessor for all tests in this file
 vi.mock('../../videoProcessor.cjs', () => ({

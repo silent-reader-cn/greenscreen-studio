@@ -55,6 +55,11 @@ describe('App shell', () => {
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
     })))
+    // WebUI 认证探测：默认返回未启用，App 直接进入主界面（auth 行为有独立测试文件）
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ enabled: false, authenticated: false }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )))
   })
 
   afterEach(() => {
@@ -62,26 +67,27 @@ describe('App shell', () => {
     vi.unstubAllGlobals()
   })
 
-  it('renders the initial image workspace without runtime errors', () => {
+  it('renders the initial image workspace without runtime errors', async () => {
     render(
       <AppDialogProvider>
         <App />
       </AppDialogProvider>,
     )
 
-    expect(screen.getByRole('button', { name: t('app.image') })).toBeTruthy()
+    // WebUI 认证探测是异步 effect：先等主界面出现（checking 期间渲染占位）
+    await screen.findByRole('button', { name: t('app.image') })
     expect(screen.getByRole('button', { name: t('app.video') })).toBeTruthy()
     expect(screen.getAllByRole('button', { name: t('app.importAsset') }).length).toBeGreaterThan(0)
   })
 
-  it('switches theme and persists the preference', () => {
+  it('switches theme and persists the preference', async () => {
     render(
       <AppDialogProvider>
         <App />
       </AppDialogProvider>,
     )
 
-    const toggle = screen.getByRole('button', { name: t('app.switchToDarkMode') })
+    const toggle = await screen.findByRole('button', { name: t('app.switchToDarkMode') })
     expect(document.documentElement.dataset.theme).toBe('light')
 
     fireEvent.click(toggle)
@@ -91,7 +97,7 @@ describe('App shell', () => {
     expect(screen.getByRole('button', { name: t('app.switchToLightMode') })).toBeTruthy()
   })
 
-  it('restores a persisted dark theme', () => {
+  it('restores a persisted dark theme', async () => {
     localStorage.setItem(THEME_STORAGE_KEY, 'dark')
 
     render(
@@ -100,6 +106,7 @@ describe('App shell', () => {
       </AppDialogProvider>,
     )
 
+    await screen.findByRole('button', { name: t('app.switchToLightMode') })
     expect(document.documentElement.dataset.theme).toBe('dark')
     expect(screen.getByRole('button', { name: t('app.switchToLightMode') })).toBeTruthy()
   })
@@ -110,6 +117,8 @@ describe('App shell', () => {
         <App />
       </AppDialogProvider>,
     )
+    // 等认证探测完成、主界面渲染出文件输入
+    await screen.findByRole('button', { name: t('app.image') })
     const input = container.querySelector('input[type="file"]')
     const file = new File(['image'], 'test.png', { type: 'image/png' })
 
